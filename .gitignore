@@ -1,0 +1,88 @@
+# ============================================
+# FRONTEND
+# ============================================
+frontend/node_modules/
+frontend/.vite/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+frontend/.env.*
+frontend/*.log
+frontend/coverage/
+
+# ============================================
+# BACKEND
+# ============================================
+backend/.env
+backend/venv/
+backend/.venv/
+backend/__pycache__/
+backend/.pytest_cache/
+backend/*.egg-info/
+backend/dist/
+backend/build/
+backend/.mypy_cache/
+backend/.ruff_cache/
+
+# ============================================
+# ROOT
+# ============================================
+.venv/
+venv/
+env/
+*.py[cod]
+*.so
+.Python
+*.db
+*.sqlite
+*.sqlite3
+*.log
+logs/
+*.pid
+*.egg
+
+# ============================================
+# IDE & EDITORS
+# ============================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+*.sublime-project
+*.sublime-workspace
+*.iml
+
+# ============================================
+# OS
+# ============================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+Desktop.ini
+
+# ============================================
+# ENVIRONMENT FILES (Keep .env.example)
+# ============================================
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# ============================================
+# BUILD ARTIFACTS
+# ============================================
+**/dist/
+**/build/
+**/*.pyc
+**/__pycache__/
+
+# ============================================
+# TEMP FILES
+# ============================================
+*.tmp
+*.temp
+.cache/
