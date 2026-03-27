@@ -11,6 +11,7 @@ import { apiClient } from './client';
 
 // Request payload types (matching backend schemas)
 export interface PurchaseLineItem {
+  id?: string;
   product_id: string;
   description?: string;
   quantity: number;
@@ -18,6 +19,7 @@ export interface PurchaseLineItem {
   discount_percent?: number;
   gst_rate: number;
   purchase_order_item_id?: string;
+  received_quantity?: number;
 }
 
 export interface CreatePOPayload {
@@ -84,6 +86,11 @@ export interface PurchaseOrder {
   created_by?: string;
 }
 
+export interface PurchaseOrderDetail {
+  purchase_order: PurchaseOrder;
+  items: PurchaseLineItem[];
+}
+
 export interface GoodsReceiptNote {
   id: string;
   grn_number: string;
@@ -129,7 +136,7 @@ class PurchaseApiClient {
   }
 
   async getPO(id: string) {
-    return apiClient.get<PurchaseOrder>(`/api/v1/purchase-orders/${id}`);
+    return apiClient.get<PurchaseOrderDetail>(`/api/v1/purchase-orders/${id}`);
   }
 
   async createPO(payload: CreatePOPayload) {

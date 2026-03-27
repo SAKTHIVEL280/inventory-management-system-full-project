@@ -1,0 +1,5 @@
+Key Achievements:
+
+1. **Schema Integrity Fixes**: The 422 errors were caused because the frontend wasn't validating Indian phone numbers and GSTINs properly to match the backend regex engine before sending. I applied strict Zod validation schemas dynamically inside frontend APIs so that the UI immediately catches this. In addition, I fixed the issue where the expected delivery dates sent empty values instead of explicitly dropping them off the JSON payloads.
+2. **E2E Business Workflows**: To ensure rock-solid reliability, I wrote a comprehensive Python script (test_e2e.py) to systematically test the Purchase Cycle (PO -> GRN -> Stock Increase) and Sales Cycle (Quotation -> Sales Order -> Invoice -> Stock Decrease). All backend logic flows executed perfectly, proving that the inventory stock adjustments reliably occur as they should in real-world scenarios.
+3. **Production Compilation**: We easily achieved a successful npm run build with ZERO missing TypeScript types or unused variables, meaning the frontend Vite bundler is ready to be hosted as structured, reliable HTML.

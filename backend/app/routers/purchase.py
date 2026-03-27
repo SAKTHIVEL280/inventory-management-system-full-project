@@ -9,6 +9,7 @@ from app.dependencies import require_permissions
 from app.models.user import User
 from app.models.company import Company
 from app.models.product import Product, StockLedger
+from app.models.supplier import Supplier
 from app.models.purchase import (
     PurchaseOrder,
     PurchaseOrderItem,
@@ -97,6 +98,10 @@ async def create_purchase_order(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("purchase_orders_write")),
 ):
+    supplier = db.query(Supplier).filter(Supplier.id == payload.supplier_id, Supplier.is_deleted == False).first()
+    if not supplier:
+        raise HTTPException(status_code=400, detail="Invalid supplier")
+
     po_number = _generate_number(db, "po")
     po = PurchaseOrder(
         po_number=po_number,
@@ -178,6 +183,10 @@ async def update_purchase_order(
     if po.status != "draft":
         raise HTTPException(status_code=400, detail="Only draft purchase orders can be edited")
 
+    supplier = db.query(Supplier).filter(Supplier.id == payload.supplier_id, Supplier.is_deleted == False).first()
+    if not supplier:
+        raise HTTPException(status_code=400, detail="Invalid supplier")
+
     po.supplier_id = payload.supplier_id
     po.order_date = payload.order_date
     po.expected_delivery_date = payload.expected_delivery_date
@@ -243,6 +252,11 @@ async def update_purchase_order_status(
     if payload.status not in allowed.get(po.status, set()):
         raise HTTPException(status_code=400, detail="Invalid status transition")
 
+    if po.status == "draft" and payload.status == "sent":
+        supplier = db.query(Supplier).filter(Supplier.id == po.supplier_id, Supplier.is_deleted == False).first()
+        if not supplier:
+            raise HTTPException(status_code=400, detail="Cannot send PO: supplier reference is invalid")
+
     po.status = payload.status
     db.commit()
     db.refresh(po)
@@ -271,10 +285,18 @@ async def create_grn(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("grn_write")),
 ):
+    supplier = db.query(Supplier).filter(Supplier.id == payload.supplier_id, Supplier.is_deleted == False).first()
+    if not supplier:
+        raise HTTPException(status_code=400, detail="Invalid supplier")
+
     if payload.purchase_order_id:
         po = db.query(PurchaseOrder).filter(PurchaseOrder.id == payload.purchase_order_id, PurchaseOrder.is_deleted == False).first()
-        if not po or po.status == "cancelled":
+        if not po:
             raise HTTPException(status_code=400, detail="Invalid purchase order")
+        if po.status not in {"sent", "partial"}:
+            raise HTTPException(status_code=400, detail="GRN can be created only from sent or partial purchase orders")
+        if po.supplier_id != payload.supplier_id:
+            raise HTTPException(status_code=400, detail="Supplier does not match selected purchase order")
 
     grn_number = _generate_number(db, "grn")
     grn = GoodsReceiptNote(
@@ -355,6 +377,19 @@ async def update_grn(
         raise HTTPException(status_code=404, detail="GRN not found")
     if grn.status != "draft":
         raise HTTPException(status_code=400, detail="Only draft GRN can be edited")
+
+    supplier = db.query(Supplier).filter(Supplier.id == payload.supplier_id, Supplier.is_deleted == False).first()
+    if not supplier:
+        raise HTTPException(status_code=400, detail="Invalid supplier")
+
+    if payload.purchase_order_id:
+        po = db.query(PurchaseOrder).filter(PurchaseOrder.id == payload.purchase_order_id, PurchaseOrder.is_deleted == False).first()
+        if not po:
+            raise HTTPException(status_code=400, detail="Invalid purchase order")
+        if po.status not in {"sent", "partial"}:
+            raise HTTPException(status_code=400, detail="GRN can be created only from sent or partial purchase orders")
+        if po.supplier_id != payload.supplier_id:
+            raise HTTPException(status_code=400, detail="Supplier does not match selected purchase order")
 
     grn.purchase_order_id = payload.purchase_order_id
     grn.supplier_id = payload.supplier_id
