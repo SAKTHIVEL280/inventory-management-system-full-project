@@ -16,6 +16,14 @@ import CustomersPage from './pages/CustomersPage';
 import SuppliersPage from './pages/SuppliersPage';
 import ProductsPage from './pages/ProductsPage';
 import PurchaseOrderPage from './pages/PurchaseOrderPage';
+import QuotationsPage from './pages/QuotationsPage';
+import SalesOrdersPage from './pages/SalesOrdersPage';
+import InvoicesPage from './pages/InvoicesPage';
+import GRNPage from './pages/GRNPage';
+import StockPage from './pages/StockPage';
+import ReceivablesPage from './pages/ReceivablesPage';
+import PayablesPage from './pages/PayablesPage';
+import ReportsPage from './pages/ReportsPage';
 import { PERMISSION_SCOPES } from './types';
 
 function App() {
@@ -110,6 +118,78 @@ function App() {
           element={
             <ProtectedRoute requiredPermission={PERMISSION_SCOPES.PURCHASE_ORDERS_READ}>
               <PurchaseOrderPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/quotations"
+          element={
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.QUOTATIONS_READ}>
+              <QuotationsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/sales-orders"
+          element={
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.SALES_ORDERS_READ}>
+              <SalesOrdersPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/invoices"
+          element={
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.SALES_INVOICES_READ}>
+              <InvoicesPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/grn"
+          element={
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.GRN_READ}>
+              <GRNPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/stock"
+          element={
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.STOCK_LEDGER_READ}>
+              <StockPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/receivables"
+          element={
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.RECEIPTS_READ}>
+              <ReceivablesPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/payables"
+          element={
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.PAYMENTS_READ}>
+              <PayablesPage />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/reports"
+          element={
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.REPORTS_READ}>
+              <ReportsPage />
             </ProtectedRoute>
           }
         />

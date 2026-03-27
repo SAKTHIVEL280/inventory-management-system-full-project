@@ -9,10 +9,10 @@ import { PageEmpty, PageError, PageLoading } from '../components/PageState';
 
 const schema = z.object({
   company_name: z.string().min(1, 'Company name required'),
-  phone: z.string().min(1, 'Phone required'),
+  phone: z.string().regex(/^[6-9]\d{9}$/, 'Must be a valid 10-digit Indian mobile number'),
   contact_person: z.string().optional(),
-  email: z.string().optional(),
-  gstin: z.string().optional(),
+  email: z.string().email('Invalid email format').optional().or(z.literal('')),
+  gstin: z.string().regex(/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/i, 'Invalid GSTIN format').optional().or(z.literal('')),
 });
 
 type SupplierForm = z.infer<typeof schema>;

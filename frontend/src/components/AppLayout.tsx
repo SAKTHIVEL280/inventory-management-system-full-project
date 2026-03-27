@@ -38,7 +38,15 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
     { to: '/customers', label: 'Customers', visible: can('customers_read'), icon: 'person' },
     { to: '/suppliers', label: 'Suppliers', visible: can('suppliers_read'), icon: 'local_shipping' },
     { to: '/products', label: 'Products', visible: can('products_read'), icon: 'inventory_2' },
+    { to: '/stock', label: 'Stock', visible: can('stock_ledger_read'), icon: 'warehouse' },
     { to: '/purchase-orders', label: 'Purchase Orders', visible: can('purchase_orders_read'), icon: 'shopping_cart' },
+    { to: '/grn', label: 'GRN', visible: can('grn_read'), icon: 'move_to_inbox' },
+    { to: '/quotations', label: 'Quotations', visible: can('quotations_read'), icon: 'request_quote' },
+    { to: '/sales-orders', label: 'Sales Orders', visible: can('sales_orders_read'), icon: 'receipt_long' },
+    { to: '/invoices', label: 'Invoices', visible: can('sales_invoices_read'), icon: 'receipt' },
+    { to: '/receivables', label: 'Receivables', visible: can('receipts_read'), icon: 'account_balance_wallet' },
+    { to: '/payables', label: 'Payables', visible: can('payments_read'), icon: 'payments' },
+    { to: '/reports', label: 'Reports', visible: can('reports_read'), icon: 'bar_chart' },
   ];
 
   const handleLogoutClick = (): void => {
