@@ -14,6 +14,12 @@ const schema = z.object({
   contact_person: z.string().optional(),
   email: z.string().email('Invalid email format').optional().or(z.literal('')),
   gstin: z.string().regex(/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/i, 'Invalid GSTIN format').optional().or(z.literal('')),
+  billing_address_line1: z.string().optional(),
+  billing_city: z.string().optional(),
+  billing_state: z.string().optional(),
+  billing_state_code: z.string().optional(),
+  billing_pincode: z.string().optional(),
+  same_as_billing: z.boolean().default(true),
 });
 
 type CustomerForm = z.infer<typeof schema>;
@@ -32,7 +38,7 @@ const CustomersPage = () => {
   });
 
   const { register, handleSubmit, reset, setValue } = useForm<CustomerForm>({
-    defaultValues: { company_name: '', phone: '', customer_type: 'regular', contact_person: '', email: '', gstin: '' },
+    defaultValues: { company_name: '', phone: '', customer_type: 'regular', contact_person: '', email: '', gstin: '', billing_address_line1: '', billing_city: '', billing_state: '', billing_state_code: '', billing_pincode: '', same_as_billing: true },
   });
 
   const createMutation = useMutation({
@@ -79,12 +85,24 @@ const CustomersPage = () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
       setDeleteConfirm(null);
     },
+    onError: (error: unknown) => {
+      const axiosErr = error as any;
+      const detail = axiosErr.response?.data?.detail;
+      if (typeof detail === 'string') {
+        setFormError(detail);
+      } else if (detail?.message) {
+        setFormError(detail.message);
+      } else {
+        setFormError('Failed to delete customer');
+      }
+      setDeleteConfirm(null);
+    },
   });
 
   const resetForm = () => {
     setEditingItem(null);
     setFormError('');
-    reset({ company_name: '', phone: '', customer_type: 'regular', contact_person: '', email: '', gstin: '' });
+    reset({ company_name: '', phone: '', customer_type: 'regular', contact_person: '', email: '', gstin: '', billing_address_line1: '', billing_city: '', billing_state: '', billing_state_code: '', billing_pincode: '', same_as_billing: true });
   };
 
   const startEdit = (item: Customer) => {
@@ -96,6 +114,12 @@ const CustomersPage = () => {
     setValue('contact_person', item.contact_person ?? '');
     setValue('email', item.email ?? '');
     setValue('gstin', item.gstin ?? '');
+    setValue('billing_address_line1', item.billing_address_line1 ?? '');
+    setValue('billing_city', item.billing_city ?? '');
+    setValue('billing_state', item.billing_state ?? '');
+    setValue('billing_state_code', item.billing_state_code ?? '');
+    setValue('billing_pincode', item.billing_pincode ?? '');
+    setValue('same_as_billing', item.same_as_billing ?? true);
   };
 
   const onSubmit = (values: CustomerForm): void => {
@@ -114,19 +138,19 @@ const CustomersPage = () => {
       gstin: normalizeOptional(parsed.data.gstin)?.toUpperCase() ?? null,
       pan: null,
       customer_type: parsed.data.customer_type,
-      billing_address_line1: null,
+      billing_address_line1: normalizeOptional(parsed.data.billing_address_line1),
       billing_address_line2: null,
-      billing_city: null,
-      billing_state: null,
-      billing_state_code: null,
-      billing_pincode: null,
+      billing_city: normalizeOptional(parsed.data.billing_city),
+      billing_state: normalizeOptional(parsed.data.billing_state),
+      billing_state_code: normalizeOptional(parsed.data.billing_state_code),
+      billing_pincode: normalizeOptional(parsed.data.billing_pincode),
       shipping_address_line1: null,
       shipping_address_line2: null,
       shipping_city: null,
       shipping_state: null,
       shipping_state_code: null,
       shipping_pincode: null,
-      same_as_billing: true,
+      same_as_billing: parsed.data.same_as_billing ?? true,
       credit_limit: editingItem?.credit_limit ?? 0,
       payment_terms_days: editingItem?.payment_terms_days ?? 30,
       opening_balance: editingItem?.opening_balance ?? 0,
@@ -188,6 +212,39 @@ const CustomersPage = () => {
                 <option value="distributor">Distributor</option>
                 <option value="retail">Retail</option>
               </select>
+            </div>
+
+            {/* BUG-30: Address fields */}
+            <div className="pt-2 border-t border-neutral-100">
+              <p className="text-xs font-bold uppercase tracking-wider text-neutral-500 mb-2">Billing Address</p>
+            </div>
+            <div>
+              <label htmlFor="billing_address_line1" className="hms-label">Address</label>
+              <input id="billing_address_line1" className="hms-input" placeholder="Address line 1" {...register('billing_address_line1')} />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label htmlFor="billing_city" className="hms-label">City</label>
+                <input id="billing_city" className="hms-input" placeholder="City" {...register('billing_city')} />
+              </div>
+              <div>
+                <label htmlFor="billing_state" className="hms-label">State</label>
+                <input id="billing_state" className="hms-input" placeholder="State" {...register('billing_state')} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label htmlFor="billing_state_code" className="hms-label">State Code</label>
+                <input id="billing_state_code" className="hms-input" placeholder="e.g. 29" maxLength={2} {...register('billing_state_code')} />
+              </div>
+              <div>
+                <label htmlFor="billing_pincode" className="hms-label">Pincode</label>
+                <input id="billing_pincode" className="hms-input" placeholder="Pincode" {...register('billing_pincode')} />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <input id="same_as_billing" type="checkbox" className="rounded border-neutral-300" {...register('same_as_billing')} />
+              <label htmlFor="same_as_billing" className="text-sm text-neutral-600">Shipping same as billing</label>
             </div>
             {formError && <p className="text-sm text-danger" role="alert" aria-live="assertive">{formError}</p>}
             {createMutation.isSuccess && <p className="text-sm text-success" role="status" aria-live="polite">Customer created successfully</p>}

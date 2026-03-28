@@ -170,8 +170,21 @@ const PurchaseOrderPage = () => {
   };
 
   const onSubmit = async (values: POForm) => {
-    if (lineItems.length === 0) {
-      setFormError('At least one line item required');
+    // Auto-add any pending line item that hasn't been explicitly added yet
+    let finalLineItems = [...lineItems];
+    if (
+      newItem.product_id &&
+      newItem.quantity &&
+      newItem.unit_price &&
+      newItem.gst_rate !== undefined
+    ) {
+      finalLineItems = [...finalLineItems, newItem as POLineItem];
+      setLineItems(finalLineItems);
+      setNewItem({ discount_percent: 0, gst_rate: 18 });
+    }
+
+    if (finalLineItems.length === 0) {
+      setFormError('At least one line item required. Please add a product with quantity and price.');
       return;
     }
 
@@ -187,7 +200,7 @@ const PurchaseOrderPage = () => {
       expected_delivery_date: parsed.data.expected_delivery_date || undefined,
       notes: parsed.data.notes || undefined,
       status: submitMode,
-      items: lineItems.map((item) => ({
+      items: finalLineItems.map((item) => ({
         product_id: item.product_id,
         quantity: item.quantity,
         unit_price: Math.round(item.unit_price * 100),
@@ -568,7 +581,7 @@ const PurchaseOrderPage = () => {
                   <button
                     onClick={() => {
                       setShowPODetail(false);
-                      navigate('/grn?po_id=' + selectedPO.id);
+                      navigate('/purchase/grn?po_id=' + selectedPO.id);
                     }}
                     className="bg-secondary text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-secondary/90"
                   >

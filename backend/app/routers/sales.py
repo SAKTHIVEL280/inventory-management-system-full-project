@@ -1,4 +1,14 @@
-"""Sales workflow router (Quotation, SO, Invoice, Sales Return)."""
+"""Sales workflow router (Quotation, SO, Invoice, Sales Return).
+
+Production-ready with fixes for:
+- BUG-01: Materialized view refresh after stock changes
+- BUG-02: IGST auto-detection from state codes
+- BUG-05: Added convert-to-invoice endpoint
+- BUG-13: Force draft status on creation
+- BUG-14: Quotation expiry check on read
+- BUG-19: Sales return tax matches original invoice
+- BUG-25: Sales return adjusts invoice amount_due
+"""
 from datetime import date
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -8,8 +18,7 @@ from sqlalchemy import func
 from app.database import get_db
 from app.dependencies import require_permissions
 from app.models.user import User
-from app.models.company import Company
-from app.models.product import Product, StockLedger
+from app.models.product import Product
 from app.models.customer import Customer
 from app.models.sales import (
     Quotation,
@@ -29,60 +38,16 @@ from app.schemas.sales import (
     SalesInvoiceCreateRequest,
     SalesReturnCreateRequest,
 )
+from app.services.order_number_service import (
+    generate_quotation_number,
+    generate_so_number,
+    generate_invoice_number,
+    generate_sales_return_number,
+)
+from app.services.gst_service import determine_is_igst, calc_line_item, split_tax
+from app.services.stock_service import get_current_stock, add_stock_entry, refresh_materialized_view
 
 router = APIRouter(tags=["sales"])
-
-
-def _number(db: Session, entity: str) -> str:
-    company = db.query(Company).first()
-    if not company:
-        company = Company(name="My Company")
-        db.add(company)
-        db.flush()
-
-    if entity == "qtn":
-        prefix = company.qtn_prefix
-        counter = company.qtn_counter
-        company.qtn_counter = counter + 1
-    elif entity == "so":
-        prefix = company.so_prefix
-        counter = company.so_counter
-        company.so_counter = counter + 1
-    else:
-        prefix = company.invoice_prefix
-        counter = company.invoice_counter
-        company.invoice_counter = counter + 1
-
-    return f"{prefix}-{str(counter).zfill(5)}"
-
-
-def _current_stock(db: Session, product_id: UUID) -> float:
-    qty = db.query(func.coalesce(func.sum(StockLedger.quantity), 0)).filter(StockLedger.product_id == product_id).scalar()
-    return float(qty or 0)
-
-
-def _tax_split(taxable_amount: int, gst_rate: int, is_igst: bool) -> tuple[int, int, int]:
-    if is_igst:
-        return 0, 0, round(taxable_amount * gst_rate / 100)
-    cgst = round(taxable_amount * (gst_rate / 2) / 100)
-    sgst = round(taxable_amount * (gst_rate / 2) / 100)
-    return cgst, sgst, 0
-
-
-def _calc_item(quantity: float, unit_price: int, discount_percent: float, gst_rate: int, is_igst: bool) -> dict:
-    gross = round(unit_price * quantity)
-    discount = round(gross * discount_percent / 100)
-    taxable = gross - discount
-    cgst, sgst, igst = _tax_split(taxable, gst_rate, is_igst)
-    return {
-        "gross": gross,
-        "discount": discount,
-        "taxable": taxable,
-        "cgst": cgst,
-        "sgst": sgst,
-        "igst": igst,
-        "total": taxable + cgst + sgst + igst,
-    }
 
 
 def _compute_invoice_status(amount_paid: int, total_amount: int) -> str:
@@ -92,6 +57,14 @@ def _compute_invoice_status(amount_paid: int, total_amount: int) -> str:
         return "paid"
     return "partial_paid"
 
+
+def _auto_expire_quotation(q: Quotation) -> None:
+    """BUG-14: Auto-expire quotation if valid_until has passed."""
+    if q.status in {"draft", "sent"} and q.valid_until and q.valid_until < date.today():
+        q.status = "expired"
+
+
+# ────────────────────────────── Quotations ───────────────────────────────────
 
 @router.get("/api/v1/quotations")
 async def list_quotations(
@@ -106,6 +79,16 @@ async def list_quotations(
         query = query.filter(Quotation.status == status)
     total = query.count()
     rows = query.order_by(Quotation.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+
+    # BUG-14: Auto-expire on read
+    changed = False
+    for q in rows:
+        if q.status in {"draft", "sent"} and q.valid_until and q.valid_until < date.today():
+            q.status = "expired"
+            changed = True
+    if changed:
+        db.commit()
+
     return {"items": rows, "total": total, "page": page, "page_size": page_size, "has_more": (page * page_size) < total}
 
 
@@ -119,8 +102,11 @@ async def create_quotation(
     if not customer:
         raise HTTPException(status_code=400, detail="Invalid customer")
 
+    # BUG-02: Auto-detect IGST
+    is_igst = determine_is_igst(db, "customer", payload.customer_id)
+
     q = Quotation(
-        quotation_number=_number(db, "qtn"),
+        quotation_number=generate_quotation_number(db),
         customer_id=payload.customer_id,
         quotation_date=payload.quotation_date,
         valid_until=payload.valid_until,
@@ -129,16 +115,15 @@ async def create_quotation(
         ship_to_customer_id=payload.ship_to_customer_id or payload.customer_id,
         notes=payload.notes,
         terms_conditions=payload.terms_conditions,
-        status=payload.status,
+        status="draft",  # BUG-13: Always force draft
         created_by=current_user.id,
     )
     db.add(q)
     db.flush()
 
     subtotal = total_discount = total_taxable = total_cgst = total_sgst = total_igst = 0
-    is_igst = False
     for item in payload.items:
-        calc = _calc_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst)
+        calc = calc_line_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst)
         db.add(QuotationItem(
             quotation_id=q.id,
             product_id=item.product_id,
@@ -183,6 +168,9 @@ async def get_quotation(
     q = db.query(Quotation).filter(Quotation.id == quotation_id, Quotation.is_deleted == False).first()
     if not q:
         raise HTTPException(status_code=404, detail="Quotation not found")
+    # BUG-14: Auto-expire on read
+    _auto_expire_quotation(q)
+    db.commit()
     items = db.query(QuotationItem).filter(QuotationItem.quotation_id == quotation_id).all()
     return {"quotation": q, "items": items}
 
@@ -200,6 +188,9 @@ async def update_quotation(
     if q.status not in {"draft", "sent"}:
         raise HTTPException(status_code=400, detail="Quotation cannot be edited in current status")
 
+    # BUG-02: Auto-detect IGST
+    is_igst = determine_is_igst(db, "customer", payload.customer_id)
+
     q.customer_id = payload.customer_id
     q.quotation_date = payload.quotation_date
     q.valid_until = payload.valid_until
@@ -214,7 +205,7 @@ async def update_quotation(
 
     subtotal = total_discount = total_taxable = total_cgst = total_sgst = total_igst = 0
     for item in payload.items:
-        calc = _calc_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst=False)
+        calc = calc_line_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst)
         db.add(QuotationItem(
             quotation_id=q.id,
             product_id=item.product_id,
@@ -288,7 +279,7 @@ async def convert_quotation_to_so(
         raise HTTPException(status_code=400, detail="Quotation cannot be converted in current status")
 
     so = SalesOrder(
-        so_number=_number(db, "so"),
+        so_number=generate_so_number(db),
         quotation_id=q.id,
         customer_id=q.customer_id,
         order_date=date.today(),
@@ -337,6 +328,8 @@ async def convert_quotation_to_so(
     return so
 
 
+# ────────────────────────────── Sales Orders ─────────────────────────────────
+
 @router.get("/api/v1/sales-orders")
 async def list_sales_orders(
     status: str | None = Query(default=None),
@@ -363,13 +356,16 @@ async def create_sales_order(
     if not customer:
         raise HTTPException(status_code=400, detail="Invalid customer")
 
+    # BUG-02: Auto-detect IGST
+    is_igst = determine_is_igst(db, "customer", payload.customer_id)
+
     so = SalesOrder(
-        so_number=_number(db, "so"),
+        so_number=generate_so_number(db),
         quotation_id=payload.quotation_id,
         customer_id=payload.customer_id,
         order_date=payload.order_date,
         expected_delivery_date=payload.expected_delivery_date,
-        status=payload.status,
+        status="draft",  # BUG-13: Always force draft
         sold_to_customer_id=payload.sold_to_customer_id or payload.customer_id,
         bill_to_customer_id=payload.bill_to_customer_id or payload.customer_id,
         ship_to_customer_id=payload.ship_to_customer_id or payload.customer_id,
@@ -381,9 +377,8 @@ async def create_sales_order(
     db.flush()
 
     subtotal = total_discount = total_taxable = total_cgst = total_sgst = total_igst = 0
-    is_igst = False
     for item in payload.items:
-        calc = _calc_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst)
+        calc = calc_line_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst)
         db.add(SalesOrderItem(
             sales_order_id=so.id,
             product_id=item.product_id,
@@ -446,6 +441,9 @@ async def update_sales_order(
     if so.status != "draft":
         raise HTTPException(status_code=400, detail="Only draft sales order can be edited")
 
+    # BUG-02: Auto-detect IGST
+    is_igst = determine_is_igst(db, "customer", payload.customer_id)
+
     so.customer_id = payload.customer_id
     so.quotation_id = payload.quotation_id
     so.order_date = payload.order_date
@@ -461,7 +459,7 @@ async def update_sales_order(
 
     subtotal = total_discount = total_taxable = total_cgst = total_sgst = total_igst = 0
     for item in payload.items:
-        calc = _calc_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst=False)
+        calc = calc_line_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst)
         db.add(SalesOrderItem(
             sales_order_id=so.id,
             product_id=item.product_id,
@@ -513,7 +511,7 @@ async def sales_order_status(
         items = db.query(SalesOrderItem).filter(SalesOrderItem.sales_order_id == so.id).all()
         shortages = []
         for item in items:
-            stock = _current_stock(db, item.product_id)
+            stock = get_current_stock(db, item.product_id)
             if stock < float(item.quantity):
                 shortages.append({
                     "product_id": str(item.product_id),
@@ -544,6 +542,79 @@ async def sales_order_status(
     return so
 
 
+# BUG-05: NEW — Convert Sales Order to Invoice
+@router.post("/api/v1/sales-orders/{so_id}/convert-to-invoice")
+async def convert_so_to_invoice(
+    so_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("sales_invoices_write")),
+):
+    """Convert a confirmed/partial sales order to a draft invoice."""
+    so = db.query(SalesOrder).filter(SalesOrder.id == so_id, SalesOrder.is_deleted == False).first()
+    if not so:
+        raise HTTPException(status_code=404, detail="Sales order not found")
+    if so.status not in {"confirmed", "partial"}:
+        raise HTTPException(status_code=400, detail="Only confirmed or partial sales orders can be converted to invoice")
+
+    # BUG-02: Auto-detect IGST
+    is_igst = determine_is_igst(db, "customer", so.customer_id)
+
+    invoice = SalesInvoice(
+        invoice_number=generate_invoice_number(db),
+        sales_order_id=so.id,
+        quotation_id=so.quotation_id,
+        customer_id=so.customer_id,
+        invoice_date=date.today(),
+        due_date=None,
+        status="draft",
+        sold_to_customer_id=so.sold_to_customer_id,
+        bill_to_customer_id=so.bill_to_customer_id,
+        ship_to_customer_id=so.ship_to_customer_id,
+        is_igst=is_igst,
+        subtotal=so.subtotal,
+        total_discount=so.total_discount,
+        total_taxable_amount=so.total_taxable_amount,
+        total_cgst=so.total_cgst,
+        total_sgst=so.total_sgst,
+        total_igst=so.total_igst,
+        total_gst=so.total_gst,
+        total_amount=so.total_amount,
+        amount_paid=0,
+        amount_due=so.total_amount,
+        notes=so.notes,
+        terms_conditions=so.terms_conditions,
+        created_by=current_user.id,
+    )
+    db.add(invoice)
+    db.flush()
+
+    so_items = db.query(SalesOrderItem).filter(SalesOrderItem.sales_order_id == so.id).all()
+    for item in so_items:
+        product = db.query(Product).filter(Product.id == item.product_id).first()
+        db.add(SalesInvoiceItem(
+            invoice_id=invoice.id,
+            product_id=item.product_id,
+            description=item.description,
+            quantity=item.quantity,
+            unit_price=item.unit_price,
+            mrp=product.mrp if product else 0,
+            discount_percent=item.discount_percent,
+            discount_amount=item.discount_amount,
+            taxable_amount=item.taxable_amount,
+            gst_rate=item.gst_rate,
+            cgst_amount=item.cgst_amount,
+            sgst_amount=item.sgst_amount,
+            igst_amount=item.igst_amount,
+            total_amount=item.total_amount,
+        ))
+
+    db.commit()
+    db.refresh(invoice)
+    return invoice
+
+
+# ────────────────────────────── Invoices ──────────────────────────────────────
+
 @router.get("/api/v1/invoices")
 async def list_invoices(
     status: str | None = Query(default=None),
@@ -570,8 +641,14 @@ async def create_invoice(
     if not customer:
         raise HTTPException(status_code=400, detail="Invalid customer")
 
+    # BUG-02: Auto-detect IGST from state codes (override payload if customer has state code)
+    is_igst = payload.is_igst
+    auto_igst = determine_is_igst(db, "customer", payload.customer_id)
+    if customer.billing_state_code:
+        is_igst = auto_igst
+
     invoice = SalesInvoice(
-        invoice_number=_number(db, "invoice"),
+        invoice_number=generate_invoice_number(db),
         sales_order_id=payload.sales_order_id,
         quotation_id=payload.quotation_id,
         customer_id=payload.customer_id,
@@ -583,7 +660,7 @@ async def create_invoice(
         ship_to_customer_id=payload.ship_to_customer_id or payload.customer_id,
         supply_state=payload.supply_state,
         supply_state_code=payload.supply_state_code,
-        is_igst=payload.is_igst,
+        is_igst=is_igst,
         notes=payload.notes,
         terms_conditions=payload.terms_conditions,
         created_by=current_user.id,
@@ -596,7 +673,7 @@ async def create_invoice(
         product = db.query(Product).filter(Product.id == item.product_id, Product.is_deleted == False).first()
         if not product:
             raise HTTPException(status_code=400, detail="Invalid product")
-        calc = _calc_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, payload.is_igst)
+        calc = calc_line_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst)
         db.add(SalesInvoiceItem(
             invoice_id=invoice.id,
             product_id=item.product_id,
@@ -661,6 +738,12 @@ async def update_invoice(
     if invoice.status != "draft":
         raise HTTPException(status_code=400, detail="Only draft invoice can be edited")
 
+    # BUG-02: Auto-detect IGST
+    is_igst = payload.is_igst
+    customer = db.query(Customer).filter(Customer.id == payload.customer_id, Customer.is_deleted == False).first()
+    if customer and customer.billing_state_code:
+        is_igst = determine_is_igst(db, "customer", payload.customer_id)
+
     invoice.customer_id = payload.customer_id
     invoice.sales_order_id = payload.sales_order_id
     invoice.quotation_id = payload.quotation_id
@@ -671,7 +754,7 @@ async def update_invoice(
     invoice.ship_to_customer_id = payload.ship_to_customer_id or payload.customer_id
     invoice.supply_state = payload.supply_state
     invoice.supply_state_code = payload.supply_state_code
-    invoice.is_igst = payload.is_igst
+    invoice.is_igst = is_igst
     invoice.notes = payload.notes
     invoice.terms_conditions = payload.terms_conditions
 
@@ -683,7 +766,7 @@ async def update_invoice(
         product = db.query(Product).filter(Product.id == item.product_id, Product.is_deleted == False).first()
         if not product:
             raise HTTPException(status_code=400, detail="Invalid product")
-        calc = _calc_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, payload.is_igst)
+        calc = calc_line_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst)
         db.add(SalesInvoiceItem(
             invoice_id=invoice.id,
             product_id=item.product_id,
@@ -736,12 +819,14 @@ async def issue_invoice(
 
     items = db.query(SalesInvoiceItem).filter(SalesInvoiceItem.invoice_id == invoice.id).all()
     for item in items:
-        stock = _current_stock(db, item.product_id)
+        stock = get_current_stock(db, item.product_id)
         if stock < float(item.quantity):
             raise HTTPException(status_code=400, detail=f"Insufficient stock for product {item.product_id}")
 
+    # BUG-01: Use stock service for entries
     for item in items:
-        db.add(StockLedger(
+        add_stock_entry(
+            db=db,
             product_id=item.product_id,
             transaction_type="sale",
             reference_type="invoice",
@@ -751,12 +836,16 @@ async def issue_invoice(
             rate=item.unit_price,
             transaction_date=invoice.invoice_date,
             created_by=current_user.id,
-        ))
+        )
+
+    # BUG-01: Refresh materialized view
+    refresh_materialized_view(db)
 
     invoice.status = _compute_invoice_status(invoice.amount_paid, invoice.total_amount)
     invoice.amount_due = max(0, invoice.total_amount - invoice.amount_paid)
-    invoice.pdf_url = f"/invoices/{invoice.invoice_number}.pdf"
+    invoice.pdf_url = f"/api/v1/invoices/{invoice.id}/pdf"
 
+    # Update SO fulfillment status
     if invoice.sales_order_id:
         so = db.query(SalesOrder).filter(SalesOrder.id == invoice.sales_order_id, SalesOrder.is_deleted == False).first()
         if so:
@@ -788,8 +877,11 @@ async def send_invoice_email(
     invoice = db.query(SalesInvoice).filter(SalesInvoice.id == invoice_id, SalesInvoice.is_deleted == False).first()
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    return {"message": "Email queued"}
+    # TODO: Implement actual email sending via SMTP/FastAPI-Mail
+    return {"message": "Email queued (email delivery pending implementation)"}
 
+
+# ────────────────────────────── Sales Returns ────────────────────────────────
 
 @router.get("/api/v1/sales-returns")
 async def list_sales_returns(
@@ -814,8 +906,11 @@ async def create_sales_return(
     if not invoice:
         raise HTTPException(status_code=400, detail="Invalid invoice")
 
+    # BUG-19: Use the IGST flag from the original invoice
+    is_igst = invoice.is_igst
+
     ret = SalesReturn(
-        return_number=f"SR-{str(db.query(SalesReturn).count() + 1).zfill(5)}",
+        return_number=generate_sales_return_number(db),
         invoice_id=payload.invoice_id,
         customer_id=payload.customer_id,
         return_date=payload.return_date,
@@ -833,7 +928,8 @@ async def create_sales_return(
             raise HTTPException(status_code=400, detail="Return quantity exceeds invoiced quantity")
 
         taxable = round(item.unit_price * item.quantity)
-        cgst, sgst, igst = _tax_split(taxable, item.gst_rate, is_igst=False)
+        # BUG-19: Use invoice's IGST flag for consistent tax
+        cgst, sgst, igst = split_tax(taxable, item.gst_rate, is_igst)
         total = taxable + cgst + sgst + igst
         db.add(SalesReturnItem(
             sales_return_id=ret.id,
@@ -886,7 +982,9 @@ async def confirm_sales_return(
 
     items = db.query(SalesReturnItem).filter(SalesReturnItem.sales_return_id == ret.id).all()
     for item in items:
-        db.add(StockLedger(
+        # BUG-01: Use stock service with reference_id
+        add_stock_entry(
+            db=db,
             product_id=item.product_id,
             transaction_type="sale_return",
             reference_type="sales_return",
@@ -896,7 +994,19 @@ async def confirm_sales_return(
             rate=item.unit_price,
             transaction_date=ret.return_date,
             created_by=current_user.id,
-        ))
+        )
+
+    # BUG-01: Refresh materialized view
+    refresh_materialized_view(db)
+
+    # BUG-25: Adjust invoice amount_due (credit note behavior)
+    invoice = db.query(SalesInvoice).filter(SalesInvoice.id == ret.invoice_id).first()
+    if invoice:
+        invoice.amount_due = max(0, invoice.amount_due - ret.total_amount)
+        if invoice.amount_due == 0:
+            invoice.status = "paid"
+        elif invoice.amount_paid > 0:
+            invoice.status = "partial_paid"
 
     ret.status = "confirmed"
     db.commit()

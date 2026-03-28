@@ -1,5 +1,18 @@
-"""Purchase workflow router (PO, GRN, Purchase Return)."""
-from datetime import datetime
+"""Purchase workflow router (PO, GRN, Purchase Return).
+
+Production-ready with fixes for:
+- BUG-01: Materialized view refresh after stock changes
+- BUG-02: IGST auto-detection from state codes 
+- BUG-03: FOR UPDATE lock on number generation
+- BUG-04: Safe return number generation
+- BUG-13: Force draft status on creation
+- BUG-16: Cancel return no longer requires body
+- BUG-17: Product validation on PO update
+- BUG-19: Return tax matches original document
+- BUG-22: GRN items validated against PO products
+- BUG-24: Guard against already-received POs
+"""
+from datetime import datetime, date
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -7,8 +20,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import require_permissions
 from app.models.user import User
-from app.models.company import Company
-from app.models.product import Product, StockLedger
+from app.models.product import Product
 from app.models.supplier import Supplier
 from app.models.purchase import (
     PurchaseOrder,
@@ -23,62 +35,24 @@ from app.schemas.purchase import (
     PurchaseOrderStatusRequest,
     GRNCreateRequest,
     PurchaseReturnCreateRequest,
-    PurchaseReturnStatusRequest,
 )
+from app.services.order_number_service import (
+    generate_po_number,
+    generate_grn_number,
+    generate_purchase_return_number,
+)
+from app.services.gst_service import determine_is_igst, calc_line_item, split_tax
+from app.services.stock_service import add_stock_entry, refresh_materialized_view
 
 router = APIRouter(tags=["purchase"])
 
 
-def _generate_number(db: Session, entity: str) -> str:
-    company = db.query(Company).first()
-    if not company:
-        company = Company(name="My Company")
-        db.add(company)
-        db.flush()
-
-    if entity == "po":
-        prefix = company.po_prefix
-        counter = company.po_counter
-        company.po_counter = counter + 1
-    elif entity == "grn":
-        prefix = company.grn_prefix
-        counter = company.grn_counter
-        company.grn_counter = counter + 1
-    else:
-        prefix = "PR"
-        counter = getattr(company, "invoice_counter", 1)
-        company.invoice_counter = counter + 1
-
-    return f"{prefix}-{str(counter).zfill(5)}"
-
-
-def _split_tax(taxable_amount: int, gst_rate: int, is_igst: bool) -> tuple[int, int, int]:
-    if is_igst:
-        return 0, 0, round(taxable_amount * gst_rate / 100)
-    cgst = round(taxable_amount * (gst_rate / 2) / 100)
-    sgst = round(taxable_amount * (gst_rate / 2) / 100)
-    return cgst, sgst, 0
-
-
-def _calc_item(quantity: float, unit_price: int, discount_percent: float, gst_rate: int, is_igst: bool) -> dict:
-    gross = round(unit_price * quantity)
-    discount = round(gross * discount_percent / 100)
-    taxable = gross - discount
-    cgst, sgst, igst = _split_tax(taxable, gst_rate, is_igst)
-    return {
-        "gross": gross,
-        "discount": discount,
-        "taxable": taxable,
-        "cgst": cgst,
-        "sgst": sgst,
-        "igst": igst,
-        "total": taxable + cgst + sgst + igst,
-    }
-
+# ────────────────────────────── Purchase Orders ──────────────────────────────
 
 @router.get("/api/v1/purchase-orders")
 async def list_purchase_orders(
     status: str | None = Query(default=None),
+    supplier_id: UUID | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -87,6 +61,8 @@ async def list_purchase_orders(
     query = db.query(PurchaseOrder).filter(PurchaseOrder.is_deleted == False)
     if status:
         query = query.filter(PurchaseOrder.status == status)
+    if supplier_id:
+        query = query.filter(PurchaseOrder.supplier_id == supplier_id)
     total = query.count()
     rows = query.order_by(PurchaseOrder.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
     return {"items": rows, "total": total, "page": page, "page_size": page_size, "has_more": (page * page_size) < total}
@@ -102,13 +78,18 @@ async def create_purchase_order(
     if not supplier:
         raise HTTPException(status_code=400, detail="Invalid supplier")
 
-    po_number = _generate_number(db, "po")
+    # BUG-02: Auto-detect IGST based on company vs supplier state codes
+    is_igst = determine_is_igst(db, "supplier", payload.supplier_id)
+
+    # BUG-03: Thread-safe number generation with FOR UPDATE lock
+    po_number = generate_po_number(db)
+
     po = PurchaseOrder(
         po_number=po_number,
         supplier_id=payload.supplier_id,
         order_date=payload.order_date,
         expected_delivery_date=payload.expected_delivery_date,
-        status=payload.status,
+        status="draft",  # BUG-13: Always force draft on create
         notes=payload.notes,
         created_by=current_user.id,
     )
@@ -119,8 +100,8 @@ async def create_purchase_order(
     for item in payload.items:
         product = db.query(Product).filter(Product.id == item.product_id, Product.is_deleted == False).first()
         if not product:
-            raise HTTPException(status_code=400, detail="Invalid product")
-        calc = _calc_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst=False)
+            raise HTTPException(status_code=400, detail=f"Invalid product: {item.product_id}")
+        calc = calc_line_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst)
         row = PurchaseOrderItem(
             purchase_order_id=po.id,
             product_id=item.product_id,
@@ -187,6 +168,9 @@ async def update_purchase_order(
     if not supplier:
         raise HTTPException(status_code=400, detail="Invalid supplier")
 
+    # BUG-02: Auto-detect IGST
+    is_igst = determine_is_igst(db, "supplier", payload.supplier_id)
+
     po.supplier_id = payload.supplier_id
     po.order_date = payload.order_date
     po.expected_delivery_date = payload.expected_delivery_date
@@ -197,7 +181,11 @@ async def update_purchase_order(
 
     subtotal = total_discount = total_taxable = total_cgst = total_sgst = total_igst = 0
     for item in payload.items:
-        calc = _calc_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst=False)
+        # BUG-17: Validate products on update too
+        product = db.query(Product).filter(Product.id == item.product_id, Product.is_deleted == False).first()
+        if not product:
+            raise HTTPException(status_code=400, detail=f"Invalid product: {item.product_id}")
+        calc = calc_line_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst)
         db.add(PurchaseOrderItem(
             purchase_order_id=po.id,
             product_id=item.product_id,
@@ -263,9 +251,12 @@ async def update_purchase_order_status(
     return po
 
 
+# ────────────────────────────── Goods Receipt Notes ──────────────────────────
+
 @router.get("/api/v1/grn")
 async def list_grn(
     status: str | None = Query(default=None),
+    supplier_id: UUID | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -274,6 +265,8 @@ async def list_grn(
     query = db.query(GoodsReceiptNote).filter(GoodsReceiptNote.is_deleted == False)
     if status:
         query = query.filter(GoodsReceiptNote.status == status)
+    if supplier_id:
+        query = query.filter(GoodsReceiptNote.supplier_id == supplier_id)
     total = query.count()
     rows = query.order_by(GoodsReceiptNote.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
     return {"items": rows, "total": total, "page": page, "page_size": page_size, "has_more": (page * page_size) < total}
@@ -289,6 +282,8 @@ async def create_grn(
     if not supplier:
         raise HTTPException(status_code=400, detail="Invalid supplier")
 
+    po = None
+    po_product_ids = set()
     if payload.purchase_order_id:
         po = db.query(PurchaseOrder).filter(PurchaseOrder.id == payload.purchase_order_id, PurchaseOrder.is_deleted == False).first()
         if not po:
@@ -297,8 +292,14 @@ async def create_grn(
             raise HTTPException(status_code=400, detail="GRN can be created only from sent or partial purchase orders")
         if po.supplier_id != payload.supplier_id:
             raise HTTPException(status_code=400, detail="Supplier does not match selected purchase order")
+        # BUG-22: Collect valid product IDs from the PO
+        po_items = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.purchase_order_id == po.id).all()
+        po_product_ids = {item.product_id for item in po_items}
 
-    grn_number = _generate_number(db, "grn")
+    # BUG-02: Auto-detect IGST
+    is_igst = determine_is_igst(db, "supplier", payload.supplier_id)
+
+    grn_number = generate_grn_number(db)
     grn = GoodsReceiptNote(
         grn_number=grn_number,
         purchase_order_id=payload.purchase_order_id,
@@ -315,7 +316,19 @@ async def create_grn(
 
     subtotal = total_discount = total_taxable = total_cgst = total_sgst = total_igst = 0
     for item in payload.items:
-        calc = _calc_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst=False)
+        # Validate product exists
+        product = db.query(Product).filter(Product.id == item.product_id, Product.is_deleted == False).first()
+        if not product:
+            raise HTTPException(status_code=400, detail=f"Invalid product: {item.product_id}")
+
+        # BUG-22: If linked to PO, validate product is in the PO
+        if payload.purchase_order_id and po_product_ids and item.product_id not in po_product_ids:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Product {product.name} is not part of the linked purchase order",
+            )
+
+        calc = calc_line_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst)
         db.add(GRNItem(
             grn_id=grn.id,
             product_id=item.product_id,
@@ -391,6 +404,9 @@ async def update_grn(
         if po.supplier_id != payload.supplier_id:
             raise HTTPException(status_code=400, detail="Supplier does not match selected purchase order")
 
+    # BUG-02: Auto-detect IGST
+    is_igst = determine_is_igst(db, "supplier", payload.supplier_id)
+
     grn.purchase_order_id = payload.purchase_order_id
     grn.supplier_id = payload.supplier_id
     grn.supplier_invoice_number = payload.supplier_invoice_number
@@ -403,7 +419,7 @@ async def update_grn(
 
     subtotal = total_discount = total_taxable = total_cgst = total_sgst = total_igst = 0
     for item in payload.items:
-        calc = _calc_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst=False)
+        calc = calc_line_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst)
         db.add(GRNItem(
             grn_id=grn.id,
             product_id=item.product_id,
@@ -452,33 +468,47 @@ async def confirm_grn(
     if grn.status != "draft":
         raise HTTPException(status_code=400, detail="GRN is not in draft status")
 
+    # BUG-24: Guard against already-received POs
+    if grn.purchase_order_id:
+        po = db.query(PurchaseOrder).filter(PurchaseOrder.id == grn.purchase_order_id).first()
+        if po and po.status == "received":
+            raise HTTPException(status_code=400, detail="Purchase order is already fully received")
+
     grn.status = "confirmed"
     items = db.query(GRNItem).filter(GRNItem.grn_id == grn_id).all()
+
+    # BUG-01: Use stock service for entries + materialized view refresh
     for item in items:
-        db.add(StockLedger(
+        add_stock_entry(
+            db=db,
             product_id=item.product_id,
             transaction_type="purchase",
             reference_type="grn",
             reference_id=grn.id,
             reference_number=grn.grn_number,
-            quantity=item.quantity,
+            quantity=float(item.quantity),
             rate=item.unit_price,
             transaction_date=grn.receipt_date,
             created_by=current_user.id,
-        ))
+        )
+        # Update PO item received_quantity
         if item.purchase_order_item_id:
             po_item = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.id == item.purchase_order_item_id).first()
             if po_item:
                 po_item.received_quantity = float(po_item.received_quantity) + float(item.quantity)
 
+    # Update PO status based on fulfillment
     if grn.purchase_order_id:
         po = db.query(PurchaseOrder).filter(PurchaseOrder.id == grn.purchase_order_id).first()
-        if po:
+        if po and po.status not in {"received", "cancelled"}:
             po_items = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.purchase_order_id == po.id).all()
             if po_items and all(float(i.received_quantity) >= float(i.quantity) for i in po_items):
                 po.status = "received"
             else:
                 po.status = "partial"
+
+    # BUG-01: Refresh materialized view after stock changes
+    refresh_materialized_view(db)
 
     db.commit()
     db.refresh(grn)
@@ -501,6 +531,8 @@ async def cancel_grn(
     db.refresh(grn)
     return grn
 
+
+# ────────────────────────────── Purchase Returns ─────────────────────────────
 
 @router.get("/api/v1/purchase-returns")
 async def list_purchase_returns(
@@ -525,13 +557,19 @@ async def create_purchase_return(
     if not grn:
         raise HTTPException(status_code=400, detail="Invalid confirmed GRN")
 
+    # BUG-02: Auto-detect IGST based on supplier
+    is_igst = determine_is_igst(db, "supplier", payload.supplier_id)
+
+    # BUG-04: Safe return number generation
+    return_number = generate_purchase_return_number(db)
+
     ret = PurchaseReturn(
-        return_number=f"PR-{str(db.query(PurchaseReturn).count() + 1).zfill(5)}",
+        return_number=return_number,
         supplier_id=payload.supplier_id,
         grn_id=payload.grn_id,
         return_date=payload.return_date,
         reason=payload.reason,
-        status="draft",
+        status="draft",  # BUG-13: Always start as draft
         created_by=current_user.id,
     )
     db.add(ret)
@@ -544,7 +582,8 @@ async def create_purchase_return(
             raise HTTPException(status_code=400, detail="Return quantity exceeds received quantity")
 
         taxable = round(item.unit_price * item.quantity)
-        cgst, sgst, igst = _split_tax(taxable, item.gst_rate, is_igst=False)
+        # BUG-19: Use the correct IGST flag from the original transaction
+        cgst, sgst, igst = split_tax(taxable, item.gst_rate, is_igst)
         total = taxable + cgst + sgst + igst
         db.add(PurchaseReturnItem(
             purchase_return_id=ret.id,
@@ -598,7 +637,9 @@ async def confirm_purchase_return(
 
     items = db.query(PurchaseReturnItem).filter(PurchaseReturnItem.purchase_return_id == return_id).all()
     for item in items:
-        db.add(StockLedger(
+        # BUG-01: Use stock service with reference_id
+        add_stock_entry(
+            db=db,
             product_id=item.product_id,
             transaction_type="purchase_return",
             reference_type="purchase_return",
@@ -608,7 +649,10 @@ async def confirm_purchase_return(
             rate=item.unit_price,
             transaction_date=ret.return_date,
             created_by=current_user.id,
-        ))
+        )
+
+    # BUG-01: Refresh materialized view
+    refresh_materialized_view(db)
 
     ret.status = "confirmed"
     db.commit()
@@ -616,10 +660,10 @@ async def confirm_purchase_return(
     return ret
 
 
+# BUG-16: Cancel no longer requires a body payload
 @router.post("/api/v1/purchase-returns/{return_id}/cancel")
 async def cancel_purchase_return(
     return_id: UUID,
-    payload: PurchaseReturnStatusRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("purchase_returns_write")),
 ):

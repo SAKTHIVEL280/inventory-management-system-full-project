@@ -1,7 +1,7 @@
 import { apiClient } from './client';
 import { Product, ProductCategory, UnitOfMeasure, PaginatedResponse } from '../types';
 
-type CreateProductPayload = {
+export type CreateProductPayload = {
   product_code?: string | null;
   sku?: string | null;
   name: string;
@@ -60,7 +60,7 @@ export const productsApi = {
     return response.data;
   },
 
-  update: async (id: string, payload: Partial<CreateProductPayload>): Promise<Product> => {
+  update: async (id: string, payload: CreateProductPayload): Promise<Product> => {
     const response = await apiClient.put<Product>(`/api/v1/products/${id}`, payload);
     return response.data;
   },

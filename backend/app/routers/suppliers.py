@@ -32,18 +32,21 @@ def _apply_gstin_state_code(payload: SupplierCreateRequest | SupplierUpdateReque
 
 
 def _supplier_balance(db: Session, supplier_id: UUID) -> SupplierBalanceResponse:
+    """Calculate supplier balance from confirmed GRNs and cleared payments."""
     try:
         purchased = db.execute(
             text(
                 "SELECT COALESCE(SUM(total_amount), 0) FROM goods_receipt_notes "
-                "WHERE supplier_id = :supplier_id AND is_deleted = FALSE"
+                "WHERE supplier_id = :supplier_id AND is_deleted = FALSE "
+                "AND status = 'confirmed'"
             ),
             {"supplier_id": str(supplier_id)},
         ).scalar_one()
         paid = db.execute(
             text(
                 "SELECT COALESCE(SUM(amount), 0) FROM payments "
-                "WHERE supplier_id = :supplier_id AND payment_type = 'payment' AND is_deleted = FALSE"
+                "WHERE supplier_id = :supplier_id AND payment_type = 'payment' "
+                "AND status = 'cleared' AND is_deleted = FALSE"
             ),
             {"supplier_id": str(supplier_id)},
         ).scalar_one()
@@ -193,10 +196,59 @@ async def supplier_ledger(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("suppliers_read")),
 ):
+    """BUG-41 fix: Return actual transaction history for the supplier."""
     supplier = db.query(Supplier).filter(Supplier.id == supplier_id, Supplier.is_deleted == False).first()
     if not supplier:
         raise HTTPException(status_code=404, detail="Supplier not found")
-    return {"items": []}
+
+    # Fetch confirmed GRNs
+    try:
+        grns = db.execute(
+            text(
+                "SELECT id, grn_number AS reference, receipt_date AS date, "
+                "'grn' AS type, total_amount AS debit, 0 AS credit, status "
+                "FROM goods_receipt_notes WHERE supplier_id = :sid AND is_deleted = FALSE "
+                "AND status = 'confirmed' "
+                "ORDER BY receipt_date DESC"
+            ),
+            {"sid": str(supplier_id)},
+        ).mappings().all()
+    except SQLAlchemyError:
+        grns = []
+
+    # Fetch cleared payments
+    try:
+        payments = db.execute(
+            text(
+                "SELECT id, payment_number AS reference, payment_date AS date, "
+                "'payment' AS type, 0 AS debit, amount AS credit, status "
+                "FROM payments WHERE supplier_id = :sid AND payment_type = 'payment' "
+                "AND status = 'cleared' AND is_deleted = FALSE "
+                "ORDER BY payment_date DESC"
+            ),
+            {"sid": str(supplier_id)},
+        ).mappings().all()
+    except SQLAlchemyError:
+        payments = []
+
+    # Fetch confirmed purchase returns
+    try:
+        returns = db.execute(
+            text(
+                "SELECT id, return_number AS reference, return_date AS date, "
+                "'purchase_return' AS type, 0 AS debit, total_amount AS credit, status "
+                "FROM purchase_returns WHERE supplier_id = :sid AND is_deleted = FALSE "
+                "AND status = 'confirmed' "
+                "ORDER BY return_date DESC"
+            ),
+            {"sid": str(supplier_id)},
+        ).mappings().all()
+    except SQLAlchemyError:
+        returns = []
+
+    items = [dict(row) for row in list(grns) + list(payments) + list(returns)]
+    items.sort(key=lambda x: str(x.get("date", "")), reverse=True)
+    return {"items": items}
 
 
 @router.get("/{supplier_id}/balance", response_model=SupplierBalanceResponse)

@@ -246,6 +246,11 @@ async def update_product(
     if not primary_uom:
         raise HTTPException(status_code=400, detail="Invalid uom_id")
 
+    if payload.alt_uom_id:
+        alternate_uom = db.query(UnitOfMeasure).filter(UnitOfMeasure.id == payload.alt_uom_id, UnitOfMeasure.is_active == True).first()
+        if not alternate_uom:
+            raise HTTPException(status_code=400, detail="Invalid alt_uom_id")
+
     if payload.sku:
         duplicate_sku = (
             db.query(Product)
@@ -255,7 +260,8 @@ async def update_product(
         if duplicate_sku:
             raise HTTPException(status_code=400, detail="SKU already exists")
 
-    for field, value in payload.model_dump(exclude={"product_code"}).items():
+    update_data = payload.model_dump(exclude={"product_code"})
+    for field, value in update_data.items():
         setattr(product, field, value)
 
     db.commit()
@@ -277,7 +283,7 @@ async def delete_product(
     if stock > 0:
         raise HTTPException(
             status_code=400,
-            detail="Cannot delete product with existing stock.",
+            detail=f"Cannot delete product '{product.name}' with existing stock ({stock} units). Please adjust stock to zero before deleting.",
         )
 
     product.is_deleted = True

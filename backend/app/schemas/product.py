@@ -89,3 +89,24 @@ class ProductsListResponse(BaseModel):
     page: int
     page_size: int
     has_more: bool
+
+
+class StockAdjustmentRequest(BaseModel):
+    product_id: UUID
+    quantity: float  # Positive for add, negative for remove
+    notes: Optional[str] = None
+
+
+class StockLedgerResponse(BaseModel):
+    id: str
+    product_id: str
+    transaction_type: str
+    reference_type: Optional[str] = None
+    reference_number: Optional[str] = None
+    quantity: float
+    rate: float
+    transaction_date: str
+    notes: Optional[str] = None
+
+    class Config:
+        from_attributes = True

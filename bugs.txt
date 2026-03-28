@@ -357,3 +357,39 @@ PHASE 1: Initial Setup & Authentication
   [ ] All reports (Stock, Sales, GST, Outstanding)
   [ ] Role-based sidebar visibility
   [ ] Permission-based button visibility
+
+
+
+
+new updates
+
+
+Supplier section
+  place of the supplier (ex: company in one state but delivery the product from the another state)
+  make this to input the details by user.
+
+Product section and stock section
+  add the safty stock (currently it as the low stock) option and the out of stock section (currently it as the min stock)
+  archieve option before delete the product .also add these type of actions in active,inactive,block,deltion
+
+Purchase order
+  currency type
+  exchange rate
+  line items (multiple items able to add for a single po)
+  edit option
+
+new sales 
+  currency type
+  action: delivery,open and close
+
+new invoice
+  sales order number need to Add
+
+reveivables
+  instead of the payment number use the customer number or invoice number
+
+Payables
+  instead of payment use PO number
+
+
+if the use enter the wrong password for 5 time ,block that user for 5 min and the count for the each wrong time should show at the time of login.

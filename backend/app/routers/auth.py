@@ -119,21 +119,17 @@ async def refresh(
     )
 
 
-@router.get("/me", response_model=TokenResponse)
+@router.get("/me")
 async def get_me(
     current_user: User = Depends(get_current_user),
 ):
     """
     Get current authenticated user.
     
-    Used to refresh user state on frontend (e.g., after permission overrides change).
+    BUG-11 fix: Returns just the user object with effective_access,
+    not wrapped in TokenResponse with empty tokens.
     """
-    # Create dummy tokens for response format (frontend only needs user)
-    return TokenResponse(
-        access_token="",
-        refresh_token="",
-        user=get_user_response(current_user),
-    )
+    return get_user_response(current_user)
 
 
 @router.post("/logout")

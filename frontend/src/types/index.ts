@@ -195,6 +195,18 @@ export interface Product {
   low_stock?: boolean;
 }
 
+export interface StockLedger {
+  id: string;
+  product_id: string;
+  transaction_type: string;
+  reference_type?: string | null;
+  reference_number?: string | null;
+  quantity: number;
+  rate: number;
+  transaction_date: string;
+  notes?: string | null;
+}
+
 // ============================================================================
 // API Response Types
 // ============================================================================

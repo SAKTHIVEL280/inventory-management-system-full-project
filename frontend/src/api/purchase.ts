@@ -112,6 +112,28 @@ export interface GoodsReceiptNote {
   created_at: string;
 }
 
+export interface GRNDetail {
+  grn: GoodsReceiptNote;
+  items: GRNItemResponse[];
+}
+
+export interface GRNItemResponse {
+  id: string;
+  grn_id: string;
+  product_id: string;
+  purchase_order_item_id?: string;
+  quantity: number;
+  unit_price: number;
+  discount_percent: number;
+  discount_amount: number;
+  taxable_amount: number;
+  gst_rate: number;
+  cgst_amount: number;
+  sgst_amount: number;
+  igst_amount: number;
+  total_amount: number;
+}
+
 export interface PurchaseReturn {
   id: string;
   return_number: string;
@@ -160,7 +182,7 @@ class PurchaseApiClient {
   }
 
   async getGRN(id: string) {
-    return apiClient.get<GoodsReceiptNote>(`/api/v1/grn/${id}`);
+    return apiClient.get<GRNDetail>(`/api/v1/grn/${id}`);
   }
 
   async createGRN(payload: CreateGRNPayload) {

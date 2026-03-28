@@ -247,6 +247,11 @@ class SalesApiClient {
     return apiClient.patch<SalesOrder>(`/api/v1/sales-orders/${id}/status`, { status });
   }
 
+  // BUG-05: Convert Sales Order to Invoice
+  async convertSOToInvoice(soId: string) {
+    return apiClient.post<SalesInvoice>(`/api/v1/sales-orders/${soId}/convert-to-invoice`, {});
+  }
+
   // ========== Sales Invoices ==========
 
   async listInvoices(status?: string, page = 1, page_size = 20) {

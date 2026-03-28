@@ -2,7 +2,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.routers import auth, company, users, customers, suppliers, products, purchase, sales, payments, reports
+from app.routers import auth, company, users, customers, suppliers, products, purchase, sales, payments, reports, stock
 
 app = FastAPI(
     title="Inventory Management System",
@@ -41,6 +41,7 @@ app.include_router(purchase.router)
 app.include_router(sales.router)
 app.include_router(payments.router)
 app.include_router(reports.router)
+app.include_router(stock.router)
 
 
 @app.get("/health")

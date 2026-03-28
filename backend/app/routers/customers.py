@@ -44,24 +44,30 @@ def _normalize_shipping(payload: CustomerCreateRequest | CustomerUpdateRequest) 
 
 
 def _customer_balance(db: Session, customer_id: UUID) -> CustomerBalanceResponse:
-    # Workflow-02 defines this from sales_invoices and payments tables.
-    # If those workflow tables are not deployed yet, safely return 0 values.
+    """Calculate customer balance from issued invoices and cleared payments.
+    
+    BUG-09 fix: Only count payments with status='cleared' (not bounced/cancelled).
+    BUG-21 fix: Explicit try/except with logging note.
+    """
     try:
         invoiced = db.execute(
             text(
                 "SELECT COALESCE(SUM(total_amount), 0) FROM sales_invoices "
-                "WHERE customer_id = :customer_id AND is_deleted = FALSE"
+                "WHERE customer_id = :customer_id AND is_deleted = FALSE "
+                "AND status NOT IN ('draft', 'cancelled')"
             ),
             {"customer_id": str(customer_id)},
         ).scalar_one()
         paid = db.execute(
             text(
                 "SELECT COALESCE(SUM(amount), 0) FROM payments "
-                "WHERE customer_id = :customer_id AND payment_type = 'receipt' AND is_deleted = FALSE"
+                "WHERE customer_id = :customer_id AND payment_type = 'receipt' "
+                "AND status = 'cleared' AND is_deleted = FALSE"
             ),
             {"customer_id": str(customer_id)},
         ).scalar_one()
     except SQLAlchemyError:
+        # Tables may not exist yet during initial setup
         invoiced = 0
         paid = 0
 
@@ -216,10 +222,59 @@ async def customer_ledger(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("customers_read")),
 ):
+    """BUG-10 fix: Return actual transaction history for the customer."""
     customer = db.query(Customer).filter(Customer.id == customer_id, Customer.is_deleted == False).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
-    return {"items": []}
+
+    # Fetch invoices
+    try:
+        invoices = db.execute(
+            text(
+                "SELECT id, invoice_number AS reference, invoice_date AS date, "
+                "'invoice' AS type, total_amount AS debit, 0 AS credit, status "
+                "FROM sales_invoices WHERE customer_id = :cid AND is_deleted = FALSE "
+                "AND status NOT IN ('draft', 'cancelled') "
+                "ORDER BY invoice_date DESC"
+            ),
+            {"cid": str(customer_id)},
+        ).mappings().all()
+    except SQLAlchemyError:
+        invoices = []
+
+    # Fetch receipts (cleared payments)
+    try:
+        receipts = db.execute(
+            text(
+                "SELECT id, payment_number AS reference, payment_date AS date, "
+                "'receipt' AS type, 0 AS debit, amount AS credit, status "
+                "FROM payments WHERE customer_id = :cid AND payment_type = 'receipt' "
+                "AND status = 'cleared' AND is_deleted = FALSE "
+                "ORDER BY payment_date DESC"
+            ),
+            {"cid": str(customer_id)},
+        ).mappings().all()
+    except SQLAlchemyError:
+        receipts = []
+
+    # Fetch sales returns (confirmed)
+    try:
+        returns = db.execute(
+            text(
+                "SELECT id, return_number AS reference, return_date AS date, "
+                "'sales_return' AS type, 0 AS debit, total_amount AS credit, status "
+                "FROM sales_returns WHERE customer_id = :cid AND is_deleted = FALSE "
+                "AND status = 'confirmed' "
+                "ORDER BY return_date DESC"
+            ),
+            {"cid": str(customer_id)},
+        ).mappings().all()
+    except SQLAlchemyError:
+        returns = []
+
+    items = [dict(row) for row in list(invoices) + list(receipts) + list(returns)]
+    items.sort(key=lambda x: str(x.get("date", "")), reverse=True)
+    return {"items": items}
 
 
 @router.get("/{customer_id}/balance", response_model=CustomerBalanceResponse)

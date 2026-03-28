@@ -68,125 +68,152 @@ function App() {
           }
         />
 
+        {/* ── Masters ─────────────────────────────────────── */}
         <Route
-          path="/company"
+          path="/masters/company"
           element={
             <ProtectedRoute requiredPermission={PERMISSION_SCOPES.COMPANY_READ}>
               <CompanyPage />
             </ProtectedRoute>
           }
         />
+        <Route path="/company" element={<Navigate to="/masters/company" replace />} />
 
         <Route
-          path="/users"
+          path="/masters/users"
           element={
             <ProtectedRoute requiredPermission={PERMISSION_SCOPES.USERS_READ}>
               <UsersPage />
             </ProtectedRoute>
           }
         />
+        <Route path="/users" element={<Navigate to="/masters/users" replace />} />
 
         <Route
-          path="/customers"
+          path="/masters/customers"
           element={
             <ProtectedRoute requiredPermission={PERMISSION_SCOPES.CUSTOMERS_READ}>
               <CustomersPage />
             </ProtectedRoute>
           }
         />
+        <Route path="/customers" element={<Navigate to="/masters/customers" replace />} />
 
         <Route
-          path="/suppliers"
+          path="/masters/suppliers"
           element={
             <ProtectedRoute requiredPermission={PERMISSION_SCOPES.SUPPLIERS_READ}>
               <SuppliersPage />
             </ProtectedRoute>
           }
         />
+        <Route path="/suppliers" element={<Navigate to="/masters/suppliers" replace />} />
 
         <Route
-          path="/products"
+          path="/masters/products"
           element={
             <ProtectedRoute requiredPermission={PERMISSION_SCOPES.PRODUCTS_READ}>
               <ProductsPage />
             </ProtectedRoute>
           }
         />
+        <Route path="/products" element={<Navigate to="/masters/products" replace />} />
 
+        {/* ── Purchase ────────────────────────────────────── */}
         <Route
-          path="/purchase-orders"
+          path="/purchase/orders"
           element={
             <ProtectedRoute requiredPermission={PERMISSION_SCOPES.PURCHASE_ORDERS_READ}>
               <PurchaseOrderPage />
             </ProtectedRoute>
           }
         />
+        <Route path="/purchase-orders" element={<Navigate to="/purchase/orders" replace />} />
 
         <Route
-          path="/quotations"
-          element={
-            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.QUOTATIONS_READ}>
-              <QuotationsPage />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/sales-orders"
-          element={
-            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.SALES_ORDERS_READ}>
-              <SalesOrdersPage />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/invoices"
-          element={
-            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.SALES_INVOICES_READ}>
-              <InvoicesPage />
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/grn"
+          path="/purchase/grn"
           element={
             <ProtectedRoute requiredPermission={PERMISSION_SCOPES.GRN_READ}>
               <GRNPage />
             </ProtectedRoute>
           }
         />
+        <Route path="/grn" element={<Navigate to="/purchase/grn" replace />} />
+
+        {/* ── Sales ───────────────────────────────────────── */}
+        <Route
+          path="/sales/quotations"
+          element={
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.QUOTATIONS_READ}>
+              <QuotationsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/quotations" element={<Navigate to="/sales/quotations" replace />} />
 
         <Route
-          path="/stock"
+          path="/sales/orders"
+          element={
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.SALES_ORDERS_READ}>
+              <SalesOrdersPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/sales-orders" element={<Navigate to="/sales/orders" replace />} />
+
+        <Route
+          path="/sales/invoices"
+          element={
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.SALES_INVOICES_READ}>
+              <InvoicesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/invoices" element={<Navigate to="/sales/invoices" replace />} />
+
+        {/* ── Inventory ───────────────────────────────────── */}
+        <Route
+          path="/inventory/stock"
           element={
             <ProtectedRoute requiredPermission={PERMISSION_SCOPES.STOCK_LEDGER_READ}>
               <StockPage />
             </ProtectedRoute>
           }
         />
+        <Route path="/stock" element={<Navigate to="/inventory/stock" replace />} />
 
+        {/* ── Payments ────────────────────────────────────── */}
         <Route
-          path="/receivables"
+          path="/payments/receivables"
           element={
             <ProtectedRoute requiredPermission={PERMISSION_SCOPES.RECEIPTS_READ}>
               <ReceivablesPage />
             </ProtectedRoute>
           }
         />
+        <Route path="/receivables" element={<Navigate to="/payments/receivables" replace />} />
 
         <Route
-          path="/payables"
+          path="/payments/payables"
           element={
             <ProtectedRoute requiredPermission={PERMISSION_SCOPES.PAYMENTS_READ}>
               <PayablesPage />
             </ProtectedRoute>
           }
         />
+        <Route path="/payables" element={<Navigate to="/payments/payables" replace />} />
 
+        {/* ── Reports ─────────────────────────────────────── */}
         <Route
           path="/reports"
+          element={
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.REPORTS_READ}>
+              <ReportsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/reports/:reportType"
           element={
             <ProtectedRoute requiredPermission={PERMISSION_SCOPES.REPORTS_READ}>
               <ReportsPage />
