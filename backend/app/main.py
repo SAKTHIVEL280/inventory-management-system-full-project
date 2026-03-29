@@ -1,10 +1,14 @@
 """Main FastAPI application."""
-from fastapi import FastAPI
+import logging
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from app.config import settings
 from app.routers import auth, company, users, customers, suppliers, products, purchase, sales, payments, reports, stock
 from fastapi.staticfiles import StaticFiles
 import os
+
+logger = logging.getLogger(__name__)
 
 # Create static directory if it doesn't exist
 os.makedirs("static", exist_ok=True)
@@ -55,6 +59,41 @@ app.include_router(payments.router)
 app.include_router(reports.router)
 app.include_router(stock.router)
 
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled server error on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Internal server error",
+            "path": request.url.path,
+        },
+    )
+
+
+from fastapi.openapi.utils import get_openapi
+
+def custom_openapi():
+    # Force fresh generation by not checking app.openapi_schema first
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    # Force page_size limit to 500 in all endpoints
+    for path in openapi_schema["paths"].values():
+        for method in path.values():
+            if "parameters" in method:
+                for param in method["parameters"]:
+                    if param["name"] == "page_size" and "schema" in param:
+                        param["schema"]["maximum"] = 500
+                        print(f"DEBUG: Forced 500 for {param['name']} in {method.get('summary', 'unknown')}")
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
 
 @app.get("/health")
 async def health_check():

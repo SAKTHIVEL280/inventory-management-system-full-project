@@ -1,8 +1,8 @@
 """Sales workflow schemas."""
-from datetime import date
+from datetime import date, datetime
 from typing import List, Optional
 from uuid import UUID
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class SalesLineItemRequest(BaseModel):
@@ -31,6 +31,36 @@ class QuotationStatusRequest(BaseModel):
     status: str
 
 
+class QuotationResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: UUID
+    quotation_number: str
+    customer_id: UUID
+    quotation_date: Optional[date]
+    valid_until: Optional[date]
+    status: str
+    subtotal: int
+    total_discount: int
+    total_taxable_amount: int
+    total_cgst: int
+    total_sgst: int
+    total_igst: int
+    total_gst: int
+    total_amount: int
+    notes: Optional[str]
+    terms_conditions: Optional[str]
+    created_at: Optional[datetime]
+
+
+class QuotationsListResponse(BaseModel):
+    items: List[QuotationResponse]
+    total: int
+    page: int
+    page_size: int
+    has_more: bool
+
+
 class SalesOrderCreateRequest(BaseModel):
     customer_id: UUID
     quotation_id: Optional[UUID] = None
@@ -51,6 +81,28 @@ class SalesOrderStatusRequest(BaseModel):
     status: str
 
 
+class SalesOrderResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: UUID
+    so_number: str
+    quotation_id: Optional[UUID]
+    customer_id: UUID
+    order_date: Optional[date]
+    expected_delivery_date: Optional[date]
+    status: str
+    total_amount: int
+    created_at: Optional[datetime]
+
+
+class SalesOrdersListResponse(BaseModel):
+    items: List[SalesOrderResponse]
+    total: int
+    page: int
+    page_size: int
+    has_more: bool
+
+
 class SalesInvoiceCreateRequest(BaseModel):
     customer_id: UUID
     sales_order_id: Optional[UUID] = None
@@ -66,6 +118,29 @@ class SalesInvoiceCreateRequest(BaseModel):
     notes: Optional[str] = None
     terms_conditions: Optional[str] = None
     items: List[SalesLineItemRequest]
+
+
+class SalesInvoiceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: UUID
+    invoice_number: str
+    customer_id: UUID
+    invoice_date: Optional[date]
+    due_date: Optional[date]
+    status: str
+    total_amount: int
+    amount_paid: int
+    amount_due: int
+    created_at: Optional[datetime]
+
+
+class SalesInvoicesListResponse(BaseModel):
+    items: List[SalesInvoiceResponse]
+    total: int
+    page: int
+    page_size: int
+    has_more: bool
 
 
 class SalesReturnLineItemRequest(BaseModel):

@@ -35,7 +35,7 @@ const InvoicesPage = () => {
     try { setLoading(true); const res = await salesApi.listInvoices(statusFilter || undefined); setInvoices(res.data.items || []); } catch { setError('Failed to load'); } finally { setLoading(false); }
   };
   const fetchMasterData = async () => {
-    try { const [c, p] = await Promise.all([apiClient.get('/api/v1/customers', { params: { page_size: 200 } }), apiClient.get('/api/v1/products', { params: { page_size: 200 } })]); setCustomers(c.data.items || []); setProducts(p.data.items || []); } catch { /* */ }
+    try { const [c, p] = await Promise.all([apiClient.get('/api/v1/customers', { params: { page_size: 100 } }), apiClient.get('/api/v1/products', { params: { page_size: 100 } })]); setCustomers(c.data.items || []); setProducts(p.data.items || []); } catch { /* */ }
   };
 
   useEffect(() => { fetchInvoices(); }, [statusFilter]);
@@ -173,7 +173,7 @@ const InvoicesPage = () => {
         {showForm && (
           <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm">
             <div className="hms-card my-8 w-full max-w-4xl space-y-6 p-6">
-              <h2 className="font-display text-xl font-bold">{editingId ? 'Edit' : 'New'} Invoice</h2>
+              <h2 className="font-display text-xl font-bold">{editingId ? 'Modify/Change' : 'New'} Invoice</h2>
               {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>}
               
               {!editingId && (

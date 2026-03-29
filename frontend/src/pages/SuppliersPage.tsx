@@ -163,7 +163,7 @@ const SuppliersPage = () => {
         <div className="hms-card lg:col-span-1 p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-display text-lg font-bold text-neutral-900">
-              {editingItem ? 'Edit Supplier' : 'New Supplier'}
+              {editingItem ? 'Modify/Change Supplier' : 'New Supplier'}
             </h2>
             {editingItem && (
               <button type="button" onClick={resetForm} className="text-sm text-neutral-500 hover:text-neutral-700">Cancel</button>
@@ -233,7 +233,7 @@ const SuppliersPage = () => {
                     <td className="px-4 py-3 font-mono text-xs">{item.gstin || '—'}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <button type="button" onClick={() => startEdit(item)} className="rounded px-2 py-1 text-xs font-semibold text-primary hover:bg-primary/10 transition">Edit</button>
+                        <button type="button" onClick={() => startEdit(item)} className="rounded px-2 py-1 text-xs font-semibold text-primary hover:bg-primary/10 transition">Modify/Change</button>
                         <button type="button" onClick={() => setDeleteConfirm(item.id)} className="rounded px-2 py-1 text-xs font-semibold text-danger hover:bg-red-50 transition">Delete</button>
                       </div>
                     </td>

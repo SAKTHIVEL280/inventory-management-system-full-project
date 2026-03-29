@@ -34,7 +34,7 @@ const ReceivablesPage = () => {
     try { setLoading(true); const res = await paymentsApi.listPayments({ party_type: 'customer' }); setPayments(res.data.items || []); } catch { /* */ } finally { setLoading(false); }
   };
   const fetchCustomers = async () => {
-    try { const res = await apiClient.get('/api/v1/customers', { params: { page_size: 200 } }); setCustomers(res.data.items || []); } catch { /* */ }
+    try { const res = await apiClient.get('/api/v1/customers', { params: { page_size: 100 } }); setCustomers(res.data.items || []); } catch { /* */ }
   };
 
   useEffect(() => { fetchPayments(); fetchCustomers(); }, []);

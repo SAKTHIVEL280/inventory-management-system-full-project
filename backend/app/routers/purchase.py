@@ -54,7 +54,7 @@ async def list_purchase_orders(
     status: str | None = Query(default=None),
     supplier_id: UUID | None = Query(default=None),
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    page_size: int = Query(default=20, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("purchase_orders_read")),
 ):
@@ -262,7 +262,7 @@ async def list_grn(
     status: str | None = Query(default=None),
     supplier_id: UUID | None = Query(default=None),
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    page_size: int = Query(default=20, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("grn_read")),
 ):
@@ -541,7 +541,7 @@ async def cancel_grn(
 @router.get("/api/v1/purchase-returns")
 async def list_purchase_returns(
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    page_size: int = Query(default=20, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("purchase_returns_read")),
 ):

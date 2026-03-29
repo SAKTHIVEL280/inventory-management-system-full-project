@@ -37,6 +37,12 @@ from app.schemas.sales import (
     SalesOrderStatusRequest,
     SalesInvoiceCreateRequest,
     SalesReturnCreateRequest,
+    QuotationResponse,
+    QuotationsListResponse,
+    SalesOrderResponse,
+    SalesOrdersListResponse,
+    SalesInvoiceResponse,
+    SalesInvoicesListResponse,
 )
 from app.services.order_number_service import (
     generate_quotation_number,
@@ -66,11 +72,11 @@ def _auto_expire_quotation(q: Quotation) -> None:
 
 # ────────────────────────────── Quotations ───────────────────────────────────
 
-@router.get("/api/v1/quotations")
+@router.get("/api/v1/quotations", response_model=QuotationsListResponse)
 async def list_quotations(
     status: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    page_size: int = Query(default=20, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("quotations_read")),
 ):
@@ -89,10 +95,16 @@ async def list_quotations(
     if changed:
         db.commit()
 
-    return {"items": rows, "total": total, "page": page, "page_size": page_size, "has_more": (page * page_size) < total}
+    return QuotationsListResponse(
+        items=[QuotationResponse.model_validate(q) for q in rows],
+        total=total,
+        page=page,
+        page_size=page_size,
+        has_more=(page * page_size) < total
+    )
 
 
-@router.post("/api/v1/quotations")
+@router.post("/api/v1/quotations", response_model=QuotationResponse)
 async def create_quotation(
     payload: QuotationCreateRequest,
     db: Session = Depends(get_db),
@@ -159,7 +171,7 @@ async def create_quotation(
     return q
 
 
-@router.get("/api/v1/quotations/{quotation_id}")
+@router.get("/api/v1/quotations/{quotation_id}", response_model=dict)
 async def get_quotation(
     quotation_id: UUID,
     db: Session = Depends(get_db),
@@ -175,7 +187,7 @@ async def get_quotation(
     return {"quotation": q, "items": items}
 
 
-@router.put("/api/v1/quotations/{quotation_id}")
+@router.put("/api/v1/quotations/{quotation_id}", response_model=QuotationResponse)
 async def update_quotation(
     quotation_id: UUID,
     payload: QuotationCreateRequest,
@@ -241,7 +253,7 @@ async def update_quotation(
     return q
 
 
-@router.patch("/api/v1/quotations/{quotation_id}/status")
+@router.patch("/api/v1/quotations/{quotation_id}/status", response_model=QuotationResponse)
 async def quotation_status(
     quotation_id: UUID,
     payload: QuotationStatusRequest,
@@ -330,11 +342,11 @@ async def convert_quotation_to_so(
 
 # ────────────────────────────── Sales Orders ─────────────────────────────────
 
-@router.get("/api/v1/sales-orders")
+@router.get("/api/v1/sales-orders", response_model=SalesOrdersListResponse)
 async def list_sales_orders(
     status: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    page_size: int = Query(default=20, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("sales_orders_read")),
 ):
@@ -343,10 +355,16 @@ async def list_sales_orders(
         query = query.filter(SalesOrder.status == status)
     total = query.count()
     rows = query.order_by(SalesOrder.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    return {"items": rows, "total": total, "page": page, "page_size": page_size, "has_more": (page * page_size) < total}
+    return SalesOrdersListResponse(
+        items=[SalesOrderResponse.model_validate(so) for so in rows],
+        total=total,
+        page=page,
+        page_size=page_size,
+        has_more=(page * page_size) < total
+    )
 
 
-@router.post("/api/v1/sales-orders")
+@router.post("/api/v1/sales-orders", response_model=SalesOrderResponse)
 async def create_sales_order(
     payload: SalesOrderCreateRequest,
     db: Session = Depends(get_db),
@@ -560,7 +578,7 @@ async def sales_order_status(
 
 
 # BUG-05: NEW — Convert Sales Order to Invoice
-@router.post("/api/v1/sales-orders/{so_id}/convert-to-invoice")
+@router.post("/api/v1/sales-orders/{so_id}/convert-to-invoice", response_model=SalesInvoiceResponse)
 async def convert_so_to_invoice(
     so_id: UUID,
     db: Session = Depends(get_db),
@@ -632,11 +650,11 @@ async def convert_so_to_invoice(
 
 # ────────────────────────────── Invoices ──────────────────────────────────────
 
-@router.get("/api/v1/invoices")
+@router.get("/api/v1/invoices", response_model=SalesInvoicesListResponse)
 async def list_invoices(
     status: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    page_size: int = Query(default=20, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("sales_invoices_read")),
 ):
@@ -645,10 +663,16 @@ async def list_invoices(
         query = query.filter(SalesInvoice.status == status)
     total = query.count()
     rows = query.order_by(SalesInvoice.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    return {"items": rows, "total": total, "page": page, "page_size": page_size, "has_more": (page * page_size) < total}
+    return SalesInvoicesListResponse(
+        items=[SalesInvoiceResponse.model_validate(inv) for inv in rows],
+        total=total,
+        page=page,
+        page_size=page_size,
+        has_more=(page * page_size) < total
+    )
 
 
-@router.post("/api/v1/invoices")
+@router.post("/api/v1/invoices", response_model=SalesInvoiceResponse)
 async def create_invoice(
     payload: SalesInvoiceCreateRequest,
     db: Session = Depends(get_db),
@@ -913,7 +937,7 @@ async def send_invoice_email(
 @router.get("/api/v1/sales-returns")
 async def list_sales_returns(
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    page_size: int = Query(default=20, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("sales_returns_read")),
 ):

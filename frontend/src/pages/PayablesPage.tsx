@@ -28,7 +28,7 @@ const PayablesPage = () => {
     try { setLoading(true); const res = await paymentsApi.listPayments({ party_type: 'supplier' }); setPayments(res.data.items || []); } catch { /* */ } finally { setLoading(false); }
   };
   const fetchSuppliers = async () => {
-    try { const res = await apiClient.get('/api/v1/suppliers', { params: { page_size: 200 } }); setSuppliers(res.data.items || []); } catch { /* */ }
+    try { const res = await apiClient.get('/api/v1/suppliers', { params: { page_size: 100 } }); setSuppliers(res.data.items || []); } catch { /* */ }
   };
 
   useEffect(() => { fetchPayments(); fetchSuppliers(); }, []);

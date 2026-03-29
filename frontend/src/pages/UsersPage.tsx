@@ -162,7 +162,7 @@ const UsersPage = () => {
         <div className="hms-card lg:col-span-1 p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-display text-lg font-bold text-neutral-900">
-              {editingUser ? 'Edit User' : 'New User'}
+              {editingUser ? 'Modify/Change User' : 'New User'}
             </h2>
             {editingUser && (
               <button type="button" onClick={resetForm} className="text-sm text-neutral-500 hover:text-neutral-700">
@@ -195,10 +195,12 @@ const UsersPage = () => {
               </select>
             </div>
             {formError && <p className="text-sm text-danger" role="alert" aria-live="assertive">{formError}</p>}
-            {createMutation.isSuccess && <p className="text-sm text-success" role="status" aria-live="polite">User created successfully</p>}
-            {updateMutation.isSuccess && <p className="text-sm text-success" role="status" aria-live="polite">User updated successfully</p>}
-            <button type="submit" disabled={isSaving} className="w-full rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-primary/20 transition hover:bg-primary/90 disabled:opacity-60">
-              {isSaving ? 'Saving...' : editingUser ? 'Update User' : 'Create User'}
+            <button
+              type="submit"
+              disabled={isSaving}
+              className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-primary/20 transition hover:bg-primary/90 disabled:opacity-50"
+            >
+              {isSaving ? 'Saving...' : editingUser ? 'Modify/Change User' : 'Create User'}
             </button>
           </form>
         </div>
@@ -245,9 +247,9 @@ const UsersPage = () => {
                           type="button"
                           onClick={() => startEdit(user)}
                           className="rounded px-2 py-1 text-xs font-semibold text-primary hover:bg-primary/10 transition"
-                          title="Edit user"
+                          title="Modify/Change user"
                         >
-                          Edit
+                          Modify/Change
                         </button>
                         <button
                           type="button"

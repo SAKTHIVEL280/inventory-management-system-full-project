@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '../store/auth';
 import { usePermissions } from '../hooks/usePermissions';
 import { companyApi } from '../api/company';
+import { getStaticUrl } from '../utils/url_utils';
 
 interface AppLayoutProps {
   title: string;
@@ -78,7 +79,7 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
             <div className="mb-8 flex items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary">
                 {company?.logo_url ? (
-                  <img src={company.logo_url} alt={company.name} className="h-full w-full rounded-lg object-cover" />
+                  <img src={getStaticUrl(company.logo_url) ?? ''} alt={company.name} className="h-full w-full rounded-lg object-cover" />
                 ) : (
                   <span className="material-icons text-white" aria-hidden="true">business</span>
                 )}

@@ -255,7 +255,7 @@ const ProductsPage = () => {
               onClick={() => { setActiveTab('product'); resetProductForm(); }}
               className={`flex-1 px-4 py-3 text-sm font-semibold transition ${activeTab === 'product' ? 'border-b-2 border-primary text-primary bg-primary/5' : 'text-neutral-500 hover:text-neutral-700'}`}
             >
-              {editingProduct ? 'Edit Product' : 'Add Product'}
+              {editingProduct ? 'Modify/Change Product' : 'Add Product'}
             </button>
             <button
               type="button"
@@ -289,7 +289,7 @@ const ProductsPage = () => {
               <>
                 {editingProduct && (
                   <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-semibold text-neutral-900">Editing: {editingProduct.name}</h3>
+                    <h3 className="text-sm font-semibold text-neutral-900">Modifying/Changing: {editingProduct.name}</h3>
                     <button type="button" onClick={resetProductForm} className="text-sm text-neutral-500 hover:text-neutral-700">Cancel</button>
                   </div>
                 )}
@@ -446,7 +446,7 @@ const ProductsPage = () => {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <button type="button" onClick={() => startEditProduct(item)} className="rounded px-2 py-1 text-xs font-semibold text-primary hover:bg-primary/10 transition">Edit</button>
+                        <button type="button" onClick={() => startEditProduct(item)} className="rounded px-2 py-1 text-xs font-semibold text-primary hover:bg-primary/10 transition">Modify/Change</button>
                         <button type="button" onClick={() => setDeleteConfirm(item)} className="rounded px-2 py-1 text-xs font-semibold text-danger hover:bg-red-50 transition">Delete</button>
                       </div>
                     </td>

@@ -83,7 +83,7 @@ async def list_payments(
     supplier_id: UUID | None = Query(default=None),
     status: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=100),
+    page_size: int = Query(default=20, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("payments_read", "receipts_read")),
 ):

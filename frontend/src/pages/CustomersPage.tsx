@@ -199,7 +199,7 @@ const CustomersPage = () => {
         <div className="hms-card lg:col-span-1 p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-display text-lg font-bold text-neutral-900">
-              {editingItem ? 'Edit Customer' : 'New Customer'}
+              {editingItem ? 'Modify/Change Customer' : 'New Customer'}
             </h2>
             {editingItem && (
               <button type="button" onClick={resetForm} className="text-sm text-neutral-500 hover:text-neutral-700">
@@ -324,7 +324,7 @@ const CustomersPage = () => {
                           onClick={() => startEdit(item)} 
                           className="rounded px-2 py-1 text-xs font-semibold text-primary hover:bg-primary/10 transition"
                         >
-                          Edit
+                          Modify/Change
                         </button>
                         <button 
                           type="button" 

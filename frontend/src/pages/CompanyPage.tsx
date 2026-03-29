@@ -8,6 +8,7 @@ import { AppLayout } from '../components/AppLayout';
 import { PageError, PageLoading } from '../components/PageState';
 import { useRef } from 'react';
 import { toast } from 'sonner';
+import { getStaticUrl } from '../utils/url_utils';
 
 const schema = z.object({
   name: z.string().min(1, 'Company name is required'),
@@ -165,7 +166,7 @@ const CompanyPage = () => {
             <div className="hms-card p-6 flex items-center gap-6">
               <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-xl bg-neutral-100 border-2 border-dashed border-neutral-300 overflow-hidden">
                 {data?.logo_url ? (
-                  <img src={data.logo_url} alt="Logo" className="h-full w-full object-contain" />
+                  <img src={getStaticUrl(data.logo_url) ?? ''} alt="Logo" className="h-full w-full object-contain" />
                 ) : (
                   <span className="material-icons text-neutral-400 text-3xl">image</span>
                 )}

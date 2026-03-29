@@ -44,10 +44,14 @@ async def dashboard_report(
     safety_stock_count = 0
     products = db.query(Product).filter(Product.is_deleted == False).all()
     for product in products:
-        qty = db.query(func.coalesce(func.sum(StockLedger.quantity), 0)).filter(StockLedger.product_id == product.id).scalar() or 0
-        if float(qty) <= float(product.safety_stock) and float(qty) > 0:
+        qty_scalar = db.query(func.coalesce(func.sum(StockLedger.quantity), 0)).filter(StockLedger.product_id == product.id).scalar() or 0
+        qty = float(qty_scalar)
+        safety = float(product.safety_stock or 0)
+        minimum = float(product.minimum_stock or 0)
+        
+        if qty <= safety and qty > 0:
             safety_stock_count += 1
-        if float(qty) <= float(product.minimum_stock):
+        if qty <= minimum:
             low_stock_count += 1
 
     # Pending purchase orders
@@ -125,17 +129,27 @@ async def dashboard_report(
         for row in top_products_query
     ]
 
-    # Recent invoices
-    recent_invoices_rows = db.query(SalesInvoice).filter(SalesInvoice.is_deleted == False).order_by(SalesInvoice.created_at.desc()).limit(5).all()
+    # Recent invoices with customer names
+    recent_invoices_rows = db.query(
+        SalesInvoice, 
+        Customer.company_name
+    ).join(
+        Customer, SalesInvoice.customer_id == Customer.id
+    ).filter(
+        SalesInvoice.is_deleted == False
+    ).order_by(
+        SalesInvoice.created_at.desc()
+    ).limit(5).all()
+    
     recent_invoices = [
         {
-            "invoice_number": inv.invoice_number,
-            "customer_name": "",
-            "amount": inv.total_amount,
-            "status": inv.status,
-            "date": inv.invoice_date.isoformat() if inv.invoice_date else "",
+            "invoice_number": invoice.invoice_number,
+            "customer_name": company_name,
+            "amount": invoice.total_amount,
+            "status": invoice.status,
+            "date": invoice.invoice_date.isoformat() if invoice.invoice_date else "",
         }
-        for inv in recent_invoices_rows
+        for invoice, company_name in recent_invoices_rows
     ]
 
     # Outstanding payables
@@ -172,13 +186,17 @@ async def stock_report(
     rows = []
     products = db.query(Product).filter(Product.is_deleted == False).all()
     for product in products:
-        qty = db.query(func.coalesce(func.sum(StockLedger.quantity), 0)).filter(StockLedger.product_id == product.id).scalar() or 0
+        qty_scalar = db.query(func.coalesce(func.sum(StockLedger.quantity), 0)).filter(StockLedger.product_id == product.id).scalar() or 0
+        qty = float(qty_scalar)
+        minimum = float(product.minimum_stock or 0)
+        safety = float(product.safety_stock or 0)
+        
         status = "Normal"
-        if float(qty) == 0:
+        if qty == 0:
             status = "Out of Stock"
-        elif float(qty) <= float(product.safety_stock):
+        elif qty <= safety:
             status = "Below Safety Stock"
-        elif float(qty) <= float(product.minimum_stock):
+        elif qty <= minimum:
             status = "Low Stock"
         if low_stock_only and status == "Normal":
             continue

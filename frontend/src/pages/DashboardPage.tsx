@@ -13,6 +13,16 @@ import {
 import { useEffect, useState } from 'react';
 import { getDashboardStats, type DashboardStats as APIDashboardStats } from '../api/reports';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { FileQuestion } from 'lucide-react';
+
+const NoDataPlaceholder = ({ message }: { message: string }) => (
+  <div className="flex h-full min-h-[150px] w-full flex-col items-center justify-center rounded-xl bg-neutral-50/50 border border-dashed border-neutral-200 p-6 text-center">
+    <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-neutral-100/80">
+      <FileQuestion size={20} className="text-neutral-400" />
+    </div>
+    <p className="max-w-[200px] text-xs font-semibold leading-relaxed text-neutral-500">{message}</p>
+  </div>
+);
 
 const DashboardPage = () => {
   const [stats, setStats] = useState<APIDashboardStats | null>(null);
@@ -132,10 +142,10 @@ const DashboardPage = () => {
         </section>
 
         {/* Charts Row */}
-        {!loading && salesTrend.length > 0 && (
-          <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <div className="hms-card p-6">
-              <h3 className="mb-4 text-sm font-bold text-neutral-700">Sales Trend (Last 7 Days)</h3>
+        <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div className="hms-card p-6">
+            <h3 className="mb-4 text-sm font-bold text-neutral-700">Sales Trend (Last 7 Days)</h3>
+            {!loading && salesTrend.length > 0 ? (
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={salesTrend}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -145,35 +155,39 @@ const DashboardPage = () => {
                   <Line type="monotone" dataKey="amount" stroke="#1E3A5F" strokeWidth={2.5} dot={{ fill: '#1E3A5F', r: 4 }} />
                 </LineChart>
               </ResponsiveContainer>
-            </div>
-
-            {topProducts.length > 0 && (
-              <div className="hms-card p-6">
-                <h3 className="mb-4 text-sm font-bold text-neutral-700">Top Selling Products</h3>
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={topProducts.slice(0, 5)} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis type="number" tick={{ fontSize: 11 }} />
-                    <YAxis dataKey="product_name" type="category" tick={{ fontSize: 11 }} width={100} />
-                    <Tooltip formatter={(v: number) => formatAmount(v)} />
-                    <Bar dataKey="amount" radius={[0, 4, 4, 0]}>
-                      {topProducts.slice(0, 5).map((_, idx) => (
-                        <Cell key={idx} fill={['#1E3A5F', '#2E86AB', '#22c55e', '#f59e0b', '#8b5cf6'][idx]} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+            ) : (
+              <NoDataPlaceholder message="No sales trend data available yet. Start creating invoices to see growth." />
             )}
-          </section>
-        )}
+          </div>
+
+          <div className="hms-card p-6">
+            <h3 className="mb-4 text-sm font-bold text-neutral-700">Top Selling Products</h3>
+            {!loading && topProducts.length > 0 ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={topProducts.slice(0, 5)} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis type="number" tick={{ fontSize: 11 }} />
+                  <YAxis dataKey="product_name" type="category" tick={{ fontSize: 11 }} width={100} />
+                  <Tooltip formatter={(v: number) => formatAmount(v)} />
+                  <Bar dataKey="amount" radius={[0, 4, 4, 0]}>
+                    {topProducts.slice(0, 5).map((_, idx) => (
+                      <Cell key={idx} fill={['#1E3A5F', '#2E86AB', '#22c55e', '#f59e0b', '#8b5cf6'][idx]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <NoDataPlaceholder message="Your top performing products will appear here." />
+            )}
+          </div>
+        </section>
 
         {/* Recent Invoices */}
-        {!loading && recentInvoices.length > 0 && (
-          <section className="hms-card overflow-hidden">
-            <div className="border-b border-neutral-200 bg-gradient-to-r from-neutral-50 to-white px-6 py-4">
-              <h3 className="text-sm font-bold text-neutral-700">Recent Invoices</h3>
-            </div>
+        <section className="hms-card overflow-hidden">
+          <div className="border-b border-neutral-200 bg-gradient-to-r from-neutral-50 to-white px-6 py-4">
+            <h3 className="text-sm font-bold text-neutral-700">Recent Invoices</h3>
+          </div>
+          {!loading && recentInvoices.length > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead><tr className="bg-neutral-50">
@@ -202,8 +216,12 @@ const DashboardPage = () => {
                 </tbody>
               </table>
             </div>
-          </section>
-        )}
+          ) : (
+            <div className="p-8">
+              <NoDataPlaceholder message="No recent invoices found. Once you issue your first tax invoice, it will appear here." />
+            </div>
+          )}
+        </section>
 
       </div>
     </AppLayout>
