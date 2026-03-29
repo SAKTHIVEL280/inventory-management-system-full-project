@@ -19,112 +19,117 @@ cd inventory-management
 ```
 
 Expected top-level folders after setup:
-- `database_hole/` (SQL schema + seed, run via psql)
 - `backend/` (FastAPI app)
 - `frontend/` (React app)
+- `database/` (Alembic migrations)
+- `docs/` (System documentation)
 
 ---
 
-## 2. Database Setup
+## 2. Setup Options
 
-### 2.1 Create PostgreSQL Database
+Choose **ONE** of the paths below to set up your environment.
 
+---
+
+### 🟢 Path A: The Easy Way (5 Minutes)
+
+Use the automated script to handle database creation, dependencies, and seeding in one go.
+
+**Windows (PowerShell):**
+```powershell
+# Set your PostgreSQL password and run the script
+$env:PGPASSWORD='root'; python setup_db.py
+```
+
+**Linux/macOS:**
 ```bash
-psql -U postgres
+# Set your PostgreSQL password and run the script
+PGPASSWORD=root python3 setup_db.py
 ```
 
-```sql
-CREATE USER inventory_user WITH PASSWORD 'your_secure_password';
-CREATE DATABASE inventory_db OWNER inventory_user;
-GRANT ALL PRIVILEGES ON DATABASE inventory_db TO inventory_user;
-\q
-```
+**Next Steps after Path A:**
+1. Configure your backend `.env` (see section 3.3).
+2. Start the servers (see section 5).
 
-### 2.2 Enable Required Extensions
+---
 
+### 🔵 Path B: The Manual Way (Step-by-Step)
+
+Use this path if you want full control over your environment or if the automated script fails.
+
+#### B.1 Database Creation
+1. Open your PostgreSQL terminal or tool (pgAdmin/DBeaver).
+2. Create a new database named `ims_db`.
+
+#### B.2 Backend Environment
+1. Navigate to the backend folder:
+   ```bash
+   cd backend
+   ```
+2. Create and activate a virtual environment:
+   ```bash
+   python -m venv venv
+   # Windows:
+   venv\Scripts\activate
+   # Linux/macOS:
+   source venv/bin/activate
+   ```
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+4. Configure `.env` (see section 3.3).
+
+#### B.3 Initialize & Seed Data
+Run the seeding script to create the admin user and sample masters:
 ```bash
-psql -U inventory_user -d inventory_db
-```
-
-```sql
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-\q
-```
-
-### 2.3 Initialize Schema + Seed (psql-only)
-
-Run the SQL files in `database_hole/` (same pattern as HMS):
-
-```bash
-psql -U inventory_user -d inventory_db -f database_hole/01_schema.sql
-psql -U inventory_user -d inventory_db -f database_hole/02_seed_data.sql
+python app/utils/seed.py
 ```
 
 ---
 
-## 3. Backend Setup
+## 3. Configuration & Startup
 
-### 3.1 Create Virtual Environment
+### 3.1 Backend Environment (.env)
 
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate      # Linux / macOS
-venv\Scripts\activate         # Windows
-```
-
-### 3.2 Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 3.3 Configure Environment
+Navigate to `backend/`, copy `.env.example` to `.env`, and fill in the values:
 
 ```bash
 cp .env.example .env
 ```
 
-Open `.env` and fill in every value:
+**Key Values:**
+- `DATABASE_URL`: `postgresql://postgres:root@localhost:5432/ims_db`
+- `SECRET_KEY`: Generate one using `python -c "import secrets; print(secrets.token_hex(32))"`
+- `FRONTEND_URL`: `http://localhost:5173` (or `5174`)
 
-```
-DATABASE_URL=postgresql://inventory_user:your_secure_password@localhost:5432/inventory_db
-SECRET_KEY=generate-a-256-bit-random-string-here
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=480
-REFRESH_TOKEN_EXPIRE_DAYS=7
-MAIL_USERNAME=your@gmail.com
-MAIL_PASSWORD=your-gmail-app-password
-MAIL_FROM=noreply@yourcompany.com
-MAIL_PORT=587
-MAIL_SERVER=smtp.gmail.com
-MAIL_STARTTLS=true
-MAIL_SSL_TLS=false
-FRONTEND_URL=http://localhost:5173
-COMPANY_NAME=Your Company Name
-```
+### 3.2 Frontend Environment (.env)
 
-To generate a secure SECRET_KEY:
+Navigate to `frontend/`, copy `.env.example` to `.env`:
 
 ```bash
-python -c "import secrets; print(secrets.token_hex(32))"
+cd ../frontend
+cp .env.example .env
 ```
 
-### 3.4 Seed Initial Data
+Ensure `VITE_API_BASE_URL` matches your backend URL (default: `http://localhost:8000`).
 
-Seed is handled by `database_hole/02_seed_data.sql` (psql-only).
-No Alembic migrations are required for the normal setup flow.
+---
 
-This creates:
-- Default admin user (email: admin@company.com, password: Admin@123)
-- Units of measure: PCS, KG, G, LTR, ML, BOX, PACK, MTR, NOS
-- Default product category: General
-- Placeholder company row
+## 4. Starting the Application
 
-### 3.5 Start Backend Server
-
+### 4.1 Backend
 ```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+cd backend
+uvicorn app.main:app --reload
+```
+
+### 4.2 Frontend
+```bash
+cd frontend
+npm install
+npm run dev
 ```
 
 API is available at: http://localhost:8000
@@ -132,41 +137,10 @@ API documentation: http://localhost:8000/docs
 
 ---
 
-## 4. Frontend Setup
-
-### 4.1 Install Dependencies
-
-```bash
-cd frontend
-npm install
-```
-
-### 4.2 Configure Environment
-
-```bash
-cp .env.example .env
-```
-
-Open `.env`:
-
-```
-VITE_API_BASE_URL=http://localhost:8000
-```
-
-### 4.3 Start Development Server
-
-```bash
-npm run dev
-```
-
-Frontend is available at: http://localhost:5173
-
----
-
 ## 5. First Login
 
-1. Open http://localhost:5173
-2. Login with: admin@company.com / Admin@123
+1. Open http://localhost:5173 (or current Vite port)
+2. Login with: **admin@company.com** / **Admin@123**
 3. You will be prompted to change your password immediately.
 4. Go to Masters > Company and fill in your company details (name, GSTIN, state, bank details).
 5. Go to Masters > Users and create users for each role.

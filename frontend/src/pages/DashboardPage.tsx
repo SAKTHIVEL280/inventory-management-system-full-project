@@ -223,7 +223,7 @@ const DashboardPage = () => {
         {!loading && salesTrend.length > 0 && (
           <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <div className="hms-card p-6">
-              <h3 className="mb-4 text-sm font-bold text-neutral-700">📈 Sales Trend (Last 7 Days)</h3>
+              <h3 className="mb-4 text-sm font-bold text-neutral-700">Sales Trend (Last 7 Days)</h3>
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={salesTrend}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -237,7 +237,7 @@ const DashboardPage = () => {
 
             {topProducts.length > 0 && (
               <div className="hms-card p-6">
-                <h3 className="mb-4 text-sm font-bold text-neutral-700">🏆 Top Selling Products</h3>
+                <h3 className="mb-4 text-sm font-bold text-neutral-700">Top Selling Products</h3>
                 <ResponsiveContainer width="100%" height={220}>
                   <BarChart data={topProducts.slice(0, 5)} layout="vertical">
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -260,7 +260,7 @@ const DashboardPage = () => {
         {!loading && recentInvoices.length > 0 && (
           <section className="hms-card overflow-hidden">
             <div className="border-b border-neutral-200 bg-gradient-to-r from-neutral-50 to-white px-6 py-4">
-              <h3 className="text-sm font-bold text-neutral-700">📄 Recent Invoices</h3>
+              <h3 className="text-sm font-bold text-neutral-700">Recent Invoices</h3>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">

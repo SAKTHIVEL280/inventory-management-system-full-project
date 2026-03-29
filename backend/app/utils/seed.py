@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from app.database import SessionLocal, engine, Base
 from app.models.user import User
 from app.models.supplier import Supplier
-from app.models.product import Product, UnitOfMeasure
+from app.models.product import Product, UnitOfMeasure, ProductCategory
 from app.models.company import Company
 from app.services.auth_service import hash_password
 from datetime import datetime
@@ -24,24 +24,23 @@ def seed_database():
 
     try:
         # Check if admin user already exists
-        existing_admin = db.query(User).filter(User.email == "admin@company.com").first()
-        if existing_admin:
-            print("✓ Admin user already exists - skipping seed")
-            return
-
-        # Create default admin user
-        admin_user = User(
-            full_name="System Administrator",
-            email="admin@company.com",
-            hashed_password=hash_password("Admin@123"),
-            role="admin",
-            is_active=True,
-            force_password_change=True,  # Force admin to change password on first login
-        )
-        db.add(admin_user)
-        db.commit()
-        print("✓ Created admin user: admin@company.com / Admin@123")
-        print("  Note: Admin will be prompted to change password on first login")
+        admin_user = db.query(User).filter(User.email == "admin@company.com").first()
+        if not admin_user:
+            # Create default admin user
+            admin_user = User(
+                full_name="System Administrator",
+                email="admin@company.com",
+                hashed_password=hash_password("Admin@123"),
+                role="admin",
+                is_active=True,
+                force_password_change=True,  # Force admin to change password on first login
+            )
+            db.add(admin_user)
+            db.commit()
+            print("✓ Created admin user: admin@company.com / Admin@123")
+            print("  Note: Admin will be prompted to change password on first login")
+        else:
+            print("✓ Admin user already exists")
 
         # Create sample suppliers
         sample_suppliers = [
@@ -105,6 +104,17 @@ def seed_database():
                 db.add(UnitOfMeasure(name=name, abbreviation=abbreviation, is_active=True))
         db.commit()
 
+        # Create product categories
+        electronics_cat = db.query(ProductCategory).filter(ProductCategory.name == "Electronics").first()
+        if not electronics_cat:
+            electronics_cat = ProductCategory(
+                name="Electronics",
+                description="Electronic items and accessories",
+                created_by=admin_user.id
+            )
+            db.add(electronics_cat)
+            db.commit()
+
         # Create sample products
         pcs_uom = db.query(UnitOfMeasure).filter(UnitOfMeasure.abbreviation == "PCS").first()
         sample_products = [
@@ -112,11 +122,12 @@ def seed_database():
                 name="LED Monitor 24 inch",
                 product_code="PROD-00001",
                 description="24 inch Full HD LED Monitor",
-                category="Electronics",
-                unit_of_measure_id=pcs_uom.id if pcs_uom else None,
+                category_id=electronics_cat.id if electronics_cat else None,
+                uom_id=pcs_uom.id if pcs_uom else None,
+                hsn_code="852852",
                 purchase_price=850000,  # in paise (₹8,500)
-                mrp_price=1200000,  # in paise (₹12,000)
-                sale_price=1100000,  # in paise (₹11,000)
+                mrp=1200000,  # in paise (₹12,000)
+                selling_price=1100000,  # in paise (₹11,000)
                 gst_rate=18,
                 is_active=True,
                 created_by=admin_user.id,
@@ -125,11 +136,12 @@ def seed_database():
                 name="Wireless Keyboard",
                 product_code="PROD-00002",
                 description="Wireless USB Keyboard",
-                category="Electronics",
-                unit_of_measure_id=pcs_uom.id if pcs_uom else None,
+                category_id=electronics_cat.id if electronics_cat else None,
+                uom_id=pcs_uom.id if pcs_uom else None,
+                hsn_code="847160",
                 purchase_price=45000,  # in paise (₹450)
-                mrp_price=75000,  # in paise (₹750)
-                sale_price=65000,  # in paise (₹650)
+                mrp=75000,  # in paise (₹750)
+                selling_price=65000,  # in paise (₹650)
                 gst_rate=18,
                 is_active=True,
                 created_by=admin_user.id,
@@ -138,11 +150,12 @@ def seed_database():
                 name="USB Mouse",
                 product_code="PROD-00003",
                 description="Optical USB Mouse",
-                category="Electronics",
-                unit_of_measure_id=pcs_uom.id if pcs_uom else None,
+                category_id=electronics_cat.id if electronics_cat else None,
+                uom_id=pcs_uom.id if pcs_uom else None,
+                hsn_code="847160",
                 purchase_price=25000,  # in paise (₹250)
-                mrp_price=45000,  # in paise (₹450)
-                sale_price=40000,  # in paise (₹400)
+                mrp=45000,  # in paise (₹450)
+                selling_price=40000,  # in paise (₹400)
                 gst_rate=18,
                 is_active=True,
                 created_by=admin_user.id,
