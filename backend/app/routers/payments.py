@@ -99,8 +99,40 @@ async def list_payments(
 
     total = query.count()
     items = query.order_by(Payment.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    return {"items": items, "total": total, "page": page, "page_size": page_size, "has_more": (page * page_size) < total}
-
+    
+    # Serialize with allocations for frontend display
+    items_out = []
+    for p in items:
+        p_dict = {
+            "id": str(p.id),
+            "payment_number": p.payment_number,
+            "payment_type": p.payment_type,
+            "party_type": p.party_type,
+            "customer_id": str(p.customer_id) if p.customer_id else None,
+            "supplier_id": str(p.supplier_id) if p.supplier_id else None,
+            "payment_date": str(p.payment_date),
+            "amount": p.amount,
+            "payment_mode": p.payment_mode,
+            "reference_number": p.reference_number,
+            "cheque_date": str(p.cheque_date) if p.cheque_date else None,
+            "status": p.status,
+            "allocations": []
+        }
+        for a in p.allocations:
+            alloc_dict = {
+                "allocated_amount": a.allocated_amount,
+            }
+            if a.invoice:
+                alloc_dict["invoice_number"] = a.invoice.invoice_number
+            if a.grn:
+                alloc_dict["grn_number"] = a.grn.grn_number
+                # fetch PO number if linked (lazy load)
+                if getattr(a.grn, "purchase_order", None) and getattr(a.grn.purchase_order, "po_number", None):
+                   alloc_dict["po_number"] = a.grn.purchase_order.po_number
+            p_dict["allocations"].append(alloc_dict)
+        items_out.append(p_dict)
+        
+    return {"items": items_out, "total": total, "page": page, "page_size": page_size, "has_more": (page * page_size) < total}
 
 @router.post("")
 async def create_payment(

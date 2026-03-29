@@ -12,6 +12,7 @@ interface StockItem {
   hsn: string;
   closing_qty: number;
   min_stock: number;
+  safety_stock: number;
   status: string;
 }
 
@@ -42,11 +43,13 @@ const StockPage = () => {
 
   const sc: Record<string, string> = {
     'Normal': 'bg-green-100 text-green-700',
-    'Low Stock': 'bg-amber-100 text-amber-700',
+    'Below Safety Stock': 'bg-amber-100 text-amber-700',
+    'Low Stock': 'bg-orange-100 text-orange-700',
     'Out of Stock': 'bg-red-100 text-red-700',
   };
 
   const lowCount = items.filter(i => i.status === 'Low Stock').length;
+  const safetyCount = items.filter(i => i.status === 'Below Safety Stock').length;
   const outCount = items.filter(i => i.status === 'Out of Stock').length;
   const normalCount = items.filter(i => i.status === 'Normal').length;
 
@@ -54,7 +57,7 @@ const StockPage = () => {
     <AppLayout title="Stock / Inventory">
       <div className="space-y-6">
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
           <div className="hms-card p-5">
             <div className="flex items-center justify-between">
               <div>
@@ -69,11 +72,22 @@ const StockPage = () => {
           <div className="hms-card p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-neutral-500">Low Stock</p>
-                <p className="mt-2 text-2xl font-bold text-amber-600">{lowCount}</p>
+                <p className="text-xs font-bold uppercase tracking-wider text-neutral-500">Below Safety</p>
+                <p className="mt-2 text-2xl font-bold text-amber-600">{safetyCount}</p>
               </div>
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100">
-                <span className="material-icons text-amber-600" aria-hidden="true">warning</span>
+                <span className="material-icons text-amber-600" aria-hidden="true">inventory_2</span>
+              </div>
+            </div>
+          </div>
+          <div className="hms-card p-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-neutral-500">Low Stock</p>
+                <p className="mt-2 text-2xl font-bold text-orange-600">{lowCount}</p>
+              </div>
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-100">
+                <span className="material-icons text-orange-600" aria-hidden="true">warning</span>
               </div>
             </div>
           </div>
@@ -112,6 +126,7 @@ const StockPage = () => {
                 <th className="px-4 py-3 text-left font-semibold text-neutral-600">Product Name</th>
                 <th className="px-4 py-3 text-left font-semibold text-neutral-600">HSN</th>
                 <th className="px-4 py-3 text-right font-semibold text-neutral-600">Current Qty</th>
+                <th className="px-4 py-3 text-right font-semibold text-neutral-600">Safety Stock</th>
                 <th className="px-4 py-3 text-right font-semibold text-neutral-600">Min Stock</th>
                 <th className="px-4 py-3 text-center font-semibold text-neutral-600">Status</th>
               </tr></thead>
@@ -124,6 +139,7 @@ const StockPage = () => {
                     <td className="px-4 py-3">{item.product_name}</td>
                     <td className="px-4 py-3 text-neutral-500">{item.hsn}</td>
                     <td className="px-4 py-3 text-right font-medium">{item.closing_qty}</td>
+                    <td className="px-4 py-3 text-right text-neutral-500">{item.safety_stock}</td>
                     <td className="px-4 py-3 text-right text-neutral-500">{item.min_stock}</td>
                     <td className="px-4 py-3 text-center">
                       <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${sc[item.status] || 'bg-gray-100'}`}>{item.status}</span>

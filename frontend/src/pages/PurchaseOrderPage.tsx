@@ -16,6 +16,8 @@ const poSchema = z.object({
   supplier_id: z.string().min(1, 'Supplier required'),
   order_date: z.string().min(1, 'Order date required'),
   expected_delivery_date: z.string().optional(),
+  currency_code: z.string().default('INR'),
+  exchange_rate: z.coerce.number().min(0.000001).default(1.0),
   notes: z.string().optional(),
 });
 
@@ -83,6 +85,8 @@ const PurchaseOrderPage = () => {
       supplier_id: '',
       order_date: new Date().toISOString().split('T')[0],
       expected_delivery_date: '',
+      currency_code: 'INR',
+      exchange_rate: 1.0,
       notes: '',
     },
   });
@@ -149,6 +153,27 @@ const PurchaseOrderPage = () => {
       toast.error(detail || 'Failed to cancel PO');
     },
   });
+
+  const handleDownloadPDF = async () => {
+    if (!selectedPO) return;
+    try {
+      toast.info('Generating PDF...');
+      const response = await purchaseApi.downloadPOPdf(selectedPO.id);
+      
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `PO-${selectedPO.po_number}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      window.URL.revokeObjectURL(url);
+      link.remove();
+      toast.success('PDF downloaded successfully');
+    } catch (error) {
+      toast.error('Failed to download PDF');
+      console.error(error);
+    }
+  };
 
   const handleOpenPO = async (po: PurchaseOrder) => {
     setSelectedPO(po);
@@ -267,6 +292,8 @@ const PurchaseOrderPage = () => {
       supplier_id: parsed.data.supplier_id,
       order_date: parsed.data.order_date,
       expected_delivery_date: parsed.data.expected_delivery_date || undefined,
+      currency_code: parsed.data.currency_code,
+      exchange_rate: parsed.data.exchange_rate,
       notes: parsed.data.notes || undefined,
       status: submitMode,
       items: finalLineItems.map((item) => ({
@@ -324,6 +351,22 @@ const PurchaseOrderPage = () => {
                 Expected Delivery Date
               </label>
               <input id="expected_delivery_date" type="date" className="hms-input" {...form.register('expected_delivery_date')} />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="currency_code" className="hms-label">Currency</label>
+                <select id="currency_code" className="hms-input" {...form.register('currency_code')}>
+                  <option value="INR">INR (₹)</option>
+                  <option value="USD">USD ($)</option>
+                  <option value="EUR">EUR (€)</option>
+                  <option value="GBP">GBP (£)</option>
+                </select>
+              </div>
+              <div>
+                <label htmlFor="exchange_rate" className="hms-label">Exchange Rate</label>
+                <input id="exchange_rate" type="number" step="0.0001" className="hms-input" {...form.register('exchange_rate')} disabled={form.watch('currency_code') === 'INR'} />
+              </div>
             </div>
 
             <div>
@@ -610,7 +653,12 @@ const PurchaseOrderPage = () => {
                   <h2 className="font-display text-xl font-bold">Purchase Order: {selectedPO.po_number}</h2>
                   <p className="text-sm text-neutral-600 mt-1">Supplier: {supplierNameById(selectedPO.supplier_id)}</p>
                 </div>
-                <button onClick={() => setShowPODetail(false)} className="text-neutral-400 hover:text-neutral-600 text-2xl">&times;</button>
+                <div className="flex items-center gap-3">
+                  <button onClick={handleDownloadPDF} className="flex h-9 w-9 items-center justify-center rounded-lg border border-neutral-200 text-neutral-600 transition hover:bg-neutral-50 hover:text-primary" title="Download PDF">
+                    <span className="material-icons text-[20px]">picture_as_pdf</span>
+                  </button>
+                  <button onClick={() => setShowPODetail(false)} className="text-neutral-400 hover:text-neutral-600 text-2xl">&times;</button>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-neutral-50 p-4 rounded-lg">
@@ -632,7 +680,10 @@ const PurchaseOrderPage = () => {
                 </div>
                 <div>
                   <p className="text-xs text-neutral-600">Total Amount</p>
-                  <p className="font-medium">₹{(selectedPO.total_amount / 100).toFixed(2)}</p>
+                  <p className="font-medium">
+                    {selectedPO.currency_code === 'INR' ? '₹' : selectedPO.currency_code}{' '}
+                    {(selectedPO.total_amount / 100).toFixed(2)}
+                  </p>
                 </div>
               </div>
 

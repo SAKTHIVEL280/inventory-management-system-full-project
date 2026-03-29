@@ -45,8 +45,18 @@ class ProductBase(BaseModel):
     selling_price: int = 0
     mrp: int = 0
     minimum_stock: int = 0
+    safety_stock: int = 0
     opening_stock: int = 0
+    status: str = 'active'
     is_active: bool = True
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value: str) -> str:
+        allowed = {"active", "inactive", "flagged_for_deletion"}
+        if value not in allowed:
+            raise ValueError(f"status must be one of: {', '.join(sorted(allowed))}")
+        return value
 
     @field_validator("gst_rate")
     @classmethod
@@ -80,7 +90,9 @@ class ProductResponse(ProductBase):
 
 class ProductWithStockResponse(ProductResponse):
     current_stock: float = 0
+    safety_stock: int = 0
     low_stock: bool = False
+    below_safety_stock: bool = False
 
 
 class ProductsListResponse(BaseModel):

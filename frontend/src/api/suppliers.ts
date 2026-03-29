@@ -19,6 +19,7 @@ type CreateSupplierPayload = {
   bank_name?: string | null;
   bank_account_no?: string | null;
   bank_ifsc?: string | null;
+  place_of_supply?: string | null;
   payment_terms_days: number;
   opening_balance: number;
   opening_balance_type: 'dr' | 'cr';

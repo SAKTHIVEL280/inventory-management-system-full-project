@@ -3,6 +3,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.routers import auth, company, users, customers, suppliers, products, purchase, sales, payments, reports, stock
+from fastapi.staticfiles import StaticFiles
+import os
+
+# Create static directory if it doesn't exist
+os.makedirs("static", exist_ok=True)
 
 app = FastAPI(
     title="Inventory Management System",
@@ -10,15 +15,22 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# Mount static files for company logo and assets
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 # CORS configuration - MUST BE ADDED FIRST
 allowed_origins = [
     "http://localhost:5173",
     "http://localhost:5174",
+    "http://localhost:5175",
     "http://localhost:3000",
     "http://127.0.0.1:5173",
     "http://127.0.0.1:5174",
+    "http://127.0.0.1:5175",
     settings.frontend_url,
 ]
+# For development, we can also use allow_origin_regex or just "*" if we trust the environment
+# app.add_middleware(CORSMiddleware, allow_origins=["*"], ...)
 
 app.add_middleware(
     CORSMiddleware,

@@ -66,6 +66,8 @@ class SalesOrder(Base):
     order_date = Column(Date, nullable=False)
     expected_delivery_date = Column(Date, nullable=True)
     status = Column(String(20), nullable=False, default="draft")
+    currency_code = Column(String(3), nullable=False, default='INR')
+    exchange_rate = Column(Numeric(12, 6), nullable=False, default=1.0)
     sold_to_customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=True)
     bill_to_customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=False)
     ship_to_customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=True)

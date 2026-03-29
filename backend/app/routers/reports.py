@@ -41,9 +41,12 @@ async def dashboard_report(
 
     # Low stock count
     low_stock_count = 0
+    safety_stock_count = 0
     products = db.query(Product).filter(Product.is_deleted == False).all()
     for product in products:
         qty = db.query(func.coalesce(func.sum(StockLedger.quantity), 0)).filter(StockLedger.product_id == product.id).scalar() or 0
+        if float(qty) <= float(product.safety_stock) and float(qty) > 0:
+            safety_stock_count += 1
         if float(qty) <= float(product.minimum_stock):
             low_stock_count += 1
 
@@ -146,6 +149,7 @@ async def dashboard_report(
         "total_customers": int(total_customers),
         "total_suppliers": int(total_suppliers),
         "low_stock_count": int(low_stock_count),
+        "safety_stock_count": int(safety_stock_count),
         "pending_purchase_orders": int(pending_po_count),
         "pending_sales_orders": int(pending_so_count),
         "today_sales": int(today_sales),
@@ -172,6 +176,8 @@ async def stock_report(
         status = "Normal"
         if float(qty) == 0:
             status = "Out of Stock"
+        elif float(qty) <= float(product.safety_stock):
+            status = "Below Safety Stock"
         elif float(qty) <= float(product.minimum_stock):
             status = "Low Stock"
         if low_stock_only and status == "Normal":
@@ -182,6 +188,7 @@ async def stock_report(
             "hsn": product.hsn_code,
             "closing_qty": float(qty),
             "min_stock": product.minimum_stock,
+            "safety_stock": product.safety_stock,
             "status": status,
         })
     return {"items": rows, "total": len(rows)}

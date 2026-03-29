@@ -39,8 +39,19 @@ async def login(
         - access_token: JWT token for authenticated requests (8 hours)
         - refresh_token: JWT token for refreshing access token (7 days)
         - user: User object with effective_access calculated
+    
+    Raises:
+        - 401 if invalid credentials
+        - 423 if account is locked (5 failed attempts → 30 min block)
     """
-    user = authenticate_user(db, credentials.email, credentials.password)
+    try:
+        user = authenticate_user(db, credentials.email, credentials.password)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=423,
+            detail=str(e),
+        )
+    
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

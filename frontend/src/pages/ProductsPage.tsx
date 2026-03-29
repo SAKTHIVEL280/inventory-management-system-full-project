@@ -23,10 +23,12 @@ const productSchema = z.object({
   selling_price: z.coerce.number().min(0),
   mrp: z.coerce.number().min(0),
   minimum_stock: z.coerce.number().min(0),
+  safety_stock: z.coerce.number().min(0),
   opening_stock: z.coerce.number().min(0),
   category_id: z.string().min(1, 'Category required'),
   uom_id: z.string().min(1, 'UoM required'),
   is_active: z.boolean(),
+  status: z.enum(['active', 'inactive', 'flagged_for_deletion']).default('active'),
 });
 
 type CategoryForm = z.infer<typeof categorySchema>;
@@ -35,8 +37,8 @@ type ProductForm = z.infer<typeof productSchema>;
 const defaultProductValues: ProductForm = {
   name: '', description: '', sku: '', hsn_code: '', gst_rate: '18',
   purchase_price: 0, selling_price: 0, mrp: 0,
-  minimum_stock: 0, opening_stock: 0, category_id: '', uom_id: '',
-  is_active: true,
+  minimum_stock: 0, safety_stock: 0, opening_stock: 0, category_id: '', uom_id: '',
+  is_active: true, status: 'active',
 };
 
 const ProductsPage = () => {
@@ -165,10 +167,12 @@ const ProductsPage = () => {
       selling_price: item.selling_price / 100,
       mrp: item.mrp / 100,
       minimum_stock: item.minimum_stock,
+      safety_stock: item.safety_stock ?? 0,
       opening_stock: item.opening_stock,
       category_id: item.category_id,
       uom_id: item.uom_id,
-      is_active: item.is_active,
+      is_active: item.status === 'active',
+      status: item.status,
     });
   };
 
@@ -217,10 +221,12 @@ const ProductsPage = () => {
       selling_price: Math.round(parsed.data.selling_price * 100),
       mrp: Math.round(parsed.data.mrp * 100),
       minimum_stock: Math.round(parsed.data.minimum_stock),
+      safety_stock: Math.round(parsed.data.safety_stock),
       opening_stock: editingProduct
         ? editingProduct.opening_stock  // Preserve original on edit
         : Math.round(parsed.data.opening_stock),
-      is_active: parsed.data.is_active,
+      status: parsed.data.status,
+      is_active: parsed.data.status === 'active',
     };
 
     if (editingProduct) {
@@ -340,10 +346,14 @@ const ProductsPage = () => {
                       <input id="mrp" type="number" step="0.01" className="hms-input" placeholder="0.00" {...productForm.register('mrp')} />
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-3 gap-3">
                     <div>
                       <label htmlFor="minimum_stock" className="hms-label">Min. stock</label>
                       <input id="minimum_stock" type="number" className="hms-input" placeholder="0" {...productForm.register('minimum_stock')} />
+                    </div>
+                    <div>
+                      <label htmlFor="safety_stock" className="hms-label">Safety stock</label>
+                      <input id="safety_stock" type="number" className="hms-input" placeholder="0" {...productForm.register('safety_stock')} />
                     </div>
                     <div>
                       <label htmlFor="opening_stock" className="hms-label">
@@ -360,10 +370,13 @@ const ProductsPage = () => {
                     </div>
                   </div>
 
-                  {/* Active toggle */}
-                  <div className="flex items-center gap-2 pt-1">
-                    <input id="is_active" type="checkbox" className="rounded border-neutral-300" {...productForm.register('is_active')} />
-                    <label htmlFor="is_active" className="text-sm text-neutral-600">Product is active</label>
+                  <div>
+                    <label htmlFor="status" className="hms-label">Status</label>
+                    <select id="status" className="hms-input" {...productForm.register('status')}>
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                      <option value="flagged_for_deletion">Flagged for deletion</option>
+                    </select>
                   </div>
 
                   {formError && <p className="text-sm text-danger">{formError}</p>}
@@ -419,10 +432,14 @@ const ProductsPage = () => {
                     <td className="px-4 py-3">₹{(item.mrp / 100).toFixed(2)}</td>
                     <td className="px-4 py-3">{item.current_stock ?? 0}</td>
                     <td className="px-4 py-3">
-                      {!item.is_active ? (
+                      {item.status === 'flagged_for_deletion' ? (
+                        <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-bold text-red-700">Flagged</span>
+                      ) : item.status === 'inactive' ? (
                         <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-bold text-neutral-500">Inactive</span>
                       ) : item.low_stock ? (
                         <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-bold text-red-700">Low Stock</span>
+                      ) : item.below_safety_stock ? (
+                        <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-700">Below Safety</span>
                       ) : (
                         <span className="rounded-full bg-green-100 px-2.5 py-1 text-xs font-bold text-green-700">OK</span>
                       )}

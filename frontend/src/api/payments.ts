@@ -61,6 +61,7 @@ export interface Payment {
   notes?: string;
   status: 'pending' | 'cleared' | 'bounced' | 'cancelled';
   created_at: string;
+  allocations?: any[];
 }
 
 export interface PaymentDetail {

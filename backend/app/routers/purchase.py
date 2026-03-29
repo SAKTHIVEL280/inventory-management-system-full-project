@@ -90,6 +90,8 @@ async def create_purchase_order(
         order_date=payload.order_date,
         expected_delivery_date=payload.expected_delivery_date,
         status="draft",  # BUG-13: Always force draft on create
+        currency_code=payload.currency_code,
+        exchange_rate=payload.exchange_rate,
         notes=payload.notes,
         created_by=current_user.id,
     )
@@ -174,6 +176,8 @@ async def update_purchase_order(
     po.supplier_id = payload.supplier_id
     po.order_date = payload.order_date
     po.expected_delivery_date = payload.expected_delivery_date
+    po.currency_code = payload.currency_code
+    po.exchange_rate = payload.exchange_rate
     po.notes = payload.notes
 
     db.query(PurchaseOrderItem).filter(PurchaseOrderItem.purchase_order_id == po_id).delete()
@@ -676,3 +680,28 @@ async def cancel_purchase_return(
     db.commit()
     db.refresh(ret)
     return ret
+
+
+# ────────────────────────────── PO PDF Download ──────────────────────────────
+
+@router.get("/api/v1/purchase-orders/{po_id}/pdf")
+async def download_po_pdf(
+    po_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("purchase_orders_read")),
+):
+    """Download Purchase Order as a professional PDF."""
+    from fastapi.responses import Response
+    from app.services.pdf_service import generate_po_pdf
+
+    po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id, PurchaseOrder.is_deleted == False).first()
+    if not po:
+        raise HTTPException(status_code=404, detail="Purchase order not found")
+
+    pdf_bytes = generate_po_pdf(db, po_id)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"inline; filename={po.po_number}.pdf"},
+    )
+

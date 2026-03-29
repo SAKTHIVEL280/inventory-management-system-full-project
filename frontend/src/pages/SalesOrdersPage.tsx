@@ -24,6 +24,8 @@ const SalesOrdersPage = () => {
   const [customerId, setCustomerId] = useState('');
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState('');
+  const [currencyCode, setCurrencyCode] = useState('INR');
+  const [exchangeRate, setExchangeRate] = useState(1.0);
   const [notes, setNotes] = useState('');
   const [items, setItems] = useState<SalesLineItem[]>([]);
 
@@ -40,7 +42,7 @@ const SalesOrdersPage = () => {
   useEffect(() => { fetchOrders(); }, [statusFilter]);
   useEffect(() => { fetchMasterData(); }, []);
 
-  const resetForm = () => { setCustomerId(''); setOrderDate(new Date().toISOString().split('T')[0]); setExpectedDeliveryDate(''); setNotes(''); setItems([]); setEditingId(null); setError(''); };
+  const resetForm = () => { setCustomerId(''); setOrderDate(new Date().toISOString().split('T')[0]); setExpectedDeliveryDate(''); setCurrencyCode('INR'); setExchangeRate(1.0); setNotes(''); setItems([]); setEditingId(null); setError(''); };
   const addItem = () => { setItems([...items, { product_id: '', quantity: 1, unit_price: 0, discount_percent: 0, gst_rate: 18 }]); };
   const updateItem = (idx: number, field: keyof SalesLineItem, value: string | number) => {
     const updated = [...items]; (updated[idx] as unknown as Record<string, unknown>)[field] = value;
@@ -58,6 +60,7 @@ const SalesOrdersPage = () => {
       const payload: CreateSalesOrderPayload = {
         customer_id: customerId, order_date: orderDate, expected_delivery_date: expectedDeliveryDate || undefined,
         notes: notes || undefined, status: 'draft',
+        currency_code: currencyCode, exchange_rate: exchangeRate,
         items: items.map(i => ({ product_id: i.product_id, quantity: Number(i.quantity), unit_price: Number(i.unit_price), discount_percent: Number(i.discount_percent || 0), gst_rate: Number(i.gst_rate) })),
       };
       if (editingId) await salesApi.updateSalesOrder(editingId, payload); else await salesApi.createSalesOrder(payload);
@@ -70,14 +73,14 @@ const SalesOrdersPage = () => {
     catch (err: unknown) { const m = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail; alert(typeof m === 'string' ? m : typeof m === 'object' && m ? JSON.stringify(m) : 'Failed'); }
   };
 
-  const sc: Record<string, string> = { draft: 'bg-gray-100 text-gray-700', confirmed: 'bg-blue-100 text-blue-700', partial: 'bg-amber-100 text-amber-700', fulfilled: 'bg-green-100 text-green-700', cancelled: 'bg-red-100 text-red-700' };
+  const sc: Record<string, string> = { draft: 'bg-gray-100 text-gray-700', open: 'bg-blue-100 text-blue-700', delivered: 'bg-amber-100 text-amber-700', closed: 'bg-green-100 text-green-700', cancelled: 'bg-red-100 text-red-700' };
 
   return (
     <AppLayout title="Sales Orders">
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <select className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-            <option value="">All</option><option value="draft">Draft</option><option value="confirmed">Confirmed</option><option value="partial">Partial</option><option value="fulfilled">Fulfilled</option><option value="cancelled">Cancelled</option>
+            <option value="">All</option><option value="draft">Draft</option><option value="open">Open</option><option value="delivered">Delivered</option><option value="closed">Closed</option><option value="cancelled">Cancelled</option>
           </select>
           <button onClick={() => { resetForm(); setShowForm(true); }} className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/20 hover:bg-primary/90">+ New Sales Order</button>
         </div>
@@ -101,12 +104,14 @@ const SalesOrdersPage = () => {
                     <td className="px-4 py-3 font-medium">{o.so_number}</td>
                     <td className="px-4 py-3">{customers.find(c => c.id === o.customer_id)?.company_name || '-'}</td>
                     <td className="px-4 py-3">{o.order_date}</td>
-                    <td className="px-4 py-3 text-right font-medium">{formatAmount(o.total_amount)}</td>
+                    <td className="px-4 py-3 text-right font-medium">{o.currency_code === 'INR' ? '₹' : o.currency_code} {(o.total_amount / 100).toFixed(2)}</td>
                     <td className="px-4 py-3 text-center"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${sc[o.status] || 'bg-gray-100'}`}>{o.status}</span></td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1">
-                        {o.status === 'draft' && <button onClick={() => handleStatusChange(o.id, 'confirmed')} className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50">Confirm</button>}
-                        {o.status === 'draft' && <button onClick={() => handleStatusChange(o.id, 'cancelled')} className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">Cancel</button>}
+                        {o.status === 'draft' && <button onClick={() => handleStatusChange(o.id, 'open')} className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50">Open</button>}
+                        {o.status === 'open' && <button onClick={() => handleStatusChange(o.id, 'delivered')} className="rounded px-2 py-1 text-xs font-medium text-amber-600 hover:bg-amber-50">Mark Delivered</button>}
+                        {o.status === 'delivered' && <button onClick={() => handleStatusChange(o.id, 'closed')} className="rounded px-2 py-1 text-xs font-medium text-green-600 hover:bg-green-50">Close</button>}
+                        {(o.status === 'draft' || o.status === 'open') && <button onClick={() => handleStatusChange(o.id, 'cancelled')} className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">Cancel</button>}
                       </div>
                     </td>
                   </tr>
@@ -126,6 +131,8 @@ const SalesOrdersPage = () => {
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Customer *</label><select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={customerId} onChange={e => setCustomerId(e.target.value)}><option value="">Select</option>{customers.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}</select></div>
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Order Date *</label><input type="date" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={orderDate} onChange={e => setOrderDate(e.target.value)} /></div>
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Expected Delivery</label><input type="date" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={expectedDeliveryDate} onChange={e => setExpectedDeliveryDate(e.target.value)} /></div>
+                <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Currency</label><select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={currencyCode} onChange={e => setCurrencyCode(e.target.value)}><option value="INR">INR (₹)</option><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option></select></div>
+                <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Exch. Rate</label><input type="number" step="0.0001" min="0" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={exchangeRate} onChange={e => setExchangeRate(parseFloat(e.target.value)||1)} disabled={currencyCode === 'INR'} /></div>
               </div>
               <div>
                 <div className="mb-2 flex items-center justify-between"><h3 className="text-sm font-semibold">Items</h3><button onClick={addItem} className="rounded bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary">+ Add</button></div>

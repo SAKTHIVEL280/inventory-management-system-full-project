@@ -42,6 +42,8 @@ class SalesOrderCreateRequest(BaseModel):
     notes: Optional[str] = None
     terms_conditions: Optional[str] = None
     status: str = "draft"
+    currency_code: str = "INR"
+    exchange_rate: float = 1.0
     items: List[SalesLineItemRequest]
 
 

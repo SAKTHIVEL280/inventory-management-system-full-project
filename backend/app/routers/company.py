@@ -1,6 +1,7 @@
 """Company profile router."""
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
+import os
 
 from app.database import get_db
 from app.dependencies import get_current_user, require_permissions
@@ -64,9 +65,13 @@ async def upload_company_logo(
             detail="Logo file size must be <= 2MB",
         )
 
-    # File storage service is not introduced yet in WF-02 backend scope.
-    # Keep deterministic URL placeholder so frontend flow can proceed.
-    logo_url = f"/uploads/company/{logo.filename}"
+    # Save to static directory
+    os.makedirs("static", exist_ok=True)
+    file_path = "static/logo.png"
+    with open(file_path, "wb") as f:
+        f.write(file_bytes)
+        
+    logo_url = "/static/logo.png"
 
     company = db.query(Company).first()
     if not company:

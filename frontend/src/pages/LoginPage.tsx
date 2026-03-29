@@ -20,6 +20,7 @@ const LoginPage = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isLocked, setIsLocked] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [changePasswordData, setChangePasswordData] = useState({
     current_password: '',
@@ -31,6 +32,7 @@ const LoginPage = () => {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setIsLocked(false);
     setIsLoading(true);
 
     try {
@@ -46,10 +48,12 @@ const LoginPage = () => {
       }
     } catch (err: unknown) {
       const axiosErr = err as AxiosError<{ detail?: string }>;
-      setError(
-        axiosErr.response?.data?.detail ||
-        'Invalid email or password'
-      );
+      if (axiosErr.response?.status === 423) {
+        setIsLocked(true);
+        setError(axiosErr.response.data?.detail || 'Account locked. Try again later.');
+      } else {
+        setError(axiosErr.response?.data?.detail || 'Invalid email or password');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -172,8 +176,11 @@ const LoginPage = () => {
 
         <form onSubmit={handleLogin} className="mt-8 space-y-4">
           {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert" aria-live="assertive">
-              {error}
+            <div className={`rounded-lg border px-4 py-3 text-sm font-medium ${isLocked ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-red-200 bg-red-50 text-red-700'}`} role="alert" aria-live="assertive">
+              <div className="flex items-start gap-2">
+                <span className="material-icons text-base">{isLocked ? 'lock' : 'error_outline'}</span>
+                <span>{error}</span>
+              </div>
             </div>
           )}
 

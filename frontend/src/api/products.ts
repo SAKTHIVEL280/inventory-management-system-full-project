@@ -16,7 +16,9 @@ export type CreateProductPayload = {
   selling_price: number;
   mrp: number;
   minimum_stock: number;
+  safety_stock: number;
   opening_stock: number;
+  status: 'active' | 'inactive' | 'flagged_for_deletion';
   is_active: boolean;
 };
 

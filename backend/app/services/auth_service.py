@@ -133,7 +133,13 @@ def authenticate_user(
     email: str,
     password: str,
 ) -> Optional[User]:
-    """Authenticate user by email and password."""
+    """Authenticate user by email and password with lockout protection.
+    
+    After 5 failed attempts, the account is locked for 30 minutes.
+    Raises ValueError with specific messages for lockout scenarios.
+    """
+    from datetime import datetime, timedelta
+
     user = db.query(User).filter(
         User.email == email,
         User.is_active == True,
@@ -142,8 +148,43 @@ def authenticate_user(
     
     if not user:
         return None
+
+    # Check if account is locked
+    if user.locked_until and user.locked_until > datetime.utcnow():
+        remaining = (user.locked_until - datetime.utcnow()).total_seconds()
+        remaining_minutes = int(remaining // 60) + 1
+        raise ValueError(
+            f"Account is locked due to too many failed login attempts. "
+            f"Please try again in {remaining_minutes} minute(s)."
+        )
+    
+    # If lock has expired, reset the counter
+    if user.locked_until and user.locked_until <= datetime.utcnow():
+        user.failed_login_attempts = 0
+        user.locked_until = None
     
     if not verify_password(password, user.hashed_password):
-        return None
+        # Increment failed attempts
+        user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
+        
+        if user.failed_login_attempts >= 5:
+            user.locked_until = datetime.utcnow() + timedelta(minutes=30)
+            db.commit()
+            raise ValueError(
+                "Account has been locked for 30 minutes due to 5 failed login attempts."
+            )
+        
+        remaining_attempts = 5 - user.failed_login_attempts
+        db.commit()
+        raise ValueError(
+            f"Invalid password. {remaining_attempts} attempt(s) remaining before account lockout."
+        )
+    
+    # Successful login — reset counter
+    if user.failed_login_attempts > 0 or user.locked_until is not None:
+        user.failed_login_attempts = 0
+        user.locked_until = None
+        db.commit()
     
     return user
+

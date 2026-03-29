@@ -28,6 +28,8 @@ export interface CreatePOPayload {
   expected_delivery_date?: string;
   notes?: string;
   status?: string;
+  currency_code?: string;
+  exchange_rate?: number;
   items: PurchaseLineItem[];
 }
 
@@ -81,6 +83,8 @@ export interface PurchaseOrder {
   total_igst: number;
   total_gst: number;
   total_amount: number;
+  currency_code?: string;
+  exchange_rate?: number;
   notes?: string;
   created_at: string;
   created_by?: string;
@@ -223,6 +227,14 @@ class PurchaseApiClient {
 
   async cancelPurchaseReturn(id: string) {
     return apiClient.post<PurchaseReturn>(`/api/v1/purchase-returns/${id}/cancel`, {});
+  }
+
+  // ========== PDF Download ==========
+
+  async downloadPOPdf(id: string) {
+    return apiClient.get(`/api/v1/purchase-orders/${id}/pdf`, {
+      responseType: 'blob',
+    });
   }
 }
 

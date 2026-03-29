@@ -1,7 +1,7 @@
 """Purchase workflow models."""
 from uuid import uuid4
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, Date, UUID, ForeignKey, Numeric, Text
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, Date, UUID, ForeignKey, Numeric, Text, Float
 from app.database import Base
 
 
@@ -14,6 +14,8 @@ class PurchaseOrder(Base):
     order_date = Column(Date, nullable=False)
     expected_delivery_date = Column(Date, nullable=True)
     status = Column(String(20), nullable=False, default="draft")
+    currency_code = Column(String(3), nullable=False, default='INR')
+    exchange_rate = Column(Numeric(12, 6), nullable=False, default=1.0)
     subtotal = Column(Integer, nullable=False, default=0)
     total_discount = Column(Integer, nullable=False, default=0)
     total_taxable_amount = Column(Integer, nullable=False, default=0)

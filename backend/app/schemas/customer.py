@@ -42,10 +42,8 @@ class CustomerBase(BaseModel):
     same_as_billing: bool = True  # If true, shipping address copied from billing
 
     # === Financial Terms ===
-    credit_limit: int = 0  # Maximum credit allowed (in smallest currency unit, e.g., paise)
-    payment_terms_days: int = 30  # Payment due period in days
-    opening_balance: int = 0  # Initial balance (positive for dues, negative for advances)
     opening_balance_type: str = "dr"  # REQUIRED: "dr" (debit) or "cr" (credit)
+    currency_code: str = "INR"  # Default currency for the customer
     is_active: bool = True  # Set false to soft-deactivate customer
 
     @field_validator("phone", "alternate_phone")

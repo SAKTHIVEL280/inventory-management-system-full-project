@@ -2,6 +2,7 @@
 from uuid import uuid4
 from datetime import datetime
 from sqlalchemy import Column, String, Integer, Boolean, DateTime, Date, UUID, ForeignKey, Text
+from sqlalchemy.orm import relationship
 from app.database import Base
 
 
@@ -28,6 +29,8 @@ class Payment(Base):
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
 
+    allocations = relationship("PaymentAllocation", back_populates="payment")
+
 
 class PaymentAllocation(Base):
     __tablename__ = "payment_allocations"
@@ -40,3 +43,7 @@ class PaymentAllocation(Base):
     is_deleted = Column(Boolean, nullable=False, default=False)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+
+    payment = relationship("Payment", back_populates="allocations")
+    invoice = relationship("SalesInvoice", primaryjoin="PaymentAllocation.invoice_id == SalesInvoice.id")
+    grn = relationship("GoodsReceiptNote", primaryjoin="PaymentAllocation.purchase_grn_id == GoodsReceiptNote.id")

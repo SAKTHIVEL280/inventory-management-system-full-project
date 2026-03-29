@@ -57,6 +57,8 @@ export interface CreateSalesOrderPayload {
   notes?: string;
   terms_conditions?: string;
   status?: string;
+  currency_code?: string;
+  exchange_rate?: number;
   items: SalesLineItem[];
 }
 
@@ -144,6 +146,8 @@ export interface SalesOrder {
   total_igst: number;
   total_gst: number;
   total_amount: number;
+  currency_code?: string;
+  exchange_rate?: number;
   notes?: string;
   terms_conditions?: string;
   created_at: string;
@@ -232,7 +236,11 @@ class SalesApiClient {
   }
 
   async getSalesOrder(id: string) {
-    return apiClient.get<SalesOrder>(`/api/v1/sales-orders/${id}`);
+    return apiClient.get<{ sales_order: SalesOrder; items: any[] }>(`/api/v1/sales-orders/${id}`);
+  }
+
+  async searchSalesOrderByNumber(soNumber: string) {
+    return apiClient.get<{ sales_order: SalesOrder; items: any[] }>(`/api/v1/sales-orders/search/${soNumber}`);
   }
 
   async createSalesOrder(payload: CreateSalesOrderPayload) {
@@ -302,6 +310,14 @@ class SalesApiClient {
 
   async cancelSalesReturn(id: string) {
     return apiClient.post<SalesReturn>(`/api/v1/sales-returns/${id}/cancel`, {});
+  }
+
+  // ========== PDF Download ==========
+
+  async downloadInvoicePdf(id: string) {
+    return apiClient.get(`/api/v1/invoices/${id}/pdf`, {
+      responseType: 'blob',
+    });
   }
 }
 

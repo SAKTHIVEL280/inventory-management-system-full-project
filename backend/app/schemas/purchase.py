@@ -21,6 +21,8 @@ class PurchaseOrderCreateRequest(BaseModel):
     expected_delivery_date: Optional[date] = None
     notes: Optional[str] = None
     status: str = "draft"
+    currency_code: str = "INR"
+    exchange_rate: float = 1.0
     items: List[PurchaseLineItemRequest]
 
 

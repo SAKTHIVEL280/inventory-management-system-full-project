@@ -38,8 +38,8 @@ class Customer(Base):
 
     credit_limit = Column(Integer, nullable=False, default=0)
     payment_terms_days = Column(Integer, nullable=False, default=30)
-    opening_balance = Column(Integer, nullable=False, default=0)
     opening_balance_type = Column(String(2), nullable=False, default="dr")
+    currency_code = Column(String(10), nullable=False, default="INR")
 
     is_active = Column(Boolean, nullable=False, default=True)
     is_deleted = Column(Boolean, nullable=False, default=False)

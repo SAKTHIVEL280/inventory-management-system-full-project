@@ -21,6 +21,9 @@ const schema = z.object({
   billing_state_code: z.string().optional(),
   billing_pincode: z.string().optional(),
   same_as_billing: z.boolean().default(true),
+  payment_terms_days: z.coerce.number().min(0, 'Cannot be negative').default(30),
+  credit_limit: z.coerce.number().min(0, 'Cannot be negative').default(0),
+  currency_code: z.string().default('INR'),
 });
 
 type CustomerForm = z.infer<typeof schema>;
@@ -37,7 +40,7 @@ const CustomersPage = () => {
   });
 
   const { register, handleSubmit, reset, setValue } = useForm<CustomerForm>({
-    defaultValues: { company_name: '', phone: '', customer_type: 'regular', contact_person: '', email: '', gstin: '', billing_address_line1: '', billing_city: '', billing_state: '', billing_state_code: '', billing_pincode: '', same_as_billing: true },
+    defaultValues: { company_name: '', phone: '', customer_type: 'regular', contact_person: '', email: '', gstin: '', billing_address_line1: '', billing_city: '', billing_state: '', billing_state_code: '', billing_pincode: '', same_as_billing: true, payment_terms_days: 30, credit_limit: 0, currency_code: 'INR' },
   });
 
   const createMutation = useMutation({
@@ -114,7 +117,7 @@ const CustomersPage = () => {
 
   const resetForm = () => {
     setEditingItem(null);
-    reset({ company_name: '', phone: '', customer_type: 'regular', contact_person: '', email: '', gstin: '', billing_address_line1: '', billing_city: '', billing_state: '', billing_state_code: '', billing_pincode: '', same_as_billing: true });
+    reset({ company_name: '', phone: '', customer_type: 'regular', contact_person: '', email: '', gstin: '', billing_address_line1: '', billing_city: '', billing_state: '', billing_state_code: '', billing_pincode: '', same_as_billing: true, payment_terms_days: 30, credit_limit: 0 });
   };
 
   const startEdit = (item: Customer) => {
@@ -131,6 +134,9 @@ const CustomersPage = () => {
     setValue('billing_state_code', item.billing_state_code ?? '');
     setValue('billing_pincode', item.billing_pincode ?? '');
     setValue('same_as_billing', item.same_as_billing ?? true);
+    setValue('payment_terms_days', item.payment_terms_days ?? 30);
+    setValue('credit_limit', item.credit_limit ?? 0);
+    setValue('currency_code', item.currency_code ?? 'INR');
   };
 
   const onSubmit = (values: CustomerForm): void => {
@@ -163,8 +169,9 @@ const CustomersPage = () => {
       shipping_state_code: null,
       shipping_pincode: null,
       same_as_billing: parsed.data.same_as_billing ?? true,
-      credit_limit: editingItem?.credit_limit ?? 0,
-      payment_terms_days: editingItem?.payment_terms_days ?? 30,
+      credit_limit: parsed.data.credit_limit,
+      payment_terms_days: parsed.data.payment_terms_days,
+      currency_code: parsed.data.currency_code,
       opening_balance: editingItem?.opening_balance ?? 0,
       opening_balance_type: editingItem?.opening_balance_type ?? 'dr' as const,
       is_active: editingItem?.is_active ?? true,
@@ -232,6 +239,12 @@ const CustomersPage = () => {
               </select>
             </div>
 
+            <div className="grid grid-cols-3 gap-2">
+                <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Payment Terms (Days)</label><input type="number" min="0" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" {...register('payment_terms_days')} /></div>
+                <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Credit Limit</label><input type="number" min="0" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" {...register('credit_limit')} /></div>
+                <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Currency</label><select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" {...register('currency_code')}><option value="INR">INR (₹)</option><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option></select></div>
+            </div>
+
             {/* BUG-30: Address fields */}
             <div className="pt-2 border-t border-neutral-100">
               <p className="text-xs font-bold uppercase tracking-wider text-neutral-500 mb-2">Billing Address</p>
@@ -264,9 +277,11 @@ const CustomersPage = () => {
               <input id="same_as_billing" type="checkbox" className="rounded border-neutral-300" {...register('same_as_billing')} />
               <label htmlFor="same_as_billing" className="text-sm text-neutral-600">Shipping same as billing</label>
             </div>
+            <div className="flex justify-end gap-3 mt-6">
             <button type="submit" disabled={isSaving} className="w-full rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-primary/20 transition hover:bg-primary/90 disabled:opacity-60">
               {isSaving ? 'Saving...' : editingItem ? 'Update Customer' : 'Create Customer'}
             </button>
+            </div>
           </form>
         </div>
 

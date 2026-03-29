@@ -11,6 +11,6 @@ alembic==1.13.1
 python-multipart==0.0.9
 aiofiles==23.2.1
 fastapi-mail==1.4.1
-weasyprint==68.1
+xhtml2pdf==0.2.11
 python-dotenv==1.0.0
 httpx==0.25.2

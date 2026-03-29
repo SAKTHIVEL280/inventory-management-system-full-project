@@ -11,6 +11,7 @@ export interface DashboardStats {
   total_customers: number;
   total_suppliers: number;
   low_stock_count: number;
+  safety_stock_count: number;
   pending_purchase_orders: number;
   pending_sales_orders: number;
   today_sales: number;

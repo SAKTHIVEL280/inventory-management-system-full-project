@@ -26,6 +26,7 @@ class Supplier(Base):
     state = Column(String(100), nullable=True)
     state_code = Column(String(5), nullable=True)
     pincode = Column(String(10), nullable=True)
+    place_of_supply = Column(String(255), nullable=True)
 
     bank_name = Column(String(150), nullable=True)
     bank_account_no = Column(String(50), nullable=True)

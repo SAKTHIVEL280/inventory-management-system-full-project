@@ -6,6 +6,8 @@ import { companyApi } from '../api/company';
 import { Company } from '../types';
 import { AppLayout } from '../components/AppLayout';
 import { PageError, PageLoading } from '../components/PageState';
+import { useRef } from 'react';
+import { toast } from 'sonner';
 
 const schema = z.object({
   name: z.string().min(1, 'Company name is required'),
@@ -51,6 +53,7 @@ const emptyCompany: Company = {
 const CompanyPage = () => {
   const queryClient = useQueryClient();
   const [formError, setFormError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['company'],
@@ -106,6 +109,21 @@ const CompanyPage = () => {
     },
   });
 
+  const logoMutation = useMutation({
+    mutationFn: companyApi.uploadLogo,
+    onSuccess: (res) => {
+      queryClient.setQueryData(['company'], (old: any) => ({ ...old, logo_url: res.logo_url }));
+      toast.success('Logo uploaded successfully');
+    },
+    onError: () => toast.error('Failed to upload logo'),
+  });
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) logoMutation.mutate(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   const onSubmit = (values: CompanyForm): void => {
     const parsed = schema.safeParse(values);
     if (!parsed.success) {
@@ -143,6 +161,25 @@ const CompanyPage = () => {
       {!isLoading && !isError && (
         <form onSubmit={handleSubmit(onSubmit)}>
           <div className="space-y-6">
+            {/* Logo Section */}
+            <div className="hms-card p-6 flex items-center gap-6">
+              <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-xl bg-neutral-100 border-2 border-dashed border-neutral-300 overflow-hidden">
+                {data?.logo_url ? (
+                  <img src={data.logo_url} alt="Logo" className="h-full w-full object-contain" />
+                ) : (
+                  <span className="material-icons text-neutral-400 text-3xl">image</span>
+                )}
+              </div>
+              <div>
+                <h2 className="font-display text-lg font-bold text-neutral-900 mb-1">Company Logo</h2>
+                <p className="text-sm text-neutral-500 mb-3">Upload your company logo (PNG/JPG, max 2MB). Maps to dashboards and PDFs.</p>
+                <input type="file" ref={fileInputRef} className="hidden" accept="image/png, image/jpeg" onChange={handleFileChange} />
+                <button type="button" onClick={() => fileInputRef.current?.click()} className="rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50" disabled={logoMutation.isPending}>
+                  {logoMutation.isPending ? 'Uploading...' : 'Upload Logo'}
+                </button>
+              </div>
+            </div>
+
             {/* Basic Information */}
             <div className="hms-card p-6">
               <h2 className="font-display text-lg font-bold text-neutral-900 mb-4">Basic Information</h2>

@@ -80,7 +80,7 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
                 {company?.logo_url ? (
                   <img src={company.logo_url} alt={company.name} className="h-full w-full rounded-lg object-cover" />
                 ) : (
-                  <span className="material-icons text-white" aria-hidden="true">inventory</span>
+                  <span className="material-icons text-white" aria-hidden="true">business</span>
                 )}
               </div>
               <div className="flex-1 overflow-hidden">

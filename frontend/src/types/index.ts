@@ -131,6 +131,7 @@ export interface Customer {
   payment_terms_days: number;
   opening_balance: number;
   opening_balance_type: 'dr' | 'cr';
+  currency_code: string;
   is_active: boolean;
 }
 
@@ -153,6 +154,7 @@ export interface Supplier {
   bank_name?: string | null;
   bank_account_no?: string | null;
   bank_ifsc?: string | null;
+  place_of_supply?: string | null;
   payment_terms_days: number;
   opening_balance: number;
   opening_balance_type: 'dr' | 'cr';
@@ -189,10 +191,13 @@ export interface Product {
   selling_price: number;
   mrp: number;
   minimum_stock: number;
+  safety_stock: number;
   opening_stock: number;
+  status: 'active' | 'inactive' | 'flagged_for_deletion';
   is_active: boolean;
   current_stock?: number;
   low_stock?: boolean;
+  below_safety_stock?: boolean;
 }
 
 export interface StockLedger {

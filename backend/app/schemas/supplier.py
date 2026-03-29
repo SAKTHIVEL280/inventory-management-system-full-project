@@ -22,6 +22,7 @@ class SupplierBase(BaseModel):
     state: Optional[str] = None
     state_code: Optional[str] = None
     pincode: Optional[str] = None
+    place_of_supply: Optional[str] = None
 
     bank_name: Optional[str] = None
     bank_account_no: Optional[str] = None

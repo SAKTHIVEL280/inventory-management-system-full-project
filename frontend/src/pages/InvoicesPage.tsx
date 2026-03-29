@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { AppLayout } from '../components/AppLayout';
 import { salesApi, type SalesInvoice, type CreateInvoicePayload, type SalesLineItem } from '../api/sales';
 import { apiClient } from '../api/client';
+import { toast } from 'sonner';
 
 interface ProductOption { id: string; name: string; product_code: string; selling_price: number; gst_rate: number; }
 interface CustomerOption { id: string; company_name: string; customer_code: string; }
@@ -26,6 +27,9 @@ const InvoicesPage = () => {
   const [dueDate, setDueDate] = useState('');
   const [notes, setNotes] = useState('');
   const [items, setItems] = useState<SalesLineItem[]>([]);
+  const [soNumberSearch, setSoNumberSearch] = useState('');
+  const [isSearchingSO, setIsSearchingSO] = useState(false);
+  const [soId, setSoId] = useState<string | undefined>(undefined);
 
   const fetchInvoices = async () => {
     try { setLoading(true); const res = await salesApi.listInvoices(statusFilter || undefined); setInvoices(res.data.items || []); } catch { setError('Failed to load'); } finally { setLoading(false); }
@@ -37,7 +41,7 @@ const InvoicesPage = () => {
   useEffect(() => { fetchInvoices(); }, [statusFilter]);
   useEffect(() => { fetchMasterData(); }, []);
 
-  const resetForm = () => { setCustomerId(''); setInvoiceDate(new Date().toISOString().split('T')[0]); setDueDate(''); setNotes(''); setItems([]); setEditingId(null); setError(''); };
+  const resetForm = () => { setCustomerId(''); setInvoiceDate(new Date().toISOString().split('T')[0]); setDueDate(''); setNotes(''); setItems([]); setEditingId(null); setError(''); setSoNumberSearch(''); setSoId(undefined); };
   const addItem = () => { setItems([...items, { product_id: '', quantity: 1, unit_price: 0, discount_percent: 0, gst_rate: 18 }]); };
   const updateItem = (idx: number, field: keyof SalesLineItem, value: string | number) => {
     const updated = [...items]; (updated[idx] as unknown as Record<string, unknown>)[field] = value;
@@ -53,7 +57,7 @@ const InvoicesPage = () => {
     setSubmitting(true); setError('');
     try {
       const payload: CreateInvoicePayload = {
-        customer_id: customerId, invoice_date: invoiceDate, due_date: dueDate || undefined,
+        customer_id: customerId, sales_order_id: soId, invoice_date: invoiceDate, due_date: dueDate || undefined,
         bill_to_customer_id: customerId, notes: notes || undefined,
         items: items.map(i => ({ product_id: i.product_id, quantity: Number(i.quantity), unit_price: Number(i.unit_price), discount_percent: Number(i.discount_percent || 0), gst_rate: Number(i.gst_rate) })),
       };
@@ -66,6 +70,51 @@ const InvoicesPage = () => {
     if (!confirm('Issue this invoice? This will deduct stock.')) return;
     try { await salesApi.issueInvoice(id); fetchInvoices(); }
     catch (err: unknown) { const m = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail; alert(typeof m === 'string' ? m : 'Issue failed'); }
+  };
+
+  const handleDownloadPDF = async (inv: SalesInvoice) => {
+    try {
+      toast.info('Generating PDF...');
+      const response = await salesApi.downloadInvoicePdf(inv.id);
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Invoice-${inv.invoice_number}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      window.URL.revokeObjectURL(url);
+      link.remove();
+      toast.success('PDF downloaded successfully');
+    } catch {
+      toast.error('Failed to download PDF');
+    }
+  };
+
+  const handleSearchSO = async () => {
+    if (!soNumberSearch) return;
+    setIsSearchingSO(true); setError('');
+    try {
+      const { data } = await salesApi.searchSalesOrderByNumber(soNumberSearch);
+      const so = data.sales_order;
+      if (so.status !== 'delivered' && so.status !== 'closed') {
+        setError(`Cannot invoice SO in '${so.status}' status. Only delivered or closed.`);
+        return;
+      }
+      setCustomerId(so.customer_id);
+      setSoId(so.id);
+      setItems(data.items.map((i: any) => ({
+        product_id: i.product_id,
+        quantity: i.quantity,
+        unit_price: i.unit_price,
+        discount_percent: i.discount_percent,
+        gst_rate: i.gst_rate,
+      })));
+      toast.success('Sales order fetched successfully');
+    } catch {
+      setError('Sales order not found or error fetching');
+    } finally {
+      setIsSearchingSO(false);
+    }
   };
 
   const sc: Record<string, string> = { draft: 'bg-gray-100 text-gray-700', issued: 'bg-blue-100 text-blue-700', partial_paid: 'bg-amber-100 text-amber-700', paid: 'bg-green-100 text-green-700', cancelled: 'bg-red-100 text-red-700' };
@@ -106,7 +155,12 @@ const InvoicesPage = () => {
                     <td className="px-4 py-3 text-right font-medium text-red-600">{inv.amount_due > 0 ? formatAmount(inv.amount_due) : '-'}</td>
                     <td className="px-4 py-3 text-center"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${sc[inv.status] || 'bg-gray-100'}`}>{inv.status.replace('_', ' ')}</span></td>
                     <td className="px-4 py-3 text-center">
-                      {inv.status === 'draft' && <button onClick={() => handleIssue(inv.id)} className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50">Issue</button>}
+                      <div className="flex items-center justify-center gap-2">
+                        {inv.status === 'draft' && <button onClick={() => handleIssue(inv.id)} className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50">Issue</button>}
+                        <button onClick={() => handleDownloadPDF(inv)} className="rounded px-2 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-100" title="Download PDF">
+                          📄 PDF
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -121,6 +175,19 @@ const InvoicesPage = () => {
             <div className="hms-card my-8 w-full max-w-4xl space-y-6 p-6">
               <h2 className="font-display text-xl font-bold">{editingId ? 'Edit' : 'New'} Invoice</h2>
               {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>}
+              
+              {!editingId && (
+                <div className="flex items-end gap-2 p-4 bg-neutral-50 rounded-lg border border-neutral-200">
+                  <div className="flex-1">
+                    <label className="mb-1 block text-sm font-semibold text-neutral-700">Auto-fill from SO #</label>
+                    <input type="text" className="w-full hms-input" placeholder="e.g. SO-00001" value={soNumberSearch} onChange={e => setSoNumberSearch(e.target.value.toUpperCase())} />
+                  </div>
+                  <button type="button" onClick={handleSearchSO} disabled={isSearchingSO || !soNumberSearch} className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">
+                    {isSearchingSO ? 'Fetching...' : 'Fetch SO'}
+                  </button>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Customer *</label><select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={customerId} onChange={e => setCustomerId(e.target.value)}><option value="">Select</option>{customers.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}</select></div>
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Invoice Date *</label><input type="date" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} /></div>

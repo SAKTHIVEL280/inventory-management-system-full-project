@@ -366,6 +366,8 @@ async def create_sales_order(
         order_date=payload.order_date,
         expected_delivery_date=payload.expected_delivery_date,
         status="draft",  # BUG-13: Always force draft
+        currency_code=payload.currency_code,
+        exchange_rate=payload.exchange_rate,
         sold_to_customer_id=payload.sold_to_customer_id or payload.customer_id,
         bill_to_customer_id=payload.bill_to_customer_id or payload.customer_id,
         ship_to_customer_id=payload.ship_to_customer_id or payload.customer_id,
@@ -427,6 +429,18 @@ async def get_sales_order(
     items = db.query(SalesOrderItem).filter(SalesOrderItem.sales_order_id == so_id).all()
     return {"sales_order": so, "items": items}
 
+@router.get("/api/v1/sales-orders/search/{so_number}")
+async def get_sales_order_by_number(
+    so_number: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("sales_orders_read")),
+):
+    so = db.query(SalesOrder).filter(SalesOrder.so_number == so_number, SalesOrder.is_deleted == False).first()
+    if not so:
+        raise HTTPException(status_code=404, detail="Sales order not found")
+    items = db.query(SalesOrderItem).filter(SalesOrderItem.sales_order_id == so.id).all()
+    return {"sales_order": so, "items": items}
+
 
 @router.put("/api/v1/sales-orders/{so_id}")
 async def update_sales_order(
@@ -448,6 +462,8 @@ async def update_sales_order(
     so.quotation_id = payload.quotation_id
     so.order_date = payload.order_date
     so.expected_delivery_date = payload.expected_delivery_date
+    so.currency_code = payload.currency_code
+    so.exchange_rate = payload.exchange_rate
     so.sold_to_customer_id = payload.sold_to_customer_id or payload.customer_id
     so.bill_to_customer_id = payload.bill_to_customer_id or payload.customer_id
     so.ship_to_customer_id = payload.ship_to_customer_id or payload.customer_id
@@ -507,7 +523,8 @@ async def sales_order_status(
     if not so:
         raise HTTPException(status_code=404, detail="Sales order not found")
 
-    if payload.status == "confirmed":
+    # Option B status flow: draft → open → delivered → closed / cancelled
+    if payload.status == "open":
         items = db.query(SalesOrderItem).filter(SalesOrderItem.sales_order_id == so.id).all()
         shortages = []
         for item in items:
@@ -529,9 +546,9 @@ async def sales_order_status(
             )
 
     allowed = {
-        "draft": {"confirmed", "cancelled"},
-        "confirmed": {"partial", "fulfilled", "cancelled"},
-        "partial": {"fulfilled"},
+        "draft": {"open", "cancelled"},
+        "open": {"delivered", "cancelled"},
+        "delivered": {"closed"},
     }
     if payload.status not in allowed.get(so.status, set()):
         raise HTTPException(status_code=400, detail="Invalid status transition")
@@ -549,12 +566,12 @@ async def convert_so_to_invoice(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("sales_invoices_write")),
 ):
-    """Convert a confirmed/partial sales order to a draft invoice."""
+    """Convert an open/delivered sales order to a draft invoice."""
     so = db.query(SalesOrder).filter(SalesOrder.id == so_id, SalesOrder.is_deleted == False).first()
     if not so:
         raise HTTPException(status_code=404, detail="Sales order not found")
-    if so.status not in {"confirmed", "partial"}:
-        raise HTTPException(status_code=400, detail="Only confirmed or partial sales orders can be converted to invoice")
+    if so.status not in {"delivered", "closed"}:
+        raise HTTPException(status_code=400, detail="Only delivered or closed sales orders can be converted to invoice")
 
     # BUG-02: Auto-detect IGST
     is_igst = determine_is_igst(db, "customer", so.customer_id)
@@ -640,6 +657,11 @@ async def create_invoice(
     customer = db.query(Customer).filter(Customer.id == payload.customer_id, Customer.is_deleted == False).first()
     if not customer:
         raise HTTPException(status_code=400, detail="Invalid customer")
+        
+    if payload.sales_order_id:
+        so = db.query(SalesOrder).filter(SalesOrder.id == payload.sales_order_id).first()
+        if so and so.status not in {"delivered", "closed"}:
+            raise HTTPException(status_code=400, detail="Only delivered or closed sales orders can generate invoices")
 
     # BUG-02: Auto-detect IGST from state codes (override payload if customer has state code)
     is_igst = payload.is_igst
@@ -737,6 +759,11 @@ async def update_invoice(
         raise HTTPException(status_code=404, detail="Invoice not found")
     if invoice.status != "draft":
         raise HTTPException(status_code=400, detail="Only draft invoice can be edited")
+        
+    if payload.sales_order_id:
+        so = db.query(SalesOrder).filter(SalesOrder.id == payload.sales_order_id).first()
+        if so and so.status not in {"delivered", "closed"}:
+            raise HTTPException(status_code=400, detail="Only delivered or closed sales orders can generate invoices")
 
     # BUG-02: Auto-detect IGST
     is_igst = payload.is_igst
@@ -859,9 +886,9 @@ async def issue_invoice(
                 so_item.fulfilled_quantity = float(so_item.fulfilled_quantity) + fulfilled_add
 
             if so_items and all(float(i.fulfilled_quantity) >= float(i.quantity) for i in so_items):
-                so.status = "fulfilled"
+                so.status = "delivered"
             else:
-                so.status = "partial"
+                so.status = "open"
 
     db.commit()
     db.refresh(invoice)
@@ -1030,3 +1057,28 @@ async def cancel_sales_return(
     db.commit()
     db.refresh(ret)
     return ret
+
+
+# ────────────────────────────── Invoice PDF Download ──────────────────────────
+
+@router.get("/api/v1/invoices/{invoice_id}/pdf")
+async def download_invoice_pdf(
+    invoice_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("sales_invoices_read")),
+):
+    """Download Sales Invoice as a professional PDF."""
+    from fastapi.responses import Response
+    from app.services.pdf_service import generate_invoice_pdf
+
+    invoice = db.query(SalesInvoice).filter(SalesInvoice.id == invoice_id, SalesInvoice.is_deleted == False).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    pdf_bytes = generate_invoice_pdf(db, invoice_id)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"inline; filename={invoice.invoice_number}.pdf"},
+    )
+

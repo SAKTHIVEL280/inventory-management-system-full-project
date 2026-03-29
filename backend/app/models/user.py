@@ -1,7 +1,7 @@
 """User model."""
 from uuid import uuid4
 from datetime import datetime
-from sqlalchemy import Column, String, Boolean, DateTime, UUID, ForeignKey, JSON, func
+from sqlalchemy import Column, String, Boolean, Integer, DateTime, UUID, ForeignKey, JSON, func
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -22,6 +22,8 @@ class User(Base):
     )
     permission_overrides = Column(JSON, nullable=True, default=None)
     force_password_change = Column(Boolean, default=False)
+    failed_login_attempts = Column(Integer, nullable=False, default=0)
+    locked_until = Column(DateTime(timezone=True), nullable=True)
     is_active = Column(Boolean, default=True)
     is_deleted = Column(Boolean, default=False)
     deleted_at = Column(DateTime(timezone=True), nullable=True)

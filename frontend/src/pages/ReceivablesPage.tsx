@@ -94,7 +94,7 @@ const ReceivablesPage = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="border-b border-neutral-200 bg-neutral-50">
-                <th className="px-4 py-3 text-left font-semibold text-neutral-600">Payment #</th>
+                <th className="px-4 py-3 text-left font-semibold text-neutral-600">Invoice #</th>
                 <th className="px-4 py-3 text-left font-semibold text-neutral-600">Customer</th>
                 <th className="px-4 py-3 text-left font-semibold text-neutral-600">Date</th>
                 <th className="px-4 py-3 text-left font-semibold text-neutral-600">Mode</th>
@@ -103,11 +103,13 @@ const ReceivablesPage = () => {
                 <th className="px-4 py-3 text-center font-semibold text-neutral-600">Actions</th>
               </tr></thead>
               <tbody>
-                {loading ? <tr><td colSpan={7} className="px-4 py-8 text-center text-neutral-500">Loading...</td></tr>
-                : payments.length === 0 ? <tr><td colSpan={7} className="px-4 py-8 text-center text-neutral-500">No payments recorded</td></tr>
+                {loading ? <tr><td colSpan={6} className="px-4 py-8 text-center text-neutral-500">Loading...</td></tr>
+                : payments.length === 0 ? <tr><td colSpan={6} className="px-4 py-8 text-center text-neutral-500">No payments recorded</td></tr>
                 : payments.map(p => (
                   <tr key={p.id} className="border-b border-neutral-100 hover:bg-neutral-50">
-                    <td className="px-4 py-3 font-medium">{p.payment_number}</td>
+                    <td className="px-4 py-3 font-medium">
+                      {p.allocations?.map((a: any) => a.invoice_number).filter(Boolean).join(', ') || 'Unallocated'}
+                    </td>
                     <td className="px-4 py-3">{customers.find(c => c.id === p.customer_id)?.company_name || '-'}</td>
                     <td className="px-4 py-3">{p.payment_date}</td>
                     <td className="px-4 py-3 capitalize">{p.payment_mode.replace('_', ' ')}</td>
