@@ -113,6 +113,9 @@ const ProductsPage = () => {
       const detail = axiosErr.response?.data?.detail;
       if (typeof detail === 'string') {
         setFormError(detail);
+      } else if (detail?.message) {
+        // Handle backend error objects (e.g., stock check errors)
+        setFormError(detail.message);
       } else if (Array.isArray(detail)) {
         setFormError(detail.map((d: any) => d.msg).join(', '));
       } else {
@@ -442,37 +445,47 @@ const ProductsPage = () => {
 
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
-          <div className="hms-card w-full max-w-sm space-y-6 p-6">
+          <div className="hms-card w-full max-w-md space-y-6 p-6">
             <div>
               <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
-                <span className="material-icons text-red-600" aria-hidden="true">delete</span>
+                <span className="material-icons text-red-600 text-2xl" aria-hidden="true">delete</span>
               </div>
               <h2 className="font-display text-lg font-bold text-neutral-900">Delete Product</h2>
               <p className="mt-2 text-sm text-neutral-600">
                 Are you sure you want to delete <strong>{deleteConfirm.name}</strong>? This action cannot be undone.
               </p>
-              
+
               {/* Stock warning */}
               {(deleteConfirm.current_stock ?? 0) > 0 && (
                 <div className="mt-4 rounded-lg bg-amber-50 border border-amber-200 p-4">
                   <div className="flex items-start gap-3">
-                    <span className="material-icons text-amber-600 text-lg" aria-hidden="true">warning</span>
+                    <span className="material-icons text-amber-600 text-lg flex-shrink-0" aria-hidden="true">warning</span>
                     <div className="flex-1">
                       <p className="text-sm font-semibold text-amber-800">Product has existing stock</p>
                       <p className="text-xs text-amber-700 mt-1">
-                        Current stock: <strong>{deleteConfirm.current_stock}</strong> units. 
-                        You must clear the stock before deleting this product.
+                        Current stock: <strong>{deleteConfirm.current_stock}</strong> units.
+                        You must clear the stock to zero before deleting this product. Click the button below to automatically adjust stock.
                       </p>
                     </div>
                   </div>
                 </div>
               )}
-              
+
+              {/* Error message - shown prominently */}
               {deleteMutation.isError && formError && (
-                <p className="mt-3 text-sm text-danger font-medium">{formError}</p>
+                <div className="mt-4 rounded-lg bg-red-50 border border-red-200 p-4">
+                  <div className="flex items-start gap-3">
+                    <span className="material-icons text-red-600 text-lg flex-shrink-0" aria-hidden="true">error</span>
+                    <p className="text-sm text-red-800 font-medium">{formError}</p>
+                  </div>
+                </div>
               )}
+              
               {deleteMutation.isPending && (
-                <p className="mt-3 text-sm text-neutral-500">Deleting product...</p>
+                <div className="mt-4 flex items-center gap-3 text-sm text-neutral-600">
+                  <span className="material-icons animate-spin">progress_activity</span>
+                  Deleting product...
+                </div>
               )}
             </div>
             <div className="flex gap-3">
@@ -487,7 +500,7 @@ const ProductsPage = () => {
               >
                 Cancel
               </button>
-              
+
               {(deleteConfirm.current_stock ?? 0) > 0 ? (
                 <button
                   type="button"
@@ -495,6 +508,7 @@ const ProductsPage = () => {
                   disabled={deleteMutation.isPending}
                   className="flex-1 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-amber-600/20 transition hover:bg-amber-700 disabled:opacity-50"
                 >
+                  <span className="material-icons text-sm align-middle mr-1">inventory_2</span>
                   Clear Stock ({deleteConfirm.current_stock} units)
                 </button>
               ) : (
@@ -504,6 +518,7 @@ const ProductsPage = () => {
                   disabled={deleteMutation.isPending}
                   className="flex-1 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-red-600/20 transition hover:bg-red-700 disabled:opacity-50"
                 >
+                  <span className="material-icons text-sm align-middle mr-1">delete</span>
                   {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
                 </button>
               )}

@@ -6,6 +6,7 @@ import { customersApi } from '../api/customers';
 import { Customer } from '../types';
 import { AppLayout } from '../components/AppLayout';
 import { PageEmpty, PageError, PageLoading } from '../components/PageState';
+import { showError, showSuccess, confirmDelete, confirmWithToast } from '../utils/toastHelper';
 
 const schema = z.object({
   company_name: z.string().min(1, 'Company name required'),
@@ -28,9 +29,7 @@ const normalizeOptional = (value?: string): string | null => value?.trim() || nu
 
 const CustomersPage = () => {
   const queryClient = useQueryClient();
-  const [formError, setFormError] = useState('');
   const [editingItem, setEditingItem] = useState<Customer | null>(null);
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['customers'],
@@ -46,17 +45,22 @@ const CustomersPage = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
       resetForm();
+      showSuccess('Customer created successfully');
     },
     onError: (error: unknown) => {
       const axiosErr = error as any;
       const detail = axiosErr.response?.data?.detail;
+      let errorMessage = 'Failed to create customer';
+      
       if (typeof detail === 'string') {
-        setFormError(detail);
+        errorMessage = detail;
       } else if (Array.isArray(detail)) {
-        setFormError(detail.map((d: any) => d.msg).join(', '));
-      } else {
-        setFormError('Failed to create customer');
+        errorMessage = detail.map((d: any) => d.msg).join(', ');
+      } else if (detail?.message) {
+        errorMessage = detail.message;
       }
+      
+      showError(errorMessage);
     },
   });
 
@@ -65,17 +69,22 @@ const CustomersPage = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
       resetForm();
+      showSuccess('Customer updated successfully');
     },
     onError: (error: unknown) => {
       const axiosErr = error as any;
       const detail = axiosErr.response?.data?.detail;
+      let errorMessage = 'Failed to update customer';
+      
       if (typeof detail === 'string') {
-        setFormError(detail);
+        errorMessage = detail;
       } else if (Array.isArray(detail)) {
-        setFormError(detail.map((d: any) => d.msg).join(', '));
-      } else {
-        setFormError('Failed to update customer');
+        errorMessage = detail.map((d: any) => d.msg).join(', ');
+      } else if (detail?.message) {
+        errorMessage = detail.message;
       }
+      
+      showError(errorMessage);
     },
   });
 
@@ -83,31 +92,33 @@ const CustomersPage = () => {
     mutationFn: (id: string) => customersApi.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
-      setDeleteConfirm(null);
     },
     onError: (error: unknown) => {
       const axiosErr = error as any;
       const detail = axiosErr.response?.data?.detail;
+      let errorMessage = 'Failed to delete customer';
+
       if (typeof detail === 'string') {
-        setFormError(detail);
+        errorMessage = detail;
       } else if (detail?.message) {
-        setFormError(detail.message);
-      } else {
-        setFormError('Failed to delete customer');
+        errorMessage = detail.message;
+      } else if (detail?.error_code === 'OUTSTANDING_EXISTS') {
+        errorMessage = 'Cannot delete customer: They have outstanding invoice balance. Please clear all dues before deleting.';
+      } else if (Array.isArray(detail)) {
+        errorMessage = detail.map((d: any) => d.msg).join(', ');
       }
-      setDeleteConfirm(null);
+
+      showError(errorMessage);
     },
   });
 
   const resetForm = () => {
     setEditingItem(null);
-    setFormError('');
     reset({ company_name: '', phone: '', customer_type: 'regular', contact_person: '', email: '', gstin: '', billing_address_line1: '', billing_city: '', billing_state: '', billing_state_code: '', billing_pincode: '', same_as_billing: true });
   };
 
   const startEdit = (item: Customer) => {
     setEditingItem(item);
-    setFormError('');
     setValue('company_name', item.company_name);
     setValue('phone', item.phone);
     setValue('customer_type', item.customer_type);
@@ -125,7 +136,8 @@ const CustomersPage = () => {
   const onSubmit = (values: CustomerForm): void => {
     const parsed = schema.safeParse(values);
     if (!parsed.success) {
-      setFormError(parsed.error.issues[0]?.message ?? 'Validation failed');
+      const errorMsg = parsed.error.issues[0]?.message ?? 'Validation failed';
+      showError(errorMsg);
       return;
     }
 
@@ -159,7 +171,13 @@ const CustomersPage = () => {
     };
 
     if (editingItem) {
-      updateMutation.mutate({ id: editingItem.id, payload });
+      confirmWithToast(
+        `Are you sure you want to update customer "${editingItem.company_name}"?`,
+        {
+          onConfirm: () => updateMutation.mutate({ id: editingItem.id, payload }),
+          type: 'confirm',
+        }
+      );
     } else {
       createMutation.mutate({ ...payload, customer_code: null });
     }
@@ -246,9 +264,6 @@ const CustomersPage = () => {
               <input id="same_as_billing" type="checkbox" className="rounded border-neutral-300" {...register('same_as_billing')} />
               <label htmlFor="same_as_billing" className="text-sm text-neutral-600">Shipping same as billing</label>
             </div>
-            {formError && <p className="text-sm text-danger" role="alert" aria-live="assertive">{formError}</p>}
-            {createMutation.isSuccess && <p className="text-sm text-success" role="status" aria-live="polite">Customer created successfully</p>}
-            {updateMutation.isSuccess && <p className="text-sm text-success" role="status" aria-live="polite">Customer updated successfully</p>}
             <button type="submit" disabled={isSaving} className="w-full rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-primary/20 transition hover:bg-primary/90 disabled:opacity-60">
               {isSaving ? 'Saving...' : editingItem ? 'Update Customer' : 'Create Customer'}
             </button>
@@ -289,10 +304,21 @@ const CustomersPage = () => {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <button type="button" onClick={() => startEdit(item)} className="rounded px-2 py-1 text-xs font-semibold text-primary hover:bg-primary/10 transition">
+                        <button 
+                          type="button" 
+                          onClick={() => startEdit(item)} 
+                          className="rounded px-2 py-1 text-xs font-semibold text-primary hover:bg-primary/10 transition"
+                        >
                           Edit
                         </button>
-                        <button type="button" onClick={() => setDeleteConfirm(item.id)} className="rounded px-2 py-1 text-xs font-semibold text-danger hover:bg-red-50 transition">
+                        <button 
+                          type="button" 
+                          onClick={() => {
+                            const customerName = item.company_name;
+                            confirmDelete(customerName, () => deleteMutation.mutate(item.id));
+                          }} 
+                          className="rounded px-2 py-1 text-xs font-semibold text-danger hover:bg-red-50 transition"
+                        >
                           Delete
                         </button>
                       </div>
@@ -307,24 +333,6 @@ const CustomersPage = () => {
         </div>
       </div>
 
-      {/* Delete Confirmation Modal */}
-      {deleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
-          <div className="hms-card w-full max-w-sm space-y-6 p-6">
-            <div>
-              <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
-                <span className="material-icons text-red-600" aria-hidden="true">delete</span>
-              </div>
-              <h2 className="font-display text-lg font-bold text-neutral-900">Delete Customer</h2>
-              <p className="mt-2 text-sm text-neutral-600">Are you sure? This action cannot be undone.</p>
-            </div>
-            <div className="flex gap-3">
-              <button type="button" onClick={() => setDeleteConfirm(null)} className="flex-1 rounded-lg border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-600 transition hover:bg-neutral-50">Cancel</button>
-              <button type="button" onClick={() => deleteMutation.mutate(deleteConfirm)} className="flex-1 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-red-600/20 transition hover:bg-red-700">Delete</button>
-            </div>
-          </div>
-        </div>
-      )}
     </AppLayout>
   );
 };

@@ -10,6 +10,7 @@ import { AppLayout } from '../components/AppLayout';
 import { PageEmpty, PageError, PageLoading } from '../components/PageState';
 import type { AxiosError } from 'axios';
 import { toast } from 'sonner';
+import { confirmToast } from '../utils/toast';
 
 const poSchema = z.object({
   supplier_id: z.string().min(1, 'Supplier required'),
@@ -27,6 +28,35 @@ interface POLineItem {
   discount_percent: number;
   gst_rate: number;
 }
+
+// Helper to calculate line total
+const calculateLineTotal = (item: POLineItem): number => {
+  const gross = item.quantity * item.unit_price;
+  const discount = gross * (item.discount_percent || 0) / 100;
+  const taxable = gross - discount;
+  const gst = taxable * (item.gst_rate || 0) / 100;
+  return taxable + gst;
+};
+
+// Helper to calculate totals
+const calculateTotals = (items: POLineItem[]) => {
+  return items.reduce(
+    (acc, item) => {
+      const gross = item.quantity * item.unit_price;
+      const discount = gross * (item.discount_percent || 0) / 100;
+      const taxable = gross - discount;
+      const gst = taxable * (item.gst_rate || 0) / 100;
+      
+      acc.subtotal += gross;
+      acc.discount += discount;
+      acc.taxable += taxable;
+      acc.gst += gst;
+      acc.total += taxable + gst;
+      return acc;
+    },
+    { subtotal: 0, discount: 0, taxable: 0, gst: 0, total: 0 }
+  );
+};
 
 const PurchaseOrderPage = () => {
   const navigate = useNavigate();
@@ -139,13 +169,19 @@ const PurchaseOrderPage = () => {
 
   const handleSendPO = () => {
     if (selectedPO) {
-      sendMutation.mutate(selectedPO.id);
+      confirmToast('Are you sure you want to send this PO? Once sent, it cannot be modified.', {
+        onConfirm: () => sendMutation.mutate(selectedPO.id),
+        type: 'confirm',
+      });
     }
   };
 
   const handleCancelPO = () => {
-    if (selectedPO && confirm('Are you sure you want to cancel this PO?')) {
-      cancelPOMutation.mutate(selectedPO.id);
+    if (selectedPO) {
+      confirmToast('Are you sure you want to cancel this PO? This action cannot be undone.', {
+        onConfirm: () => cancelPOMutation.mutate(selectedPO.id),
+        type: 'danger',
+      });
     }
   };
 
@@ -156,17 +192,49 @@ const PurchaseOrderPage = () => {
       !newItem.unit_price ||
       newItem.gst_rate === undefined
     ) {
-      setFormError('All line item fields required');
+      toast.error('All line item fields are required. Please fill in Product, Quantity, Unit Price, and GST rate.');
+      return;
+    }
+
+    // Check for duplicate product
+    const existingIndex = lineItems.findIndex(item => item.product_id === newItem.product_id);
+    if (existingIndex !== -1) {
+      const productName = products.find(p => p.id === newItem.product_id)?.name;
+      toast.error(`Product "${productName}" is already added. Remove it first or update the quantity.`);
       return;
     }
 
     setLineItems([...lineItems, newItem as POLineItem]);
     setNewItem({ discount_percent: 0, gst_rate: 18 });
-    setFormError('');
+    toast.success('Item added to purchase order');
   };
 
   const handleRemoveLineItem = (index: number) => {
-    setLineItems(lineItems.filter((_, i) => i !== index));
+    const item = lineItems[index];
+    const productName = products.find(p => p.id === item.product_id)?.name || 'This item';
+    
+    confirmToast(`Remove ${productName} from this purchase order?`, {
+      onConfirm: () => {
+        setLineItems(lineItems.filter((_, i) => i !== index));
+        toast.success('Item removed successfully');
+      },
+      type: 'warning',
+    });
+  };
+
+  // Auto-fill price and GST when product is selected
+  const handleProductSelect = (productId: string) => {
+    const product = products.find(p => p.id === productId);
+    if (product) {
+      setNewItem({
+        ...newItem,
+        product_id: productId,
+        unit_price: product.purchase_price / 100, // Convert from paise to rupees
+        gst_rate: product.gst_rate,
+      });
+    } else {
+      setNewItem({ ...newItem, product_id: productId });
+    }
   };
 
   const onSubmit = async (values: POForm) => {
@@ -184,13 +252,14 @@ const PurchaseOrderPage = () => {
     }
 
     if (finalLineItems.length === 0) {
-      setFormError('At least one line item required. Please add a product with quantity and price.');
+      toast.error('At least one line item is required. Please add a product with quantity and price.');
       return;
     }
 
     const parsed = poSchema.safeParse(values);
     if (!parsed.success) {
-      setFormError(parsed.error.issues[0]?.message ?? 'Validation failed');
+      const errorMsg = parsed.error.issues[0]?.message ?? 'Validation failed';
+      toast.error(errorMsg);
       return;
     }
 
@@ -266,20 +335,23 @@ const PurchaseOrderPage = () => {
 
             {/* Line Items Section */}
             <div className="pt-4 border-t border-neutral-200">
-              <h3 className="font-semibold text-sm mb-3">Line Items</h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-sm">Line Items</h3>
+                <span className="text-xs text-neutral-500">{lineItems.length} item(s) added</span>
+              </div>
 
               <div className="space-y-2 mb-4">
                 <div>
-                  <label className="hms-label">Product</label>
+                  <label className="hms-label">Product *</label>
                   <select
                     className="hms-input"
                     value={newItem.product_id || ''}
-                    onChange={(e) => setNewItem({ ...newItem, product_id: e.target.value })}
+                    onChange={(e) => handleProductSelect(e.target.value)}
                   >
                     <option value="">Select product</option>
                     {products.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.name}
+                        {p.name} (₹{(p.purchase_price / 100).toFixed(2)} | GST: {p.gst_rate}%)
                       </option>
                     ))}
                   </select>
@@ -287,21 +359,25 @@ const PurchaseOrderPage = () => {
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="hms-label">Quantity</label>
+                    <label className="hms-label">Quantity *</label>
                     <input
                       type="number"
                       className="hms-input"
                       value={newItem.quantity || ''}
-                      onChange={(e) => setNewItem({ ...newItem, quantity: parseFloat(e.target.value) })}
+                      onChange={(e) => setNewItem({ ...newItem, quantity: parseFloat(e.target.value) || 0 })}
+                      min="0.01"
+                      step="0.01"
                     />
                   </div>
                   <div>
-                    <label className="hms-label">Unit Price</label>
+                    <label className="hms-label">Unit Price (₹) *</label>
                     <input
                       type="number"
                       className="hms-input"
                       value={newItem.unit_price || ''}
-                      onChange={(e) => setNewItem({ ...newItem, unit_price: parseFloat(e.target.value) })}
+                      onChange={(e) => setNewItem({ ...newItem, unit_price: parseFloat(e.target.value) || 0 })}
+                      min="0"
+                      step="0.01"
                     />
                   </div>
                 </div>
@@ -313,11 +389,14 @@ const PurchaseOrderPage = () => {
                       type="number"
                       className="hms-input"
                       value={newItem.discount_percent || 0}
-                      onChange={(e) => setNewItem({ ...newItem, discount_percent: parseFloat(e.target.value) })}
+                      onChange={(e) => setNewItem({ ...newItem, discount_percent: parseFloat(e.target.value) || 0 })}
+                      min="0"
+                      max="100"
+                      step="0.01"
                     />
                   </div>
                   <div>
-                    <label className="hms-label">GST %</label>
+                    <label className="hms-label">GST % *</label>
                     <select
                       className="hms-input"
                       value={newItem.gst_rate || 18}
@@ -332,37 +411,83 @@ const PurchaseOrderPage = () => {
                   </div>
                 </div>
 
+                {/* ADD ITEM BUTTON - This should be visible */}
                 <button
                   type="button"
                   onClick={handleAddLineItem}
-                  className="w-full bg-secondary text-white px-3 py-2 rounded text-sm font-medium hover:bg-secondary/90"
+                  className="w-full bg-secondary text-white px-3 py-2.5 rounded text-sm font-semibold hover:bg-secondary/90 transition flex items-center justify-center gap-2 mt-2"
+                  style={{ backgroundColor: '#059669' }}
                 >
-                  Add Item
+                  <span className="material-icons text-sm">add_circle</span>
+                  Add Item to PO
                 </button>
               </div>
 
               {lineItems.length > 0 && (
-                <div className="bg-neutral-50 rounded p-3 space-y-2 mb-4 max-h-48 overflow-y-auto">
-                  {lineItems.map((item, idx) => {
-                    const product = products.find((p) => p.id === item.product_id);
-                    return (
-                      <div key={idx} className="flex justify-between items-start bg-white p-2 rounded border border-neutral-200">
-                        <div className="text-sm flex-1">
-                          <div className="font-medium">{product?.name}</div>
-                          <div className="text-neutral-600 text-xs">
-                            {item.quantity} x {item.unit_price} (GST: {item.gst_rate}%)
+                <div className="bg-neutral-50 rounded-lg p-4 mb-4">
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {lineItems.map((item, idx) => {
+                      const product = products.find((p) => p.id === item.product_id);
+                      const lineTotal = calculateLineTotal(item);
+                      return (
+                        <div key={idx} className="flex justify-between items-start bg-white p-3 rounded border border-neutral-200">
+                          <div className="flex-1">
+                            <div className="font-medium text-neutral-900">{product?.name || 'Unknown Product'}</div>
+                            <div className="text-neutral-600 text-xs mt-1 space-x-2">
+                              <span>Qty: {item.quantity}</span>
+                              <span>•</span>
+                              <span>₹{item.unit_price.toFixed(2)}/unit</span>
+                              <span>•</span>
+                              <span>Disc: {item.discount_percent}%</span>
+                              <span>•</span>
+                              <span>GST: {item.gst_rate}%</span>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-semibold text-neutral-900">₹{lineTotal.toFixed(2)}</div>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveLineItem(idx)}
+                              className="text-danger hover:text-danger/80 text-xs mt-1 font-medium"
+                            >
+                              Remove
+                            </button>
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveLineItem(idx)}
-                          className="text-danger hover:text-danger/80 text-xs ml-2"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
+
+                  {/* Totals Summary */}
+                  <div className="mt-4 pt-4 border-t border-neutral-200 space-y-1">
+                    {(() => {
+                      const totals = calculateTotals(lineItems);
+                      return (
+                        <>
+                          <div className="flex justify-between text-xs">
+                            <span className="text-neutral-600">Subtotal:</span>
+                            <span className="font-medium">₹{totals.subtotal.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-xs">
+                            <span className="text-neutral-600">Discount:</span>
+                            <span className="font-medium text-red-600">-₹{totals.discount.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-xs">
+                            <span className="text-neutral-600">Taxable Amount:</span>
+                            <span className="font-medium">₹{totals.taxable.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-xs">
+                            <span className="text-neutral-600">GST:</span>
+                            <span className="font-medium">₹{totals.gst.toFixed(2)}</span>
+                          </div>
+                          <div className="flex justify-between text-sm font-bold pt-2 border-t border-neutral-200 mt-2">
+                            <span className="text-neutral-900">Grand Total:</span>
+                            <span className="text-primary">₹{totals.total.toFixed(2)}</span>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
                 </div>
               )}
             </div>

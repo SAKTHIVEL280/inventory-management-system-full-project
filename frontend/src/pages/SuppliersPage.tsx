@@ -77,6 +77,24 @@ const SuppliersPage = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['suppliers'] });
       setDeleteConfirm(null);
+      setFormError('');
+    },
+    onError: (error: unknown) => {
+      const axiosErr = error as any;
+      const detail = axiosErr.response?.data?.detail;
+      if (typeof detail === 'string') {
+        setFormError(detail);
+      } else if (detail?.message) {
+        // Handle backend error objects (e.g., outstanding balance errors)
+        setFormError(detail.message);
+      } else if (detail?.error_code === 'OUTSTANDING_EXISTS') {
+        setFormError('Cannot delete supplier: There are outstanding payments. Please clear all dues before deleting.');
+      } else if (Array.isArray(detail)) {
+        setFormError(detail.map((d: any) => d.msg).join(', '));
+      } else {
+        setFormError('Failed to delete supplier');
+      }
+      setDeleteConfirm(null);
     },
   });
 
@@ -224,17 +242,43 @@ const SuppliersPage = () => {
 
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
-          <div className="hms-card w-full max-w-sm space-y-6 p-6">
+          <div className="hms-card w-full max-w-md space-y-6 p-6">
             <div>
               <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
-                <span className="material-icons text-red-600" aria-hidden="true">delete</span>
+                <span className="material-icons text-red-600 text-2xl" aria-hidden="true">delete</span>
               </div>
               <h2 className="font-display text-lg font-bold text-neutral-900">Delete Supplier</h2>
               <p className="mt-2 text-sm text-neutral-600">Are you sure? This action cannot be undone.</p>
+              
+              {/* Error message for outstanding balance */}
+              {formError && (
+                <div className="mt-4 rounded-lg bg-red-50 border border-red-200 p-4">
+                  <div className="flex items-start gap-3">
+                    <span className="material-icons text-red-600 text-lg flex-shrink-0" aria-hidden="true">error</span>
+                    <p className="text-sm text-red-800 font-medium">{formError}</p>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="flex gap-3">
-              <button type="button" onClick={() => setDeleteConfirm(null)} className="flex-1 rounded-lg border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-600 transition hover:bg-neutral-50">Cancel</button>
-              <button type="button" onClick={() => deleteMutation.mutate(deleteConfirm)} className="flex-1 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-red-600/20 transition hover:bg-red-700">Delete</button>
+              <button 
+                type="button" 
+                onClick={() => {
+                  setDeleteConfirm(null);
+                  setFormError('');
+                }} 
+                className="flex-1 rounded-lg border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-600 transition hover:bg-neutral-50"
+              >
+                Cancel
+              </button>
+              <button 
+                type="button" 
+                onClick={() => deleteMutation.mutate(deleteConfirm)} 
+                className="flex-1 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-red-600/20 transition hover:bg-red-700"
+              >
+                <span className="material-icons text-sm align-middle mr-1">delete</span>
+                Delete
+              </button>
             </div>
           </div>
         </div>

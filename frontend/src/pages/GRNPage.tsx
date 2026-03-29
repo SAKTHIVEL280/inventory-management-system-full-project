@@ -62,8 +62,6 @@ const GRNPage = () => {
 
   const masterLoaded = useRef(false);
   const pendingPoId = useRef<string | null>(null);
-  const [poSearch, setPoSearch] = useState('');
-  const [showPoSuggestions, setShowPoSuggestions] = useState(false);
 
   const fetchGRNs = async () => {
     try { setLoading(true); const res = await purchaseApi.listGRNs(statusFilter || undefined); setGRNs(res.data.items || []); } catch { setError('Failed to load GRNs'); } finally { setLoading(false); }
@@ -162,7 +160,6 @@ const GRNPage = () => {
     setReceiptDate(new Date().toISOString().split('T')[0]);
     setSupplierInvoiceNumber(''); setSupplierInvoiceDate('');
     setNotes(''); setItems([]); setError('');
-    setPoSearch(''); setShowPoSuggestions(false);
   };
 
   const addItem = () => {
