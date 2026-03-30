@@ -126,28 +126,27 @@ ims1/
 ```bash
 # Clone and navigate
 git clone <repo-url>
-cd ims1
+cd inventory-management-system-full-project
 
-# Backend
-cd backend
-python -m venv venv
-source venv/bin/activate          # Linux/macOS
-venv\Scripts\activate             # Windows
-pip install -r requirements.txt
-
-# Create .env from template
-cp .env.example .env
-
-# Initialize database
-alembic -c ../database/alembic.ini upgrade head
+# One-command backend bootstrap (env + deps + db compatibility migration + seed)
 python setup_db.py
 
-# Start server
+# Start backend
+cd backend
+.venv\Scripts\activate             # Windows
+# source .venv/bin/activate         # Linux/macOS
 uvicorn app.main:app --reload
 
 # Frontend (new terminal)
 cd frontend
+npm install
+npm run dev
 ---
+
+Default login after setup:
+- Email: admin@company.com
+- Password: Admin@123
+
 
 ## 📖 Documentation Structure
 

@@ -8,6 +8,7 @@ Welcome to the IMS documentation. This guide helps you navigate the entire proje
 
 ### Getting Started
 - [Setup Guide](./guides/SETUP.md) — Complete installation and configuration
+- [First-Time Setup Checklist](./guides/FIRST_TIME_SETUP_CHECKLIST.md) — One-page quick onboarding steps
 - [Coding Standards](./guides/CODING_STANDARDS.md) — Code quality rules
 - [Project Specification](./MASTER_SPEC.md) — Complete system specification
 
@@ -97,11 +98,12 @@ ims1/
 
 ## 🚀 Quick Start
 
-1. **First time setup?** → Read [Setup Guide](./guides/SETUP.md)
-2. **Working on code?** → Check [Coding Standards](./guides/CODING_STANDARDS.md)
-3. **Building a feature?** → Find related workflow in [Workflows](./workflows/)
-4. **Designing UI?** → Use [Design System](./design/DESIGN_SYSTEM_MASTER.md)
-5. **Database issues?** → See [Database Guide](./guides/DATABASE.md)
+1. **First time setup?** → Start with [First-Time Setup Checklist](./guides/FIRST_TIME_SETUP_CHECKLIST.md)
+2. **Need full details?** → Read [Setup Guide](./guides/SETUP.md)
+3. **Working on code?** → Check [Coding Standards](./guides/CODING_STANDARDS.md)
+4. **Building a feature?** → Find related workflow in [Workflows](./workflows/)
+5. **Designing UI?** → Use [Design System](./design/DESIGN_SYSTEM_MASTER.md)
+6. **Database issues?** → See [Database Guide](./guides/DATABASE.md)
 
 ---
 

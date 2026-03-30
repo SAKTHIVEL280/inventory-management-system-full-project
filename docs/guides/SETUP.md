@@ -32,25 +32,24 @@ Choose **ONE** of the paths below to set up your environment.
 
 ---
 
-### 🟢 Path A: The Easy Way (5 Minutes)
+### 🟢 Path A: The Easy Way (Recommended)
 
-Use the automated script to handle database creation, dependencies, and seeding in one go.
+Use the automated bootstrap to handle environment setup, dependency install, compatibility migration (including currency fields), and seeding in one go.
 
 **Windows (PowerShell):**
 ```powershell
-# Set your PostgreSQL password and run the script
-$env:PGPASSWORD='root'; python setup_db.py
+# Run from repository root
+python setup_db.py
 ```
 
 **Linux/macOS:**
 ```bash
-# Set your PostgreSQL password and run the script
-PGPASSWORD=root python3 setup_db.py
+# Run from repository root
+python3 setup_db.py
 ```
 
 **Next Steps after Path A:**
-1. Configure your backend `.env` (see section 3.3).
-2. Start the servers (see section 5).
+1. Start backend and frontend servers (see section 4).
 
 ---
 
@@ -69,22 +68,23 @@ Use this path if you want full control over your environment or if the automated
    ```
 2. Create and activate a virtual environment:
    ```bash
-   python -m venv venv
+    python -m venv .venv
    # Windows:
-   venv\Scripts\activate
+    .venv\Scripts\activate
    # Linux/macOS:
-   source venv/bin/activate
+    source .venv/bin/activate
    ```
 3. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
-4. Configure `.env` (see section 3.3).
+4. Configure `.env` (see section 3.1).
 
-#### B.3 Initialize & Seed Data
-Run the seeding script to create the admin user and sample masters:
+#### B.3 Initialize DB Compatibility + Seed
+Run compatibility migration first (adds missing columns like currency/exchange_rate/safety_stock), then seed:
 ```bash
-python app/utils/seed.py
+python run_migration.py
+python -m app.utils.seed
 ```
 
 ---
@@ -113,7 +113,7 @@ cd ../frontend
 cp .env.example .env
 ```
 
-Ensure `VITE_API_BASE_URL` matches your backend URL (default: `http://localhost:8000`).
+Ensure `VITE_API_BASE_URL` matches your backend URL (default: `http://127.0.0.1:8000`).
 
 ---
 
@@ -122,6 +122,7 @@ Ensure `VITE_API_BASE_URL` matches your backend URL (default: `http://localhost:
 ### 4.1 Backend
 ```bash
 cd backend
+.venv\Scripts\activate   # Windows
 uvicorn app.main:app --reload
 ```
 
@@ -134,6 +135,13 @@ npm run dev
 
 API is available at: http://localhost:8000
 API documentation: http://localhost:8000/docs
+
+If dashboard or sales pages fail after upgrading older databases, run:
+
+```bash
+cd backend
+python run_migration.py
+```
 
 ---
 

@@ -8,7 +8,7 @@ This guide covers database configuration, initialization, migration, and trouble
 
 - **Development**: PostgreSQL 15+ (Docker or local install)
 - **Production**: PostgreSQL 15+ (required)
-- **Schema management**: `psql` scripts in `database_hole/` (no Alembic in the happy-path setup)
+- **Schema management**: SQLAlchemy models + compatibility migration (`backend/run_migration.py`)
 
 ---
 
@@ -49,9 +49,8 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 # Install dependencies
 pip install -r requirements.txt
 
-# Initialize schema + seed data (psql-only)
-psql -U ims_admin -d ims_db -f ../database_hole/01_schema.sql
-psql -U ims_admin -d ims_db -f ../database_hole/02_seed_data.sql
+# Initialize schema + seed data (recommended)
+python ../setup_db.py
 ```
 
 ### Verify Connection
@@ -127,41 +126,14 @@ permission_overrides: dict = Column(JSON, nullable=True)
 
 ## 🔄 Database Migrations
 
-### Using Alembic
+Use the compatibility migration script whenever new columns are introduced.
 
-#### Create New Migration (After Model Changes)
 ```bash
-cd database
-
-# Auto-generate migration based on model changes
-alembic revision --autogenerate -m "Add new_field to users"
-
-# Review generated migration in alembic/versions/
-# Then apply:
-alembic upgrade head
+cd backend
+python run_migration.py
 ```
 
-#### Rollback Migration
-```bash
-# Rollback one version
-alembic downgrade -1
-
-# Rollback to specific version
-alembic downgrade abc123def456
-```
-
-#### Check Current Version
-```bash
-alembic current
-```
-
-#### Migration Files Location
-```
-database/alembic/versions/
-├── 001_initial.py           # Initial schema (auto-generated)
-├── 002_add_fields.py        # Your custom migrations
-└── ...
-```
+This is idempotent and safe to run multiple times.
 
 ---
 
@@ -169,7 +141,7 @@ database/alembic/versions/
 
 ### setup_db.py (Full Setup)
 ```bash
-cd backend
+cd <repo-root>
 python setup_db.py
 ```
 
@@ -180,7 +152,7 @@ python setup_db.py
 4. ✅ Seeds product units: PCS, KG, LTR, BOX, etc.
 5. ✅ Creates default company record
 
-**Main script location:** `backend/setup_db.py`
+**Main script location:** `setup_db.py` (wrapper also available at `backend/setup_db.py`)
 
 ### seed_db.py (Sample Data)
 ```bash

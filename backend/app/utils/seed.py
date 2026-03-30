@@ -6,6 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from app.database import SessionLocal, engine, Base
+import app.models  # noqa: F401 - ensures all model tables are registered on Base metadata
 from app.models.user import User
 from app.models.supplier import Supplier
 from app.models.product import Product, UnitOfMeasure, ProductCategory
@@ -18,7 +19,7 @@ def seed_database():
 
     # Create all tables
     Base.metadata.create_all(bind=engine)
-    print("✓ Database tables created")
+    print("[OK] Database tables created")
 
     db = SessionLocal()
 
@@ -37,10 +38,10 @@ def seed_database():
             )
             db.add(admin_user)
             db.commit()
-            print("✓ Created admin user: admin@company.com / Admin@123")
+            print("[OK] Created admin user: admin@company.com / Admin@123")
             print("  Note: Admin will be prompted to change password on first login")
         else:
-            print("✓ Admin user already exists")
+            print("[OK] Admin user already exists")
 
         # Create sample suppliers
         sample_suppliers = [
@@ -83,7 +84,7 @@ def seed_database():
             if not existing:
                 db.add(supplier)
         db.commit()
-        print(f"✓ Created {len(sample_suppliers)} sample suppliers")
+        print(f"[OK] Created {len(sample_suppliers)} sample suppliers")
 
         # Create units of measure
         uom_data = [
@@ -166,7 +167,7 @@ def seed_database():
             if not existing:
                 db.add(product)
         db.commit()
-        print(f"✓ Created {len(sample_products)} sample products")
+        print(f"[OK] Created {len(sample_products)} sample products")
 
         # Create default company
         company = db.query(Company).first()
@@ -188,18 +189,18 @@ def seed_database():
             )
             db.add(company)
             db.commit()
-            print("✓ Created default company")
+            print("[OK] Created default company")
 
     except Exception as e:
         db.rollback()
-        print(f"✗ Error seeding database: {e}")
+        print(f"[ERROR] Error seeding database: {e}")
         raise
     finally:
         db.close()
 
 if __name__ == "__main__":
     seed_database()
-    print("\n✓ Database seeding completed successfully!")
+    print("\n[OK] Database seeding completed successfully!")
     print("\nSample data created:")
     print("  - Admin user: admin@company.com / Admin@123")
     print("  - Suppliers: Tech Electronics, Digital Solutions")
