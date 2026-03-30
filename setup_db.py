@@ -149,7 +149,15 @@ def main() -> int:
     _ensure_database_exists(database_url, env_values)
 
     _print_step("[4/5] Applying compatibility migrations (including currency fields)")
-    migrate = subprocess.run([str(py_cmd), "run_migration.py"], cwd=str(BACKEND), text=True, capture_output=True)
+    proc_env = os.environ.copy()
+    proc_env["DATABASE_URL"] = database_url
+    migrate = subprocess.run(
+        [str(py_cmd), "run_migration.py"],
+        cwd=str(BACKEND),
+        text=True,
+        capture_output=True,
+        env=proc_env,
+    )
     if migrate.returncode != 0:
         print("  ✗ Migration failed")
         print((migrate.stderr or migrate.stdout or "")[:500])
@@ -157,7 +165,13 @@ def main() -> int:
     print("  - Compatibility migration applied")
 
     _print_step("[5/5] Creating tables + seeding defaults")
-    seed = subprocess.run([str(py_cmd), "-m", "app.utils.seed"], cwd=str(BACKEND), text=True, capture_output=True)
+    seed = subprocess.run(
+        [str(py_cmd), "-m", "app.utils.seed"],
+        cwd=str(BACKEND),
+        text=True,
+        capture_output=True,
+        env=proc_env,
+    )
     if seed.returncode != 0:
         print("  ✗ Seeding failed")
         print((seed.stderr or seed.stdout or "")[:700])
