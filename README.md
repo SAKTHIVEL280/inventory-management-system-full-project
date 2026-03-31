@@ -135,7 +135,7 @@ python setup_db.py
 cd backend
 .venv\Scripts\activate             # Windows
 # source .venv/bin/activate         # Linux/macOS
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --port 8001
 
 # Frontend (new terminal)
 cd frontend
@@ -143,7 +143,11 @@ npm install
 npm run dev
 ---
 
-Default login after setup:
+**Default ports:**
+- Frontend: `http://localhost:3001`
+- Backend API: `http://localhost:8001`
+
+**Default login after setup:**
 - Email: admin@company.com
 - Password: Admin@123
 

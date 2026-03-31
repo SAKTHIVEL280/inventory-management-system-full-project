@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     mail_ssl_tls: bool = False
     
     # Frontend
-    frontend_url: str = "http://localhost:5173"
+    frontend_url: str = "http://localhost:3001"
     
     # Company
     company_name: str = "Your Company Name"
