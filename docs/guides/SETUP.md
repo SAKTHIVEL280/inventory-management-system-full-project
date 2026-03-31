@@ -209,7 +209,7 @@ Never commit `.env` to version control. Set environment variables using your ser
 | Issue | Solution |
 |---|---|
 | `psycopg2` install fails | Run: `sudo apt install libpq-dev python3-dev` (Linux) |
-| Alembic migration fails | Run from `database/` folder and check DATABASE_URL in `backend/.env` is correct |
+| Compatibility migration fails | Run from `backend/` folder (`python run_migration.py`) and check DATABASE_URL in `backend/.env` is correct |
 | Email not sending | Use Gmail App Password (not account password). Enable 2FA first. |
 | CORS error in browser | Verify FRONTEND_URL in backend .env matches your frontend URL exactly |
 | PDF generation fails | Install WeasyPrint dependencies: `sudo apt install libpango-1.0-0 libpangoft2-1.0-0` |
@@ -232,23 +232,12 @@ npm run test
 
 ## 9. requirements.txt
 
+Use the canonical dependency file in the backend folder.
+
+```bash
+cd backend
+pip install -r requirements.txt
 ```
-fastapi==0.111.0
-uvicorn[standard]==0.29.0
-sqlalchemy==2.0.30
-alembic==1.13.1
-psycopg2-binary==2.9.9
-python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
-python-multipart==0.0.9
-fastapi-mail==1.4.1
-weasyprint==61.2
-pydantic[email]==2.7.1
-pydantic-settings==2.2.1
-python-dotenv==1.0.1
-pillow==10.3.0
-num2words==0.5.13
-pytest==8.2.0
-httpx==0.27.0
-```
+
+Do not maintain a duplicate package list in this document; keep `backend/requirements.txt` as the single source of truth.
 

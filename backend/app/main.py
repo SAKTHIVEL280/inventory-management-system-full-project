@@ -119,7 +119,6 @@ def custom_openapi():
                 for param in method["parameters"]:
                     if param["name"] == "page_size" and "schema" in param:
                         param["schema"]["maximum"] = 500
-                        print(f"DEBUG: Forced 500 for {param['name']} in {method.get('summary', 'unknown')}")
     app.openapi_schema = openapi_schema
     return app.openapi_schema
 

@@ -43,5 +43,13 @@ SELECT
   TRUE
 WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = 'admin@company.com');
 
+-- Ensure existing admin account keeps required defaults for first login flow
+UPDATE users
+SET
+  role = 'admin',
+  is_active = TRUE,
+  force_password_change = TRUE
+WHERE email = 'admin@company.com';
+
 COMMIT;
 
