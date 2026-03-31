@@ -62,7 +62,7 @@ async def dashboard_report(
 
     # Pending sales orders
     pending_so_count = db.query(func.count(SalesOrder.id)).filter(
-        SalesOrder.status.in_(["pending", "confirmed", "partial_delivered"]),
+        SalesOrder.status.in_(["draft", "confirmed", "partial"]),
         SalesOrder.is_deleted == False,
     ).scalar() or 0
 

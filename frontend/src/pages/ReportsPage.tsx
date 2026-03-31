@@ -62,6 +62,7 @@ const ReportsPage = () => {
 
   const stockSummary = [
     { name: 'Normal', value: stockItems.filter(i => i.status === 'Normal').length },
+    { name: 'Below Safety Stock', value: stockItems.filter(i => i.status === 'Below Safety Stock').length },
     { name: 'Low Stock', value: stockItems.filter(i => i.status === 'Low Stock').length },
     { name: 'Out of Stock', value: stockItems.filter(i => i.status === 'Out of Stock').length },
   ].filter(i => i.value > 0);
@@ -141,7 +142,7 @@ const ReportsPage = () => {
                   <PieChart>
                     <Pie data={stockSummary} cx="50%" cy="50%" labelLine={false} label={({ name, value }) => `${name}: ${value}`}
                       outerRadius={80} dataKey="value">
-                      {stockSummary.map((_, idx) => <Cell key={idx} fill={['#22c55e', '#f59e0b', '#ef4444'][idx]} />)}
+                      {stockSummary.map((_, idx) => <Cell key={idx} fill={['#22c55e', '#38bdf8', '#f59e0b', '#ef4444'][idx]} />)}
                     </Pie>
                     <Tooltip />
                     <Legend />
@@ -189,7 +190,12 @@ const ReportsPage = () => {
           <div className="hms-card overflow-hidden">
             <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-neutral-50"><th className="px-4 py-3 text-left font-semibold">Code</th><th className="px-4 py-3 text-left font-semibold">Product</th><th className="px-4 py-3 text-right font-semibold">Qty</th><th className="px-4 py-3 text-right font-semibold">Min</th><th className="px-4 py-3 text-center font-semibold">Status</th></tr></thead>
               <tbody>{stockItems.map((i, idx) => {
-                const sc: Record<string, string> = { 'Normal': 'bg-green-100 text-green-700', 'Low Stock': 'bg-amber-100 text-amber-700', 'Out of Stock': 'bg-red-100 text-red-700' };
+                const sc: Record<string, string> = {
+                  'Normal': 'bg-green-100 text-green-700',
+                  'Below Safety Stock': 'bg-sky-100 text-sky-700',
+                  'Low Stock': 'bg-amber-100 text-amber-700',
+                  'Out of Stock': 'bg-red-100 text-red-700'
+                };
                 return (<tr key={idx} className="border-b border-neutral-100"><td className="px-4 py-3">{i.product_code}</td><td className="px-4 py-3">{i.product_name}</td><td className="px-4 py-3 text-right">{i.closing_qty}</td><td className="px-4 py-3 text-right text-neutral-500">{i.min_stock}</td><td className="px-4 py-3 text-center"><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${sc[i.status]}`}>{i.status}</span></td></tr>);
               })}</tbody>
             </table></div>
