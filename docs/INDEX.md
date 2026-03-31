@@ -1,4 +1,4 @@
-﻿# Inventory Management System - Documentation Index
+﻿#  Mecandria ERP - Documentation Index
 
 Welcome to the IMS documentation. This guide helps you navigate the entire project structure and find what you need.
 

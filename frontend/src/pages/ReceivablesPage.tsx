@@ -8,6 +8,7 @@ import { AppLayout } from '../components/AppLayout';
 import { paymentsApi, type Payment, type CreatePaymentPayload, type PaymentAllocationRequest } from '../api/payments';
 import { salesApi, type SalesInvoice } from '../api/sales';
 import { apiClient } from '../api/client';
+import { showError, showSuccess } from '../utils/toastHelper';
 
 interface CustomerOption { id: string; company_name: string; }
 
@@ -112,7 +113,13 @@ const ReceivablesPage = () => {
   };
 
   const handleStatusChange = async (id: string, status: string) => {
-    try { await paymentsApi.updatePaymentStatus(id, status); fetchPayments(); } catch { alert('Failed'); }
+    try {
+      await paymentsApi.updatePaymentStatus(id, status);
+      showSuccess('Receipt status updated');
+      fetchPayments();
+    } catch {
+      showError('Failed to update receipt status');
+    }
   };
 
   const handleArchiveToggle = async (id: string, archived: boolean) => {
@@ -122,9 +129,10 @@ const ReceivablesPage = () => {
       } else {
         await paymentsApi.archivePayment(id);
       }
+      showSuccess(archived ? 'Receipt restored' : 'Receipt archived');
       fetchPayments();
     } catch {
-      alert(archived ? 'Restore failed' : 'Archive failed');
+      showError(archived ? 'Restore failed' : 'Archive failed');
     }
   };
 

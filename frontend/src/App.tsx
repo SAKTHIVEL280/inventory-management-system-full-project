@@ -28,6 +28,7 @@ import ReportsPage from './pages/ReportsPage';
 import { PERMISSION_SCOPES } from './types';
 import { Toaster } from 'sonner';
 import { authApi } from './api/auth';
+import { ConfirmDialogHost } from './components/ConfirmDialogHost';
 
 function App() {
   const { initializeFromLocalStorage, isAuthenticated, setUser, logout } = useAuthStore();
@@ -70,6 +71,7 @@ function App() {
   return (
     <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Toaster richColors position="top-right" closeButton />
+      <ConfirmDialogHost />
       <Routes>
         {/* Public routes */}
         <Route

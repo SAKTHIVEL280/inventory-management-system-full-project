@@ -8,7 +8,7 @@
 
 ## [LIST] Executive Summary
 
-This document details the comprehensive updates made to the Inventory Management System's master data modules (Customer, Supplier, and Product) to bring them to production-ready standards. All changes focus on **data integrity**, **user experience**, and **error prevention**.
+This document details the comprehensive updates made to the  Mecandria ERP's master data modules (Customer, Supplier, and Product) to bring them to production-ready standards. All changes focus on **data integrity**, **user experience**, and **error prevention**.
 
 ---
 

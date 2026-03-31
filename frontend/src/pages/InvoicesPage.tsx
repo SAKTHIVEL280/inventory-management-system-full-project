@@ -8,6 +8,7 @@ import { AppLayout } from '../components/AppLayout';
 import { salesApi, type SalesInvoice, type CreateInvoicePayload, type SalesLineItem, type SalesOrder } from '../api/sales';
 import { apiClient } from '../api/client';
 import { toast } from 'sonner';
+import { confirmWithToast } from '../utils/toastHelper';
 
 interface ProductOption { id: string; name: string; product_code: string; selling_price: number; gst_rate: number; }
 interface CustomerOption { id: string; company_name: string; customer_code: string; }
@@ -69,13 +70,18 @@ const InvoicesPage = () => {
 
   const resetForm = () => { setCustomerId(''); setInvoiceDate(new Date().toISOString().split('T')[0]); setDueDate(''); setNotes(''); setItems([]); setEditingId(null); setError(''); setSoNumberSearch(''); setSoId(undefined); };
   const addItem = () => { setItems([...items, { product_id: '', quantity: 1, unit_price: 0, discount_percent: 0, gst_rate: 18 }]); };
+  const paiseToRupees = (paise: number) => (Number.isFinite(paise) ? paise / 100 : 0);
+  const rupeesToPaise = (value: string | number) => {
+    const num = typeof value === 'number' ? value : parseFloat(value);
+    return Number.isFinite(num) ? Math.round(num * 100) : 0;
+  };
   const updateItem = (idx: number, field: keyof SalesLineItem, value: string | number) => {
     const updated = [...items]; (updated[idx] as unknown as Record<string, unknown>)[field] = value;
     if (field === 'product_id') { const p = products.find(x => x.id === value); if (p) { updated[idx].unit_price = p.selling_price; updated[idx].gst_rate = p.gst_rate; } }
     setItems(updated);
   };
   const removeItem = (idx: number) => { setItems(items.filter((_, i) => i !== idx)); };
-  const calcTotal = (i: SalesLineItem) => { const g = i.unit_price * i.quantity; const d = g * (i.discount_percent || 0) / 100; const t = g - d; return t + t * i.gst_rate / 100; };
+  const calcTotal = (i: SalesLineItem) => { const g = i.unit_price * i.quantity; const d = g * (i.discount_percent || 0) / 100; const t = g - d; return Math.round(t + t * i.gst_rate / 100); };
   const formatAmount = (p: number) => `₹${(p / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
   const formatStatusLabel = (status?: string) => (status || 'unknown').replace('_', ' ');
 
@@ -94,9 +100,15 @@ const InvoicesPage = () => {
   };
 
   const handleIssue = async (id: string) => {
-    if (!confirm('Issue this invoice? This will deduct stock.')) return;
+    const confirmed = await confirmWithToast('Issue this invoice? This will deduct stock.', {
+      type: 'warning',
+    });
+    if (!confirmed) return;
     try { await salesApi.issueInvoice(id); fetchInvoices(); }
-    catch (err: unknown) { const m = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail; alert(typeof m === 'string' ? m : 'Issue failed'); }
+    catch (err: unknown) {
+      const m = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(typeof m === 'string' ? m : 'Issue failed');
+    }
   };
 
   const handleDownloadPDF = async (inv: SalesInvoice) => {
@@ -284,8 +296,8 @@ const InvoicesPage = () => {
         </div>
 
         {showForm && createPortal(
-          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm">
-            <div className="hms-card my-8 w-full max-w-4xl space-y-6 p-6">
+          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-2 sm:p-4 backdrop-blur-sm">
+            <div className="hms-card my-4 sm:my-8 w-[min(96vw,1500px)] max-w-none space-y-6 p-4 sm:p-6">
               <h2 className="font-display text-xl font-bold">{editingId ? 'Modify/Change' : 'New'} Invoice</h2>
               {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>}
               
@@ -341,10 +353,67 @@ const InvoicesPage = () => {
               </div>
               <div>
                 <div className="mb-2 flex items-center justify-between"><h3 className="text-sm font-semibold">Items</h3><button onClick={addItem} className="rounded bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary">+ Add</button></div>
-                <div className="overflow-x-auto rounded-lg border border-neutral-200"><table className="w-full text-sm"><thead><tr className="bg-neutral-50"><th className="px-3 py-2 text-left">Product</th><th className="px-3 py-2 text-right w-20">Qty</th><th className="px-3 py-2 text-right w-28">Price (₹)</th><th className="px-3 py-2 text-right w-20">Disc %</th><th className="px-3 py-2 text-right w-20">GST</th><th className="px-3 py-2 text-right w-28">Total</th><th className="w-10"></th></tr></thead><tbody>
-                  {items.map((item, idx) => (<tr key={idx} className="border-t border-neutral-100"><td className="px-3 py-2"><select className="w-full rounded border px-2 py-1.5 text-sm" value={item.product_id} onChange={e => updateItem(idx, 'product_id', e.target.value)}><option value="">Select</option>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></td><td className="px-3 py-2"><input type="number" min="0.01" step="0.01" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={item.quantity} onChange={e => updateItem(idx, 'quantity', parseFloat(e.target.value)||0)} /></td><td className="px-3 py-2"><input type="number" min="0" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={item.unit_price} onChange={e => updateItem(idx, 'unit_price', parseInt(e.target.value)||0)} /></td><td className="px-3 py-2"><input type="number" min="0" max="100" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={item.discount_percent||0} onChange={e => updateItem(idx, 'discount_percent', parseFloat(e.target.value)||0)} /></td><td className="px-3 py-2"><select className="w-full rounded border px-2 py-1.5 text-sm" value={item.gst_rate} onChange={e => updateItem(idx, 'gst_rate', parseInt(e.target.value))}><option value={0}>0%</option><option value={5}>5%</option><option value={12}>12%</option><option value={18}>18%</option><option value={28}>28%</option></select></td><td className="px-3 py-2 text-right font-medium">{formatAmount(calcTotal(item))}</td><td className="px-3 py-2"><button onClick={() => removeItem(idx)} className="inline-flex items-center gap-1 text-red-500"><span className="material-icons text-sm" aria-hidden="true">delete_outline</span>Remove</button></td></tr>))}
+                <div className="overflow-x-auto rounded-lg border border-neutral-200">
+                  <table className="w-full min-w-[980px] table-fixed text-sm">
+                    <thead>
+                      <tr className="bg-neutral-50">
+                        <th className="w-[36%] px-3 py-2 text-left">Product</th>
+                        <th className="w-20 px-3 py-2 text-right">Qty</th>
+                        <th className="w-32 px-3 py-2 text-right">Price (₹)</th>
+                        <th className="w-20 px-3 py-2 text-right">Disc %</th>
+                        <th className="w-20 px-3 py-2 text-right">GST</th>
+                        <th className="w-32 px-3 py-2 text-right">Total</th>
+                        <th className="w-24 px-3 py-2 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map((item, idx) => (
+                        <tr key={idx} className="border-t border-neutral-100">
+                          <td className="px-3 py-2">
+                            <select className="w-full rounded border px-2 py-1.5 text-sm" value={item.product_id} onChange={e => updateItem(idx, 'product_id', e.target.value)}>
+                              <option value="">Select</option>
+                              {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                          </td>
+                          <td className="px-3 py-2">
+                            <input type="number" min="0.01" step="0.01" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={item.quantity} onChange={e => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input type="number" min="0" step="0.01" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={paiseToRupees(item.unit_price)} onChange={e => updateItem(idx, 'unit_price', rupeesToPaise(e.target.value))} />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input type="number" min="0" max="100" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={item.discount_percent || 0} onChange={e => updateItem(idx, 'discount_percent', parseFloat(e.target.value) || 0)} />
+                          </td>
+                          <td className="px-3 py-2">
+                            <select className="w-full rounded border px-2 py-1.5 text-sm" value={item.gst_rate} onChange={e => updateItem(idx, 'gst_rate', parseInt(e.target.value))}>
+                              <option value={0}>0%</option>
+                              <option value={5}>5%</option>
+                              <option value={12}>12%</option>
+                              <option value={18}>18%</option>
+                              <option value={28}>28%</option>
+                            </select>
+                          </td>
+                          <td className="px-3 py-2 text-right font-medium">{formatAmount(calcTotal(item))}</td>
+                          <td className="px-3 py-2 text-right">
+                            <button onClick={() => removeItem(idx)} className="inline-flex items-center gap-1 whitespace-nowrap text-red-500">
+                              <span className="material-icons text-sm" aria-hidden="true">delete_outline</span>Remove
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
                   {items.length === 0 && <tr><td colSpan={7} className="px-3 py-4 text-center text-neutral-400">No items</td></tr>}
-                </tbody>{items.length > 0 && <tfoot><tr className="border-t-2 bg-neutral-50"><td colSpan={5} className="px-3 py-2 text-right font-semibold">Total:</td><td className="px-3 py-2 text-right font-bold text-primary">{formatAmount(items.reduce((s, i) => s + calcTotal(i), 0))}</td><td></td></tr></tfoot>}</table></div>
+                    </tbody>
+                    {items.length > 0 && (
+                      <tfoot>
+                        <tr className="border-t-2 bg-neutral-50">
+                          <td colSpan={5} className="px-3 py-2 text-right font-semibold">Total:</td>
+                          <td className="px-3 py-2 text-right font-bold text-primary">{formatAmount(items.reduce((s, i) => s + calcTotal(i), 0))}</td>
+                          <td></td>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                </div>
               </div>
               <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Notes</label><textarea className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></div>
               <div className="flex justify-end gap-3">

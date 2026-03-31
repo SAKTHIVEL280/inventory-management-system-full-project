@@ -18,6 +18,7 @@ import { AppLayout } from '../components/AppLayout';
 import { purchaseApi, type GoodsReceiptNote, type CreateGRNPayload, type PurchaseOrder, type GRNItemResponse } from '../api/purchase';
 import { apiClient } from '../api/client';
 import { toast } from 'sonner';
+import { confirmWithToast } from '../utils/toastHelper';
 
 interface ProductOption { id: string; name: string; product_code: string; purchase_price: number; gst_rate: number; }
 interface SupplierOption { id: string; company_name: string; supplier_code: string; }
@@ -288,7 +289,10 @@ const GRNPage = () => {
   };
 
   const handleConfirm = async (id: string) => {
-    if (!confirm('Confirm this GRN? Stock will be added to inventory.')) return;
+    const confirmed = await confirmWithToast('Confirm this GRN? Stock will be added to inventory.', {
+      type: 'warning',
+    });
+    if (!confirmed) return;
     try {
       await purchaseApi.confirmGRN(id);
       toast.success('GRN confirmed — stock updated');
@@ -305,7 +309,10 @@ const GRNPage = () => {
   };
 
   const handleCancel = async (id: string) => {
-    if (!confirm('Cancel this GRN?')) return;
+    const confirmed = await confirmWithToast('Cancel this GRN?', {
+      type: 'danger',
+    });
+    if (!confirmed) return;
     try {
       await purchaseApi.cancelGRN(id);
       toast.success('GRN cancelled');
@@ -555,8 +562,8 @@ const GRNPage = () => {
 
         {/* ══════════════════ Create GRN Form Modal ══════════════════ */}
         {showForm && createPortal(
-          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm">
-            <div className="hms-card my-8 w-full max-w-4xl space-y-6 p-6">
+          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-2 sm:p-4 backdrop-blur-sm">
+            <div className="hms-card my-4 sm:my-8 w-[min(96vw,1600px)] max-w-none space-y-6 p-4 sm:p-6">
               <div className="flex items-start justify-between">
                 <div>
                   <h2 className="font-display text-xl font-bold">New GRN (Goods Receipt)</h2>
@@ -618,7 +625,7 @@ const GRNPage = () => {
                     <button onClick={addItem} className="rounded bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary">+ Add Item</button>
                   )}
                 </div>
-                <div className="overflow-x-auto rounded-lg border border-neutral-200">
+                <div className="max-h-[52vh] overflow-auto rounded-lg border border-neutral-200">
                   <table className="w-full text-sm">
                     <thead><tr className="bg-neutral-50">
                       <th className="px-3 py-2 text-left">Product</th>

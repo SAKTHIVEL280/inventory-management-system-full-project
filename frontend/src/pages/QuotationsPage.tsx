@@ -7,6 +7,7 @@ import { createPortal } from 'react-dom';
 import { AppLayout } from '../components/AppLayout';
 import { salesApi, type Quotation, type CreateQuotationPayload, type SalesLineItem } from '../api/sales';
 import { apiClient } from '../api/client';
+import { confirmWithToast, showError, showSuccess } from '../utils/toastHelper';
 
 interface ProductOption {
   id: string;
@@ -156,22 +157,26 @@ const QuotationsPage = () => {
   const handleStatusChange = async (id: string, newStatus: string) => {
     try {
       await salesApi.updateQuotationStatus(id, newStatus);
+      showSuccess('Quotation status updated');
       fetchQuotations();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      alert(typeof msg === 'string' ? msg : 'Status update failed');
+      showError(typeof msg === 'string' ? msg : 'Status update failed');
     }
   };
 
   const handleConvertToSO = async (id: string) => {
-    if (!confirm('Convert this quotation to a Sales Order?')) return;
+    const confirmed = await confirmWithToast('Convert this quotation to a Sales Order?', {
+      type: 'confirm',
+    });
+    if (!confirmed) return;
     try {
       await salesApi.convertQuotationToSO(id);
-      alert('Sales Order created successfully!');
+      showSuccess('Sales Order created successfully!');
       fetchQuotations();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      alert(typeof msg === 'string' ? msg : 'Conversion failed');
+      showError(typeof msg === 'string' ? msg : 'Conversion failed');
     }
   };
 
@@ -182,10 +187,11 @@ const QuotationsPage = () => {
       } else {
         await salesApi.archiveQuotation(id);
       }
+      showSuccess(archived ? 'Quotation restored' : 'Quotation archived');
       fetchQuotations();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      alert(typeof msg === 'string' ? msg : archived ? 'Restore failed' : 'Archive failed');
+      showError(typeof msg === 'string' ? msg : archived ? 'Restore failed' : 'Archive failed');
     }
   };
 
@@ -344,8 +350,8 @@ const QuotationsPage = () => {
 
         {/* Create/Edit Modal */}
         {showForm && createPortal(
-          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm">
-            <div className="hms-card my-8 w-full max-w-4xl space-y-6 p-6">
+          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-2 sm:p-4 backdrop-blur-sm">
+            <div className="hms-card my-4 sm:my-8 w-[min(96vw,1500px)] max-w-none space-y-6 p-4 sm:p-6">
               <h2 className="font-display text-xl font-bold text-neutral-900">
                 {editingId ? 'Modify/Change Quotation' : 'New Quotation'}
               </h2>

@@ -1,6 +1,6 @@
-﻿# Inventory Management System (IMS)
+﻿#  Mecandria ERP
 
-A modern, production-ready Inventory Management System built with React, FastAPI, and PostgreSQL. Designed for Indian businesses with full GST compliance and comprehensive reporting.
+A modern, production-ready  Mecandria ERP built with React, FastAPI, and PostgreSQL. Designed for Indian businesses with full GST compliance and comprehensive reporting.
 
 ---
 

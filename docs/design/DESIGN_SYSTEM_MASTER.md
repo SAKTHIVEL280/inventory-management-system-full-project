@@ -1,6 +1,6 @@
-# Inventory Management System (IMS) Design System — Master Structure Guide
+#  Mecandria ERP Design System — Master Structure Guide
 
-This design system is adapted from an HMS-style UI system, but tailored for the Inventory Management System. It outlines the foundational elements, components, and patterns for building consistent, accessible, and professional business interfaces.
+This design system is adapted from an HMS-style UI system, but tailored for the  Mecandria ERP. It outlines the foundational elements, components, and patterns for building consistent, accessible, and professional business interfaces.
 
 ---
 

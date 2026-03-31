@@ -15,7 +15,7 @@ import type { AxiosError } from 'axios';
 const LoginPage = () => {
   const navigate = useNavigate();
   const setAuth = useAuthStore((state) => state.setAuth);
-  
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -38,7 +38,7 @@ const LoginPage = () => {
     try {
       const credentials: LoginRequest = { email, password };
       const token = await authApi.login(credentials);
-      
+
       setAuth(token);
 
       if (token.user.force_password_change) {
@@ -170,8 +170,8 @@ const LoginPage = () => {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background-light p-4">
       <div className="hms-card w-full max-w-xl p-8 sm:p-10">
-        
-        <h1 className="mt-4 font-display text-3xl font-bold leading-tight text-neutral-900">Inventory Management System</h1>
+
+        <h1 className="mt-4 font-display text-3xl font-bold leading-tight text-neutral-900"> Mecandria ERP</h1>
         <p className="mt-2 text-sm text-neutral-500">Use your assigned credentials to continue</p>
 
         <form onSubmit={handleLogin} className="mt-8 space-y-4">

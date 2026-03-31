@@ -7,6 +7,7 @@ import { createPortal } from 'react-dom';
 import { AppLayout } from '../components/AppLayout';
 import { paymentsApi, type Payment, type CreatePaymentPayload } from '../api/payments';
 import { apiClient } from '../api/client';
+import { showError, showSuccess } from '../utils/toastHelper';
 
 interface SupplierOption { id: string; company_name: string; }
 
@@ -87,7 +88,13 @@ const PayablesPage = () => {
   };
 
   const handleStatusChange = async (id: string, status: string) => {
-    try { await paymentsApi.updatePaymentStatus(id, status); fetchPayments(); } catch { alert('Failed'); }
+    try {
+      await paymentsApi.updatePaymentStatus(id, status);
+      showSuccess('Payment status updated');
+      fetchPayments();
+    } catch {
+      showError('Failed to update payment status');
+    }
   };
 
   const handleArchiveToggle = async (id: string, archived: boolean) => {
@@ -97,9 +104,10 @@ const PayablesPage = () => {
       } else {
         await paymentsApi.archivePayment(id);
       }
+      showSuccess(archived ? 'Payment restored' : 'Payment archived');
       fetchPayments();
     } catch {
-      alert(archived ? 'Restore failed' : 'Archive failed');
+      showError(archived ? 'Restore failed' : 'Archive failed');
     }
   };
 

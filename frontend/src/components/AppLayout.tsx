@@ -41,6 +41,7 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
     queryKey: ['company'],
     queryFn: companyApi.get,
     staleTime: 5 * 60 * 1000,
+    enabled: Boolean(user) && can('company_read'),
   });
 
   const { data: archiveAlerts } = useQuery({

@@ -1,11 +1,11 @@
 /**
  * Toast Confirmation Helper
  * 
- * Provides a promise-based confirmation dialog using native browser confirm()
- * but with toast notifications for feedback.
+ * Provides an in-app confirmation prompt using toast action buttons.
  */
 
 import { toast } from 'sonner';
+import { confirmWithToast } from './toastHelper';
 
 /**
  * Show a confirmation dialog with toast notifications
@@ -24,21 +24,7 @@ export const confirmToast = (
   }
 ) => {
   const { onConfirm, onCancel, type = 'confirm' } = options || {};
-
-  // Use native confirm dialog for now (browser's built-in)
-  // In production, replace with a custom modal
-  const confirmed = window.confirm(message);
-
-  if (confirmed) {
-    if (type === 'danger') {
-      toast.success('Action completed');
-    }
-    onConfirm?.();
-  } else {
-    onCancel?.();
-  }
-
-  return confirmed;
+  return confirmWithToast(message, { onConfirm, onCancel, type });
 };
 
 /**

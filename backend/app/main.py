@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 os.makedirs("static", exist_ok=True)
 
 app = FastAPI(
-    title="Inventory Management System",
+    title=" Mecandria ERP",
     description="Complete inventory management with GST-aware purchase, sales, and reporting",
     version="1.0.0",
 )
@@ -134,7 +134,7 @@ async def health_check():
 async def root():
     """Root endpoint."""
     return {
-        "message": "Inventory Management System API",
+        "message": " Mecandria ERP API",
         "docs": "/docs",
         "version": "1.0.0",
     }

@@ -1,7 +1,7 @@
-# Inventory Management System — Master AI Specification
+#  Mecandria ERP — Master AI Specification
 
 ## Document Purpose
-This file is the single source of truth for an AI coding agent to build the complete Inventory Management System from scratch. Every module, every field, every API route, every database table, every business rule, and every UI component is defined here. No assumptions. No hallucinations. Build exactly what is written.
+This file is the single source of truth for an AI coding agent to build the complete  Mecandria ERP from scratch. Every module, every field, every API route, every database table, every business rule, and every UI component is defined here. No assumptions. No hallucinations. Build exactly what is written.
 
 ---
 

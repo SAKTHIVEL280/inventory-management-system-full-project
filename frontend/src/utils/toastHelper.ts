@@ -6,6 +6,7 @@
  */
 
 import { toast } from 'sonner';
+import { openConfirmDialog } from '../components/ConfirmDialogHost';
 
 // Toast duration settings (in milliseconds)
 const TOAST_DURATION = {
@@ -68,7 +69,7 @@ export const showLoading = (message: string) => {
 
 /**
  * Confirmation with Toast Feedback
- * Shows a confirmation dialog (native browser confirm) with toast notifications
+ * Shows an in-app confirmation prompt using toast action buttons.
  * 
  * @param message - Confirmation message
  * @param options - Options object
@@ -84,34 +85,33 @@ export const confirmWithToast = async (
 ): Promise<boolean> => {
   const { onConfirm, onCancel, type = 'confirm', successMessage } = options || {};
 
-  // Show warning/info toast before confirmation
-  if (type === 'danger') {
-    showWarning(message);
+  const confirmed = await openConfirmDialog({
+    message,
+    type,
+    title: type === 'danger' ? 'Confirm Destructive Action' : 'Please Confirm',
+  });
+
+  if (!confirmed) {
+    onCancel?.();
+    return false;
   }
 
-  // Use native browser confirm (in production, replace with custom modal)
-  const confirmed = window.confirm(message);
-
-  if (confirmed) {
+  try {
     if (onConfirm) {
-      try {
-        await onConfirm();
-        if (successMessage) {
-          showSuccess(successMessage);
-        } else if (type === 'danger') {
-          showSuccess('Action completed successfully');
-        }
-      } catch (error) {
-        showError('Operation failed. Please try again.');
-      }
+      await onConfirm();
     }
-  } else {
-    if (onCancel) {
-      onCancel();
-    }
-  }
 
-  return confirmed;
+    if (successMessage) {
+      showSuccess(successMessage);
+    } else if (type === 'danger') {
+      showSuccess('Action completed successfully');
+    }
+
+    return true;
+  } catch (_error) {
+    showError('Operation failed. Please try again.');
+    return false;
+  }
 };
 
 /**

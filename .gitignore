@@ -1,88 +1,319 @@
 # ============================================
+# PRODUCTION-READY GITIGNORE
+# Inventory Management System
+# ============================================
+
+# ============================================
+# ENVIRONMENT VARIABLES & SECRETS
+# ============================================
+.env
+.env.local
+.env.development
+.env.production
+.env.test
+.env.*.local
+!.env.example
+*.pem
+*.key
+*.crt
+secrets.json
+credentials.json
+
+# ============================================
 # FRONTEND
 # ============================================
 frontend/node_modules/
 frontend/.vite/
 frontend/dist/
+frontend/build/
 frontend/.env
 frontend/.env.local
 frontend/.env.*
 frontend/*.log
 frontend/coverage/
+frontend/.eslintcache
+frontend/package-lock.json
+frontend/yarn.lock
+frontend/pnpm-lock.yaml
+frontend/.next/
+frontend/.nuxt/
+frontend/.output/
+frontend/.vercel/
+frontend/.netlify/
 
 # ============================================
 # BACKEND
 # ============================================
 backend/.env
+backend/.env.local
+backend/.env.*
 backend/venv/
 backend/.venv/
+backend/env/
+backend/.env/
 backend/__pycache__/
 backend/.pytest_cache/
+backend/.pytest/
 backend/*.egg-info/
 backend/dist/
 backend/build/
 backend/.mypy_cache/
 backend/.ruff_cache/
+backend/.coverage
+backend/htmlcov/
+backend/.tox/
+backend/nosetests.xml
+backend/coverage.xml
+backend/*.cover
+backend/*.py[cod]
+backend/so_files/
+backend/.benchmarks/
+backend/.hypothesis/
 
 # ============================================
-# ROOT
+# DATABASE FILES
 # ============================================
-.venv/
-venv/
-env/
-*.py[cod]
-*.so
-.Python
 *.db
 *.sqlite
 *.sqlite3
+*.db-shm
+*.db-wal
+*.sql.gz
+database/*.db
+database/*.sqlite
+database/*.sqlite3
+backend/*.db
+backend/*.sqlite
+backend/*.sqlite3
+*.db.backup
+
+# ============================================
+# LOG FILES
+# ============================================
 *.log
 logs/
-*.pid
+log/
+**/logs/
+**/log/
+frontend/logs/
+backend/logs/
+
+# ============================================
+# PYTHON
+# ============================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
 *.egg
+MANIFEST
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ============================================
+# VIRTUAL ENVIRONMENTS
+# ============================================
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.python-version
 
 # ============================================
 # IDE & EDITORS
 # ============================================
-.vscode/
+# VS Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+.vscode/.env
+.vscode/.history/
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+.idea_modules/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+*.sublime-session
+
+# PyCharm
 .idea/
 *.swp
 *.swo
 *.swn
-*.sublime-project
-*.sublime-workspace
-*.iml
+*.swo~
+*.swp~
 
-# ============================================
-# OS
-# ============================================
-.DS_Store
+# Other Editors
+*.bak
+*.tmp
+*.temp
+*~
 .DS_Store?
 ._*
+
+# ============================================
+# OPERATING SYSTEM
+# ============================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
 .Spotlight-V100
+.TemporaryItems
 .Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Windows
 Thumbs.db
+ehthumbs.db
 Desktop.ini
+$RECYCLE.BIN/
+@eaDir/
+
+# Linux
+*~
+.fuse_hidden*
+.nfs*
 
 # ============================================
-# ENVIRONMENT FILES (Keep .env.example)
-# ============================================
-.env
-.env.local
-.env.*.local
-!.env.example
-
-# ============================================
-# BUILD ARTIFACTS
+# BUILD ARTIFACTS & OUTPUT
 # ============================================
 **/dist/
 **/build/
-**/*.pyc
-**/__pycache__/
+**/out/
+**/.output/
+**/target/
+**/.next/
+**/.nuxt/
+**/.vercel/
+**/.netlify/
 
 # ============================================
-# TEMP FILES
+# CACHE FILES
 # ============================================
-*.tmp
-*.temp
 .cache/
+**.cache/
+.parasite-cache/
+.npm/
+.eslintcache
+.stylelintcache
+.tsbuildinfo
+.nx/
+
+# ============================================
+# TESTING & COVERAGE
+# ============================================
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+test-results/
+playwright-report/
+trace/
+
+# ============================================
+# DEPENDENCY LOCK FILES (Optional - uncomment if needed)
+# ============================================
+# frontend/package-lock.json
+# frontend/yarn.lock
+# frontend/pnpm-lock.yaml
+# backend/Pipfile.lock
+# backend/poetry.lock
+
+# ============================================
+# SENSITIVE FILES
+# ============================================
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.truststore
+ssh-rsa
+ssh-ed25519
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+*.ppk
+*.pub
+
+# ============================================
+# DOCKER (if used)
+# ============================================
+.docker/
+docker-compose.override.yml
+*.dockerfile.local
+
+# ============================================
+# CI/CD
+# ============================================
+.github/workflows/local.yml
+.gitlab-ci-local/
+.azure-pipelines.yml.local
+
+# ============================================
+# DOCUMENTATION BUILDS
+# ============================================
+docs/_build/
+docs/build/
+site/
+public/
+
+# ============================================
+# UPLOADS & USER GENERATED CONTENT
+# ============================================
+**/uploads/
+**/downloads/
+**/media/
+**/staticfiles/
+**/assets/
+
+# ============================================
+# BACKUP FILES
+# ============================================
+*.backup
+*.bak
+*.old
+*.orig
+*.save

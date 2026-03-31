@@ -331,12 +331,13 @@ const CustomersPage = () => {
                           type="button" 
                           onClick={() => {
                             const customerName = item.company_name;
-                            const confirmed = window.confirm(
-                              `Are you sure you want to delete "${customerName}"? This action cannot be undone.`
+                            confirmWithToast(
+                              `Are you sure you want to delete "${customerName}"? This action cannot be undone.`,
+                              {
+                                onConfirm: () => deleteMutation.mutate(item.id),
+                                type: 'danger',
+                              }
                             );
-                            if (confirmed) {
-                              deleteMutation.mutate(item.id);
-                            }
                           }} 
                           className="rounded px-2 py-1 text-xs font-semibold text-danger hover:bg-red-50 transition"
                         >
