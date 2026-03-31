@@ -576,7 +576,7 @@ async def update_sales_order(
     return so
 
 
-@router.patch("/api/v1/sales-orders/{so_id}/status")
+@router.patch("/api/v1/sales-orders/{so_id}/status", response_model=SalesOrderResponse)
 async def sales_order_status(
     so_id: UUID,
     payload: SalesOrderStatusRequest,
@@ -587,8 +587,9 @@ async def sales_order_status(
     if not so:
         raise HTTPException(status_code=404, detail="Sales order not found")
 
-    # Option B status flow: draft → open → delivered → closed / cancelled
-    if payload.status == "open":
+    # Status flow: draft → confirmed → partial/fulfilled → cancelled
+    # Database schema CHECK constraint: status IN ('draft','confirmed','partial','fulfilled','cancelled')
+    if payload.status == "confirmed":
         items = db.query(SalesOrderItem).filter(SalesOrderItem.sales_order_id == so.id).all()
         shortages = []
         for item in items:
@@ -610,12 +611,16 @@ async def sales_order_status(
             )
 
     allowed = {
-        "draft": {"open", "cancelled"},
-        "open": {"delivered", "cancelled"},
-        "delivered": {"closed"},
+        "draft": {"confirmed", "cancelled"},
+        "confirmed": {"partial", "fulfilled", "cancelled"},
+        "partial": {"fulfilled", "cancelled"},
+        "fulfilled": {"cancelled"},
     }
     if payload.status not in allowed.get(so.status, set()):
-        raise HTTPException(status_code=400, detail="Invalid status transition")
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Invalid status transition: {so.status} → {payload.status}. Allowed: {allowed.get(so.status, set())}"
+        )
 
     so.status = payload.status
     db.commit()
@@ -623,7 +628,7 @@ async def sales_order_status(
     return so
 
 
-@router.patch("/api/v1/sales-orders/{so_id}/archive")
+@router.patch("/api/v1/sales-orders/{so_id}/archive", response_model=SalesOrderResponse)
 async def archive_sales_order(
     so_id: UUID,
     db: Session = Depends(get_db),
@@ -640,7 +645,7 @@ async def archive_sales_order(
     return so
 
 
-@router.patch("/api/v1/sales-orders/{so_id}/restore")
+@router.patch("/api/v1/sales-orders/{so_id}/restore", response_model=SalesOrderResponse)
 async def restore_sales_order(
     so_id: UUID,
     db: Session = Depends(get_db),
@@ -664,12 +669,12 @@ async def convert_so_to_invoice(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("sales_invoices_write")),
 ):
-    """Convert an open/delivered sales order to a draft invoice."""
+    """Convert a confirmed/fulfilled/partial sales order to a draft invoice."""
     so = db.query(SalesOrder).filter(SalesOrder.id == so_id, SalesOrder.is_deleted == False).first()
     if not so:
         raise HTTPException(status_code=404, detail="Sales order not found")
-    if so.status not in {"delivered", "closed"}:
-        raise HTTPException(status_code=400, detail="Only delivered or closed sales orders can be converted to invoice")
+    if so.status not in {"fulfilled", "partial"}:
+        raise HTTPException(status_code=400, detail="Only partial or fulfilled sales orders can be converted to invoice")
 
     # BUG-02: Auto-detect IGST
     is_igst = determine_is_igst(db, "customer", so.customer_id)
@@ -764,8 +769,8 @@ async def create_invoice(
         
     if payload.sales_order_id:
         so = db.query(SalesOrder).filter(SalesOrder.id == payload.sales_order_id).first()
-        if so and so.status not in {"delivered", "closed"}:
-            raise HTTPException(status_code=400, detail="Only delivered or closed sales orders can generate invoices")
+        if so and so.status not in {"confirmed", "fulfilled", "partial"}:
+            raise HTTPException(status_code=400, detail="Only confirmed, partial, or fulfilled sales orders can generate invoices")
 
     # BUG-02: Auto-detect IGST from state codes (override payload if customer has state code)
     is_igst = payload.is_igst
@@ -866,13 +871,8 @@ async def update_invoice(
         
     if payload.sales_order_id:
         so = db.query(SalesOrder).filter(SalesOrder.id == payload.sales_order_id).first()
-        if so and so.status not in {"delivered", "closed"}:
-            raise HTTPException(status_code=400, detail="Only delivered or closed sales orders can generate invoices")
-
-    # BUG-02: Auto-detect IGST
-    is_igst = payload.is_igst
-    customer = db.query(Customer).filter(Customer.id == payload.customer_id, Customer.is_deleted == False).first()
-    if customer and customer.billing_state_code:
+        if so and so.status not in {"confirmed", "fulfilled", "partial"}:
+            raise HTTPException(status_code=400, detail="Only confirmed, partial, or fulfilled sales orders can generate invoices")
         is_igst = determine_is_igst(db, "customer", payload.customer_id)
 
     invoice.customer_id = payload.customer_id
@@ -990,9 +990,9 @@ async def issue_invoice(
                 so_item.fulfilled_quantity = float(so_item.fulfilled_quantity) + fulfilled_add
 
             if so_items and all(float(i.fulfilled_quantity) >= float(i.quantity) for i in so_items):
-                so.status = "delivered"
+                so.status = "fulfilled"
             else:
-                so.status = "open"
+                so.status = "partial"
 
     db.commit()
     db.refresh(invoice)

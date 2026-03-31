@@ -131,7 +131,7 @@ const SalesOrdersPage = () => {
     }
   };
 
-  const sc: Record<string, string> = { draft: 'bg-gray-100 text-gray-700', open: 'bg-blue-100 text-blue-700', delivered: 'bg-amber-100 text-amber-700', closed: 'bg-green-100 text-green-700', cancelled: 'bg-red-100 text-red-700' };
+  const sc: Record<string, string> = { draft: 'bg-gray-100 text-gray-700', confirmed: 'bg-blue-100 text-blue-700', partial: 'bg-amber-100 text-amber-700', fulfilled: 'bg-green-100 text-green-700', cancelled: 'bg-red-100 text-red-700' };
 
   return (
     <AppLayout title="Sales Orders">
@@ -139,7 +139,7 @@ const SalesOrdersPage = () => {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3">
             <select className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-              <option value="">All</option><option value="draft">Draft</option><option value="open">Open</option><option value="delivered">Delivered</option><option value="closed">Closed</option><option value="cancelled">Cancelled</option>
+              <option value="">All</option><option value="draft">Draft</option><option value="confirmed">Confirmed</option><option value="partial">Partial</option><option value="fulfilled">Fulfilled</option><option value="cancelled">Cancelled</option>
             </select>
             <select className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm" value={archiveView} onChange={e => setArchiveView(e.target.value as 'active' | 'archived')}>
               <option value="active">Active Only</option>
@@ -199,10 +199,9 @@ const SalesOrdersPage = () => {
                     <td className="px-4 py-3 text-center"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${sc[o.status] || 'bg-gray-100'}`}>{o.status}</span></td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1">
-                        {archiveView === 'active' && o.status === 'draft' && <button onClick={() => handleStatusChange(o.id, 'open')} className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50">Open</button>}
-                        {archiveView === 'active' && o.status === 'open' && <button onClick={() => handleStatusChange(o.id, 'delivered')} className="rounded px-2 py-1 text-xs font-medium text-amber-600 hover:bg-amber-50">Mark Delivered</button>}
-                        {archiveView === 'active' && o.status === 'delivered' && <button onClick={() => handleStatusChange(o.id, 'closed')} className="rounded px-2 py-1 text-xs font-medium text-green-600 hover:bg-green-50">Close</button>}
-                        {archiveView === 'active' && (o.status === 'draft' || o.status === 'open') && <button onClick={() => handleStatusChange(o.id, 'cancelled')} className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">Cancel</button>}
+                        {archiveView === 'active' && o.status === 'draft' && <button onClick={() => handleStatusChange(o.id, 'confirmed')} className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50">Confirm</button>}
+                        {archiveView === 'active' && o.status === 'confirmed' && <button onClick={() => handleStatusChange(o.id, 'fulfilled')} className="rounded px-2 py-1 text-xs font-medium text-amber-600 hover:bg-amber-50">Mark Fulfilled</button>}
+                        {archiveView === 'active' && (o.status === 'draft' || o.status === 'confirmed') && <button onClick={() => handleStatusChange(o.id, 'cancelled')} className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">Cancel</button>}
                         <button onClick={() => handleArchiveToggle(o.id, archiveView === 'archived')} className={`rounded px-2 py-1 text-xs font-medium ${archiveView === 'archived' ? 'text-emerald-700 hover:bg-emerald-50' : 'text-red-600 hover:bg-red-50'}`}>{archiveView === 'archived' ? 'Restore' : 'Archive'}</button>
                       </div>
                     </td>

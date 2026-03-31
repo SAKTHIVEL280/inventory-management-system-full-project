@@ -70,6 +70,11 @@ const ReceivablesPage = () => {
   }, [customerId]);
 
   const resetForm = () => { setCustomerId(''); setPaymentDate(new Date().toISOString().split('T')[0]); setAmount(0); setPaymentMode('bank_transfer'); setReferenceNumber(''); setNotes(''); setAllocations({}); setError(''); };
+  const paiseToRupees = (paise: number) => (Number.isFinite(paise) ? paise / 100 : 0);
+  const rupeesToPaise = (value: string | number) => {
+    const num = typeof value === 'number' ? value : parseFloat(value);
+    return Number.isFinite(num) ? Math.round(num * 100) : 0;
+  };
   const formatAmount = (p: number) => `₹${(p / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
   const customerNameById = (id?: string | null) => customers.find((c) => c.id === id)?.company_name || '-';
 
@@ -102,7 +107,7 @@ const ReceivablesPage = () => {
       const payload: CreatePaymentPayload = {
         payment_type: 'receipt', party_type: 'customer',
         customer_id: customerId, payment_date: paymentDate,
-        amount, payment_mode: paymentMode,
+        amount: amount, payment_mode: paymentMode,
         reference_number: referenceNumber || undefined,
         notes: notes || undefined,
         allocations: allocationList,
@@ -233,7 +238,7 @@ const ReceivablesPage = () => {
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Customer *</label><select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={customerId} onChange={e => setCustomerId(e.target.value)}><option value="">Select</option>{customers.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}</select></div>
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Date *</label><input type="date" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} /></div>
-                <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Amount (paise) *</label><input type="number" min="1" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={amount} onChange={e => setAmount(parseInt(e.target.value) || 0)} /></div>
+                <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Amount (₹) *</label><input type="number" step="0.01" min="0.01" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={paiseToRupees(amount)} onChange={e => setAmount(rupeesToPaise(e.target.value))} /></div>
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Mode</label><select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={paymentMode} onChange={e => setPaymentMode(e.target.value)}><option value="cash">Cash</option><option value="bank_transfer">Bank Transfer</option><option value="cheque">Cheque</option><option value="upi">UPI</option><option value="card">Card</option></select></div>
                 <div className="md:col-span-2"><label className="mb-1 block text-sm font-semibold text-neutral-700">Reference #</label><input type="text" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={referenceNumber} onChange={e => setReferenceNumber(e.target.value)} /></div>
               </div>
@@ -249,7 +254,7 @@ const ReceivablesPage = () => {
                           <tr key={inv.id} className="border-t border-neutral-100">
                             <td className="px-3 py-2">{inv.invoice_number}</td>
                             <td className="px-3 py-2 text-right">{formatAmount(inv.amount_due)}</td>
-                            <td className="px-3 py-2"><input type="number" min="0" max={inv.amount_due} className="w-full rounded border px-2 py-1.5 text-right text-sm" value={allocations[inv.id] || 0} onChange={e => setAllocations({ ...allocations, [inv.id]: parseInt(e.target.value) || 0 })} /></td>
+                            <td className="px-3 py-2"><input type="number" step="0.01" min="0" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={paiseToRupees(allocations[inv.id] || 0)} onChange={e => setAllocations({ ...allocations, [inv.id]: rupeesToPaise(e.target.value) })} /></td>
                           </tr>
                         ))}
                       </tbody>

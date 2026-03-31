@@ -50,6 +50,11 @@ const PayablesPage = () => {
   useEffect(() => { fetchPayments(); }, [archiveView]);
   useEffect(() => { fetchSuppliers(); }, []);
   const resetForm = () => { setSupplierId(''); setPaymentDate(new Date().toISOString().split('T')[0]); setAmount(0); setPaymentMode('bank_transfer'); setReferenceNumber(''); setNotes(''); setError(''); };
+  const paiseToRupees = (paise: number) => (Number.isFinite(paise) ? paise / 100 : 0);
+  const rupeesToPaise = (value: string | number) => {
+    const num = typeof value === 'number' ? value : parseFloat(value);
+    return Number.isFinite(num) ? Math.round(num * 100) : 0;
+  };
   const formatAmount = (p: number) => `₹${(p / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
   const supplierNameById = (id?: string | null) => suppliers.find((s) => s.id === id)?.company_name || '-';
 
@@ -78,7 +83,7 @@ const PayablesPage = () => {
       const payload: CreatePaymentPayload = {
         payment_type: 'payment', party_type: 'supplier',
         supplier_id: supplierId, payment_date: paymentDate,
-        amount, payment_mode: paymentMode,
+        amount: amount, payment_mode: paymentMode,
         reference_number: referenceNumber || undefined,
         notes: notes || undefined, allocations: [],
       };
@@ -208,7 +213,7 @@ const PayablesPage = () => {
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Supplier *</label><select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={supplierId} onChange={e => setSupplierId(e.target.value)}><option value="">Select</option>{suppliers.map(s => <option key={s.id} value={s.id}>{s.company_name}</option>)}</select></div>
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Date *</label><input type="date" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} /></div>
-                <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Amount (paise) *</label><input type="number" min="1" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={amount} onChange={e => setAmount(parseInt(e.target.value) || 0)} /></div>
+                <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Amount (₹) *</label><input type="number" step="0.01" min="0.01" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={paiseToRupees(amount)} onChange={e => setAmount(rupeesToPaise(e.target.value))} /></div>
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Mode</label><select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={paymentMode} onChange={e => setPaymentMode(e.target.value)}><option value="cash">Cash</option><option value="bank_transfer">Bank Transfer</option><option value="cheque">Cheque</option><option value="upi">UPI</option><option value="card">Card</option></select></div>
                 <div className="md:col-span-2"><label className="mb-1 block text-sm font-semibold text-neutral-700">Reference #</label><input type="text" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={referenceNumber} onChange={e => setReferenceNumber(e.target.value)} /></div>
               </div>

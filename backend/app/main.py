@@ -68,6 +68,9 @@ app.include_router(archive.router)
 async def integrity_error_handler(request: Request, exc: IntegrityError):
     message = str(getattr(exc, "orig", exc))
     lower = message.lower()
+    
+    # Log the full error for debugging
+    logger.error(f"IntegrityError on {request.method} {request.url.path}: {message}")
 
     if "unique" in lower or "duplicate key value" in lower:
         detail = "Duplicate value found. Please use a unique value."
@@ -87,7 +90,7 @@ async def integrity_error_handler(request: Request, exc: IntegrityError):
 
     return JSONResponse(
         status_code=400,
-        content={"detail": "Invalid data for this operation.", "path": request.url.path},
+        content={"detail": f"Database constraint violation: {message}", "path": request.url.path},
     )
 
 

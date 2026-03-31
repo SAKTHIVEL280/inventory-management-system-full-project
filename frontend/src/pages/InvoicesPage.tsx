@@ -145,8 +145,8 @@ const InvoicesPage = () => {
     try {
       const { data } = await salesApi.getSalesOrder(so.id);
       const selectedSO = data.sales_order;
-      if (selectedSO.status !== 'delivered' && selectedSO.status !== 'closed') {
-        setError(`Cannot invoice SO in '${selectedSO.status}' status. Only delivered or closed.`);
+      if (selectedSO.status !== 'confirmed' && selectedSO.status !== 'fulfilled' && selectedSO.status !== 'partial') {
+        setError(`Cannot invoice SO in '${selectedSO.status}' status. Only confirmed, partial, or fulfilled.`);
         return;
       }
       setCustomerId(selectedSO.customer_id);
@@ -190,7 +190,7 @@ const InvoicesPage = () => {
   const soQuery = soNumberSearch.trim().toLowerCase();
   const soSuggestions = soQuery
     ? salesOrders
-        .filter((so) => so.status === 'delivered' || so.status === 'closed')
+        .filter((so) => so.status === 'confirmed' || so.status === 'partial' || so.status === 'fulfilled')
         .filter((so) => {
           const haystack = [
             so.so_number,
