@@ -44,12 +44,32 @@ export const productsApi = {
   },
 
   updateCategory: async (id: string, payload: Partial<ProductCategory>): Promise<ProductCategory> => {
-    const response = await apiClient.put<ProductCategory>(`/api/v1/products/categories/${id}`, payload);
+    const response = await apiClient.post<ProductCategory>(
+      '/api/v1/products/apply-category-action',
+      null,
+      {
+        params: {
+          action: 'update',
+          category_id: id,
+          name: payload.name,
+          description: payload.description,
+        },
+      }
+    );
     return response.data;
   },
 
   deleteCategory: async (id: string): Promise<void> => {
-    await apiClient.delete(`/api/v1/products/categories/${id}`);
+    await apiClient.post(
+      '/api/v1/products/apply-category-action',
+      null,
+      {
+        params: {
+          action: 'delete',
+          category_id: id,
+        },
+      }
+    );
   },
 
   listUom: async (): Promise<UnitOfMeasure[]> => {

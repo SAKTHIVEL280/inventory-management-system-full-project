@@ -53,12 +53,18 @@ router = APIRouter(tags=["purchase"])
 async def list_purchase_orders(
     status: str | None = Query(default=None),
     supplier_id: UUID | None = Query(default=None),
+    archived_only: bool = Query(default=False),
+    include_archived: bool = Query(default=False),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("purchase_orders_read")),
 ):
-    query = db.query(PurchaseOrder).filter(PurchaseOrder.is_deleted == False)
+    query = db.query(PurchaseOrder)
+    if archived_only:
+        query = query.filter(PurchaseOrder.is_deleted == True)
+    elif not include_archived:
+        query = query.filter(PurchaseOrder.is_deleted == False)
     if status:
         query = query.filter(PurchaseOrder.status == status)
     if supplier_id:
@@ -255,18 +261,58 @@ async def update_purchase_order_status(
     return po
 
 
+@router.patch("/api/v1/purchase-orders/{po_id}/archive")
+async def archive_purchase_order(
+    po_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("purchase_orders_write")),
+):
+    po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id, PurchaseOrder.is_deleted == False).first()
+    if not po:
+        raise HTTPException(status_code=404, detail="Purchase order not found")
+
+    po.is_deleted = True
+    po.deleted_at = datetime.utcnow()
+    db.commit()
+    db.refresh(po)
+    return po
+
+
+@router.patch("/api/v1/purchase-orders/{po_id}/restore")
+async def restore_purchase_order(
+    po_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("purchase_orders_write")),
+):
+    po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id, PurchaseOrder.is_deleted == True).first()
+    if not po:
+        raise HTTPException(status_code=404, detail="Archived purchase order not found")
+
+    po.is_deleted = False
+    po.deleted_at = None
+    db.commit()
+    db.refresh(po)
+    return po
+
+
 # ────────────────────────────── Goods Receipt Notes ──────────────────────────
 
 @router.get("/api/v1/grn")
 async def list_grn(
     status: str | None = Query(default=None),
     supplier_id: UUID | None = Query(default=None),
+    archived_only: bool = Query(default=False),
+    include_archived: bool = Query(default=False),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("grn_read")),
 ):
-    query = db.query(GoodsReceiptNote).filter(GoodsReceiptNote.is_deleted == False)
+    query = db.query(GoodsReceiptNote)
+    if archived_only:
+        query = query.filter(GoodsReceiptNote.is_deleted == True)
+    elif not include_archived:
+        query = query.filter(GoodsReceiptNote.is_deleted == False)
     if status:
         query = query.filter(GoodsReceiptNote.status == status)
     if supplier_id:
@@ -319,11 +365,17 @@ async def create_grn(
     db.flush()
 
     subtotal = total_discount = total_taxable = total_cgst = total_sgst = total_igst = 0
-    for item in payload.items:
+    for idx, item in enumerate(payload.items, start=1):
         # Validate product exists
         product = db.query(Product).filter(Product.id == item.product_id, Product.is_deleted == False).first()
         if not product:
             raise HTTPException(status_code=400, detail=f"Invalid product: {item.product_id}")
+
+        if item.manufacture_date and item.expiry_date and item.expiry_date < item.manufacture_date:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Line item {idx}: expiry date cannot be earlier than manufacture date",
+            )
 
         # BUG-22: If linked to PO, validate product is in the PO
         if payload.purchase_order_id and po_product_ids and item.product_id not in po_product_ids:
@@ -337,6 +389,9 @@ async def create_grn(
             grn_id=grn.id,
             product_id=item.product_id,
             purchase_order_item_id=item.purchase_order_item_id,
+            batch_no=item.batch_no,
+            manufacture_date=item.manufacture_date,
+            expiry_date=item.expiry_date,
             quantity=item.quantity,
             unit_price=item.unit_price,
             discount_percent=item.discount_percent,
@@ -422,12 +477,20 @@ async def update_grn(
     db.flush()
 
     subtotal = total_discount = total_taxable = total_cgst = total_sgst = total_igst = 0
-    for item in payload.items:
+    for idx, item in enumerate(payload.items, start=1):
+        if item.manufacture_date and item.expiry_date and item.expiry_date < item.manufacture_date:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Line item {idx}: expiry date cannot be earlier than manufacture date",
+            )
         calc = calc_line_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst)
         db.add(GRNItem(
             grn_id=grn.id,
             product_id=item.product_id,
             purchase_order_item_id=item.purchase_order_item_id,
+            batch_no=item.batch_no,
+            manufacture_date=item.manufacture_date,
+            expiry_date=item.expiry_date,
             quantity=item.quantity,
             unit_price=item.unit_price,
             discount_percent=item.discount_percent,
@@ -531,6 +594,40 @@ async def cancel_grn(
     if grn.status != "draft":
         raise HTTPException(status_code=400, detail="Confirmed GRN cannot be cancelled")
     grn.status = "cancelled"
+    db.commit()
+    db.refresh(grn)
+    return grn
+
+
+@router.patch("/api/v1/grn/{grn_id}/archive")
+async def archive_grn(
+    grn_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("grn_write")),
+):
+    grn = db.query(GoodsReceiptNote).filter(GoodsReceiptNote.id == grn_id, GoodsReceiptNote.is_deleted == False).first()
+    if not grn:
+        raise HTTPException(status_code=404, detail="GRN not found")
+
+    grn.is_deleted = True
+    grn.deleted_at = datetime.utcnow()
+    db.commit()
+    db.refresh(grn)
+    return grn
+
+
+@router.patch("/api/v1/grn/{grn_id}/restore")
+async def restore_grn(
+    grn_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("grn_write")),
+):
+    grn = db.query(GoodsReceiptNote).filter(GoodsReceiptNote.id == grn_id, GoodsReceiptNote.is_deleted == True).first()
+    if not grn:
+        raise HTTPException(status_code=404, detail="Archived GRN not found")
+
+    grn.is_deleted = False
+    grn.deleted_at = None
     db.commit()
     db.refresh(grn)
     return grn

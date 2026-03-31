@@ -1,10 +1,11 @@
-/**
+﻿/**
  * Sales Invoices Page
  * List, create, edit, issue invoices. GST-aware line items.
  */
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { AppLayout } from '../components/AppLayout';
-import { salesApi, type SalesInvoice, type CreateInvoicePayload, type SalesLineItem } from '../api/sales';
+import { salesApi, type SalesInvoice, type CreateInvoicePayload, type SalesLineItem, type SalesOrder } from '../api/sales';
 import { apiClient } from '../api/client';
 import { toast } from 'sonner';
 
@@ -17,10 +18,18 @@ const InvoicesPage = () => {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [selectedInvoice, setSelectedInvoice] = useState<SalesInvoice | null>(null);
+  const [showInvoiceDetail, setShowInvoiceDetail] = useState(false);
+  const [salesOrders, setSalesOrders] = useState<SalesOrder[]>([]);
+  const [loadingSOs, setLoadingSOs] = useState(false);
+  const [showSoDropdown, setShowSoDropdown] = useState(false);
 
   const [customerId, setCustomerId] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
@@ -38,8 +47,25 @@ const InvoicesPage = () => {
     try { const [c, p] = await Promise.all([apiClient.get('/api/v1/customers', { params: { page_size: 100 } }), apiClient.get('/api/v1/products', { params: { page_size: 100 } })]); setCustomers(c.data.items || []); setProducts(p.data.items || []); } catch { /* */ }
   };
 
+  const fetchSalesOrdersForInvoice = async () => {
+    try {
+      setLoadingSOs(true);
+      const res = await salesApi.listSalesOrders(undefined, 1, 500);
+      setSalesOrders(res.data.items || []);
+    } catch {
+      setSalesOrders([]);
+    } finally {
+      setLoadingSOs(false);
+    }
+  };
+
   useEffect(() => { fetchInvoices(); }, [statusFilter]);
   useEffect(() => { fetchMasterData(); }, []);
+  useEffect(() => {
+    if (showForm && !editingId && salesOrders.length === 0) {
+      fetchSalesOrdersForInvoice();
+    }
+  }, [showForm, editingId, salesOrders.length]);
 
   const resetForm = () => { setCustomerId(''); setInvoiceDate(new Date().toISOString().split('T')[0]); setDueDate(''); setNotes(''); setItems([]); setEditingId(null); setError(''); setSoNumberSearch(''); setSoId(undefined); };
   const addItem = () => { setItems([...items, { product_id: '', quantity: 1, unit_price: 0, discount_percent: 0, gst_rate: 18 }]); };
@@ -51,6 +77,7 @@ const InvoicesPage = () => {
   const removeItem = (idx: number) => { setItems(items.filter((_, i) => i !== idx)); };
   const calcTotal = (i: SalesLineItem) => { const g = i.unit_price * i.quantity; const d = g * (i.discount_percent || 0) / 100; const t = g - d; return t + t * i.gst_rate / 100; };
   const formatAmount = (p: number) => `₹${(p / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+  const formatStatusLabel = (status?: string) => (status || 'unknown').replace('_', ' ');
 
   const handleSubmit = async () => {
     if (!customerId || items.length === 0) { setError('Select customer & add items'); return; }
@@ -90,18 +117,30 @@ const InvoicesPage = () => {
     }
   };
 
-  const handleSearchSO = async () => {
-    if (!soNumberSearch) return;
+  const handleViewInvoice = async (inv: SalesInvoice) => {
+    try {
+      const { data } = await salesApi.getInvoice(inv.id);
+      setSelectedInvoice(data);
+      setShowInvoiceDetail(true);
+    } catch {
+      setSelectedInvoice(inv);
+      setShowInvoiceDetail(true);
+    }
+  };
+
+  const handleSelectSO = async (so: SalesOrder) => {
     setIsSearchingSO(true); setError('');
     try {
-      const { data } = await salesApi.searchSalesOrderByNumber(soNumberSearch);
-      const so = data.sales_order;
-      if (so.status !== 'delivered' && so.status !== 'closed') {
-        setError(`Cannot invoice SO in '${so.status}' status. Only delivered or closed.`);
+      const { data } = await salesApi.getSalesOrder(so.id);
+      const selectedSO = data.sales_order;
+      if (selectedSO.status !== 'delivered' && selectedSO.status !== 'closed') {
+        setError(`Cannot invoice SO in '${selectedSO.status}' status. Only delivered or closed.`);
         return;
       }
-      setCustomerId(so.customer_id);
-      setSoId(so.id);
+      setCustomerId(selectedSO.customer_id);
+      setSoId(selectedSO.id);
+      setSoNumberSearch(selectedSO.so_number);
+      setShowSoDropdown(false);
       setItems(data.items.map((i: any) => ({
         product_id: i.product_id,
         quantity: i.quantity,
@@ -117,15 +156,83 @@ const InvoicesPage = () => {
     }
   };
 
+  const customerNameById = (customerId: string) => {
+    return customers.find((c) => c.id === customerId)?.company_name || 'Unknown customer';
+  };
+
+  const filteredInvoices = invoices.filter((inv) => {
+    const q = searchQuery.trim().toLowerCase();
+    const customerName = customerNameById(inv.customer_id).toLowerCase();
+    const matchesSearch =
+      !q ||
+      inv.invoice_number.toLowerCase().includes(q) ||
+      customerName.includes(q) ||
+      inv.status.toLowerCase().includes(q) ||
+      inv.invoice_date.toLowerCase().includes(q) ||
+      (inv.due_date || '').toLowerCase().includes(q);
+    const matchesFrom = !dateFrom || inv.invoice_date >= dateFrom;
+    const matchesTo = !dateTo || inv.invoice_date <= dateTo;
+    return matchesSearch && matchesFrom && matchesTo;
+  });
+
+  const soQuery = soNumberSearch.trim().toLowerCase();
+  const soSuggestions = soQuery
+    ? salesOrders
+        .filter((so) => so.status === 'delivered' || so.status === 'closed')
+        .filter((so) => {
+          const haystack = [
+            so.so_number,
+            customerNameById(so.customer_id),
+            so.order_date || '',
+            so.expected_delivery_date || '',
+            so.status,
+            String((so.total_amount / 100).toFixed(2)),
+          ]
+            .join(' ')
+            .toLowerCase();
+          return haystack.includes(soQuery);
+        })
+        .slice(0, 12)
+    : [];
+
   const sc: Record<string, string> = { draft: 'bg-gray-100 text-gray-700', issued: 'bg-blue-100 text-blue-700', partial_paid: 'bg-amber-100 text-amber-700', paid: 'bg-green-100 text-green-700', cancelled: 'bg-red-100 text-red-700' };
 
   return (
     <AppLayout title="Sales Invoices">
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <select className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-            <option value="">All</option><option value="draft">Draft</option><option value="issued">Issued</option><option value="partial_paid">Partial Paid</option><option value="paid">Paid</option><option value="cancelled">Cancelled</option>
-          </select>
+          <div className="flex flex-wrap items-center gap-3">
+            <select className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+              <option value="">All</option><option value="draft">Draft</option><option value="issued">Issued</option><option value="partial_paid">Partial Paid</option><option value="paid">Paid</option><option value="cancelled">Cancelled</option>
+            </select>
+            <input
+              type="text"
+              className="w-64 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm"
+              placeholder="Search invoice #, customer, status..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            <div className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm">
+              <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">From</span>
+              <input
+                type="date"
+                className="bg-transparent text-sm outline-none"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                title="Invoice date from"
+              />
+            </div>
+            <div className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm">
+              <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">To</span>
+              <input
+                type="date"
+                className="bg-transparent text-sm outline-none"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                title="Invoice date to"
+              />
+            </div>
+          </div>
           <button onClick={() => { resetForm(); setShowForm(true); }} className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/20 hover:bg-primary/90">+ New Invoice</button>
         </div>
 
@@ -144,21 +251,27 @@ const InvoicesPage = () => {
               </tr></thead>
               <tbody>
                 {loading ? <tr><td colSpan={8} className="px-4 py-8 text-center text-neutral-500">Loading...</td></tr>
-                : invoices.length === 0 ? <tr><td colSpan={8} className="px-4 py-8 text-center text-neutral-500">No invoices</td></tr>
-                : invoices.map(inv => (
+                : filteredInvoices.length === 0 ? <tr><td colSpan={8} className="px-4 py-8 text-center text-neutral-500">No invoices</td></tr>
+                : filteredInvoices.map(inv => (
                   <tr key={inv.id} className="border-b border-neutral-100 hover:bg-neutral-50">
                     <td className="px-4 py-3 font-medium">{inv.invoice_number}</td>
-                    <td className="px-4 py-3">{customers.find(c => c.id === inv.customer_id)?.company_name || '-'}</td>
+                    <td className="px-4 py-3">{customerNameById(inv.customer_id)}</td>
                     <td className="px-4 py-3">{inv.invoice_date}</td>
                     <td className="px-4 py-3">{inv.due_date || '-'}</td>
                     <td className="px-4 py-3 text-right font-medium">{formatAmount(inv.total_amount)}</td>
                     <td className="px-4 py-3 text-right font-medium text-red-600">{inv.amount_due > 0 ? formatAmount(inv.amount_due) : '-'}</td>
-                    <td className="px-4 py-3 text-center"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${sc[inv.status] || 'bg-gray-100'}`}>{inv.status.replace('_', ' ')}</span></td>
+                    <td className="px-4 py-3 text-center"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${sc[inv.status] || 'bg-gray-100'}`}>{formatStatusLabel(inv.status)}</span></td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-2">
+                        <button onClick={() => handleViewInvoice(inv)} className="rounded px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10">View</button>
                         {inv.status === 'draft' && <button onClick={() => handleIssue(inv.id)} className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50">Issue</button>}
-                        <button onClick={() => handleDownloadPDF(inv)} className="rounded px-2 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-100" title="Download PDF">
-                          📄 PDF
+                        <button
+                          onClick={() => handleDownloadPDF(inv)}
+                          className="inline-flex items-center gap-1 rounded border border-neutral-200 bg-white px-2.5 py-1 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
+                          title="Download PDF"
+                        >
+                          <span className="material-icons text-sm" aria-hidden="true">picture_as_pdf</span>
+                          Download PDF
                         </button>
                       </div>
                     </td>
@@ -167,24 +280,57 @@ const InvoicesPage = () => {
               </tbody>
             </table>
           </div>
-          {!loading && <p className="border-t border-neutral-200 px-4 py-3 text-xs text-neutral-500">Total: {invoices.length}</p>}
+          {!loading && <p className="border-t border-neutral-200 px-4 py-3 text-xs text-neutral-500">Showing {filteredInvoices.length} of {invoices.length}</p>}
         </div>
 
-        {showForm && (
+        {showForm && createPortal(
           <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm">
             <div className="hms-card my-8 w-full max-w-4xl space-y-6 p-6">
               <h2 className="font-display text-xl font-bold">{editingId ? 'Modify/Change' : 'New'} Invoice</h2>
               {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>}
               
               {!editingId && (
-                <div className="flex items-end gap-2 p-4 bg-neutral-50 rounded-lg border border-neutral-200">
-                  <div className="flex-1">
-                    <label className="mb-1 block text-sm font-semibold text-neutral-700">Auto-fill from SO #</label>
-                    <input type="text" className="w-full hms-input" placeholder="e.g. SO-00001" value={soNumberSearch} onChange={e => setSoNumberSearch(e.target.value.toUpperCase())} />
+                <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4">
+                  <div className="relative">
+                    <label className="mb-1 block text-sm font-semibold text-neutral-700">Auto-fill from Sales Order (search by SO #, customer, date, status, amount)</label>
+                    <input
+                      type="text"
+                      className="w-full hms-input"
+                      placeholder="Type SO number, customer name, date (YYYY-MM-DD), status..."
+                      value={soNumberSearch}
+                      onFocus={() => setShowSoDropdown(true)}
+                      onChange={(e) => {
+                        setSoNumberSearch(e.target.value);
+                        setSoId(undefined);
+                        setShowSoDropdown(true);
+                      }}
+                    />
+
+                    {showSoDropdown && soNumberSearch && (
+                      <div className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border border-neutral-200 bg-white shadow-lg">
+                        {loadingSOs ? (
+                          <div className="px-3 py-2 text-sm text-neutral-500">Loading sales orders...</div>
+                        ) : soSuggestions.length === 0 ? (
+                          <div className="px-3 py-2 text-sm text-neutral-500">No matching eligible sales orders (only delivered/closed are shown)</div>
+                        ) : (
+                          soSuggestions.map((so) => (
+                            <button
+                              key={so.id}
+                              type="button"
+                              className="w-full border-b border-neutral-100 px-3 py-2 text-left text-sm hover:bg-neutral-50"
+                              onClick={() => void handleSelectSO(so)}
+                            >
+                              <div className="font-semibold text-neutral-900">{so.so_number}</div>
+                              <div className="text-xs text-neutral-600">
+                                {customerNameById(so.customer_id)} | Order: {so.order_date} | Expected: {so.expected_delivery_date || '-'} | {so.status} | ₹{(so.total_amount / 100).toFixed(2)}
+                              </div>
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <button type="button" onClick={handleSearchSO} disabled={isSearchingSO || !soNumberSearch} className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">
-                    {isSearchingSO ? 'Fetching...' : 'Fetch SO'}
-                  </button>
+                  {isSearchingSO && <p className="mt-2 text-xs text-neutral-500">Fetching selected sales order...</p>}
                 </div>
               )}
 
@@ -196,7 +342,7 @@ const InvoicesPage = () => {
               <div>
                 <div className="mb-2 flex items-center justify-between"><h3 className="text-sm font-semibold">Items</h3><button onClick={addItem} className="rounded bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary">+ Add</button></div>
                 <div className="overflow-x-auto rounded-lg border border-neutral-200"><table className="w-full text-sm"><thead><tr className="bg-neutral-50"><th className="px-3 py-2 text-left">Product</th><th className="px-3 py-2 text-right w-20">Qty</th><th className="px-3 py-2 text-right w-28">Price (₹)</th><th className="px-3 py-2 text-right w-20">Disc %</th><th className="px-3 py-2 text-right w-20">GST</th><th className="px-3 py-2 text-right w-28">Total</th><th className="w-10"></th></tr></thead><tbody>
-                  {items.map((item, idx) => (<tr key={idx} className="border-t border-neutral-100"><td className="px-3 py-2"><select className="w-full rounded border px-2 py-1.5 text-sm" value={item.product_id} onChange={e => updateItem(idx, 'product_id', e.target.value)}><option value="">Select</option>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></td><td className="px-3 py-2"><input type="number" min="0.01" step="0.01" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={item.quantity} onChange={e => updateItem(idx, 'quantity', parseFloat(e.target.value)||0)} /></td><td className="px-3 py-2"><input type="number" min="0" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={item.unit_price} onChange={e => updateItem(idx, 'unit_price', parseInt(e.target.value)||0)} /></td><td className="px-3 py-2"><input type="number" min="0" max="100" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={item.discount_percent||0} onChange={e => updateItem(idx, 'discount_percent', parseFloat(e.target.value)||0)} /></td><td className="px-3 py-2"><select className="w-full rounded border px-2 py-1.5 text-sm" value={item.gst_rate} onChange={e => updateItem(idx, 'gst_rate', parseInt(e.target.value))}><option value={0}>0%</option><option value={5}>5%</option><option value={12}>12%</option><option value={18}>18%</option><option value={28}>28%</option></select></td><td className="px-3 py-2 text-right font-medium">{formatAmount(calcTotal(item))}</td><td className="px-3 py-2"><button onClick={() => removeItem(idx)} className="text-red-500">✕</button></td></tr>))}
+                  {items.map((item, idx) => (<tr key={idx} className="border-t border-neutral-100"><td className="px-3 py-2"><select className="w-full rounded border px-2 py-1.5 text-sm" value={item.product_id} onChange={e => updateItem(idx, 'product_id', e.target.value)}><option value="">Select</option>{products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></td><td className="px-3 py-2"><input type="number" min="0.01" step="0.01" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={item.quantity} onChange={e => updateItem(idx, 'quantity', parseFloat(e.target.value)||0)} /></td><td className="px-3 py-2"><input type="number" min="0" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={item.unit_price} onChange={e => updateItem(idx, 'unit_price', parseInt(e.target.value)||0)} /></td><td className="px-3 py-2"><input type="number" min="0" max="100" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={item.discount_percent||0} onChange={e => updateItem(idx, 'discount_percent', parseFloat(e.target.value)||0)} /></td><td className="px-3 py-2"><select className="w-full rounded border px-2 py-1.5 text-sm" value={item.gst_rate} onChange={e => updateItem(idx, 'gst_rate', parseInt(e.target.value))}><option value={0}>0%</option><option value={5}>5%</option><option value={12}>12%</option><option value={18}>18%</option><option value={28}>28%</option></select></td><td className="px-3 py-2 text-right font-medium">{formatAmount(calcTotal(item))}</td><td className="px-3 py-2"><button onClick={() => removeItem(idx)} className="inline-flex items-center gap-1 text-red-500"><span className="material-icons text-sm" aria-hidden="true">delete_outline</span>Remove</button></td></tr>))}
                   {items.length === 0 && <tr><td colSpan={7} className="px-3 py-4 text-center text-neutral-400">No items</td></tr>}
                 </tbody>{items.length > 0 && <tfoot><tr className="border-t-2 bg-neutral-50"><td colSpan={5} className="px-3 py-2 text-right font-semibold">Total:</td><td className="px-3 py-2 text-right font-bold text-primary">{formatAmount(items.reduce((s, i) => s + calcTotal(i), 0))}</td><td></td></tr></tfoot>}</table></div>
               </div>
@@ -206,7 +352,81 @@ const InvoicesPage = () => {
                 <button onClick={handleSubmit} disabled={submitting} className="rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/20 disabled:opacity-50">{submitting ? 'Saving...' : editingId ? 'Update' : 'Create Invoice'}</button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
+        )}
+
+        {showInvoiceDetail && selectedInvoice && createPortal(
+          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm" onClick={() => setShowInvoiceDetail(false)}>
+            <div className="hms-card my-8 w-full max-w-3xl space-y-6 p-6" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-start justify-between">
+                <div>
+                  <h2 className="font-display text-xl font-bold">Invoice: {selectedInvoice.invoice_number}</h2>
+                  <p className="mt-1 text-sm text-neutral-600">Customer: {customers.find(c => c.id === selectedInvoice.customer_id)?.company_name || '-'}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleDownloadPDF(selectedInvoice)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
+                  >
+                    <span className="material-icons text-sm" aria-hidden="true">picture_as_pdf</span>
+                    Download PDF
+                  </button>
+                  <button onClick={() => setShowInvoiceDetail(false)} className="text-2xl text-neutral-400 hover:text-neutral-600">&times;</button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 rounded-lg bg-neutral-50 p-4 md:grid-cols-4">
+                <div>
+                  <p className="text-xs text-neutral-600">Invoice Date</p>
+                  <p className="font-medium">{selectedInvoice.invoice_date}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-neutral-600">Due Date</p>
+                  <p className="font-medium">{selectedInvoice.due_date || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-neutral-600">Status</p>
+                  <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${sc[selectedInvoice.status] || 'bg-gray-100'}`}>
+                    {formatStatusLabel(selectedInvoice.status)}
+                  </span>
+                </div>
+                <div>
+                  <p className="text-xs text-neutral-600">Total</p>
+                  <p className="font-semibold">{formatAmount(selectedInvoice.total_amount)}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 rounded-lg border border-neutral-200 p-4 md:grid-cols-3">
+                <div>
+                  <p className="text-xs text-neutral-600">Subtotal</p>
+                  <p className="font-medium">{formatAmount(selectedInvoice.subtotal)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-neutral-600">Amount Paid</p>
+                  <p className="font-medium text-green-700">{formatAmount(selectedInvoice.amount_paid)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-neutral-600">Amount Due</p>
+                  <p className="font-medium text-red-600">{selectedInvoice.amount_due > 0 ? formatAmount(selectedInvoice.amount_due) : '-'}</p>
+                </div>
+              </div>
+
+              {selectedInvoice.notes && (
+                <div>
+                  <p className="mb-1 text-xs text-neutral-600">Notes</p>
+                  <p className="rounded-lg bg-neutral-50 p-3 text-sm text-neutral-700">{selectedInvoice.notes}</p>
+                </div>
+              )}
+
+              <div className="flex justify-end">
+                <button onClick={() => setShowInvoiceDetail(false)} className="rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm font-semibold hover:bg-neutral-50">
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
         )}
       </div>
     </AppLayout>
@@ -214,3 +434,4 @@ const InvoicesPage = () => {
 };
 
 export default InvoicesPage;
+

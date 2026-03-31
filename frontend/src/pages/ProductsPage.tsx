@@ -8,11 +8,6 @@ import { Product } from '../types';
 import { AppLayout } from '../components/AppLayout';
 import { PageEmpty, PageError, PageLoading } from '../components/PageState';
 
-const categorySchema = z.object({
-  name: z.string().min(1, 'Category name required'),
-  description: z.string().optional(),
-});
-
 const productSchema = z.object({
   name: z.string().min(1, 'Product name required'),
   description: z.string().optional(),
@@ -31,7 +26,6 @@ const productSchema = z.object({
   status: z.enum(['active', 'inactive', 'flagged_for_deletion']).default('active'),
 });
 
-type CategoryForm = z.infer<typeof categorySchema>;
 type ProductForm = z.infer<typeof productSchema>;
 
 const defaultProductValues: ProductForm = {
@@ -44,25 +38,16 @@ const defaultProductValues: ProductForm = {
 const ProductsPage = () => {
   const queryClient = useQueryClient();
   const [formError, setFormError] = useState('');
+  const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<Product | null>(null);
   const [adjustStock, setAdjustStock] = useState<{ productId: string; productName: string; currentStock: number } | null>(null);
-  const [activeTab, setActiveTab] = useState<'product' | 'category'>('product');
 
   const productsQuery = useQuery({ queryKey: ['products'], queryFn: productsApi.list });
   const categoriesQuery = useQuery({ queryKey: ['product-categories'], queryFn: productsApi.listCategories });
   const uomQuery = useQuery({ queryKey: ['uom'], queryFn: productsApi.listUom });
 
-  const categoryForm = useForm<CategoryForm>({ defaultValues: { name: '', description: '' } });
   const productForm = useForm<ProductForm>({ defaultValues: defaultProductValues });
-
-  const categoryMutation = useMutation({
-    mutationFn: productsApi.createCategory,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['product-categories'] });
-      categoryForm.reset();
-    },
-  });
 
   const productMutation = useMutation({
     mutationFn: (payload: Parameters<typeof productsApi.create>[0]) => productsApi.create(payload),
@@ -150,11 +135,12 @@ const ProductsPage = () => {
     setEditingProduct(null);
     setFormError('');
     productForm.reset(defaultProductValues);
+    setIsFormOpen(false);
   };
 
   const startEditProduct = (item: Product) => {
     setEditingProduct(item);
-    setActiveTab('product');
+    setIsFormOpen(true);
     setFormError('');
     // Set ALL form fields from the product data
     productForm.reset({
@@ -188,15 +174,6 @@ const ProductsPage = () => {
       quantity: -adjustStock.currentStock,
       notes: `Stock cleared to enable product deletion`,
     });
-  };
-
-  const onCreateCategory = (values: CategoryForm): void => {
-    const parsed = categorySchema.safeParse(values);
-    if (!parsed.success) {
-      setFormError(parsed.error.issues[0]?.message ?? 'Validation failed');
-      return;
-    }
-    categoryMutation.mutate(parsed.data);
   };
 
   const onCreateProduct = (values: ProductForm): void => {
@@ -246,152 +223,146 @@ const ProductsPage = () => {
 
   return (
     <AppLayout title="Product Master">
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        <div className="hms-card xl:col-span-1 overflow-hidden">
-          {/* Tab Switcher */}
-          <div className="flex border-b border-neutral-200">
-            <button
-              type="button"
-              onClick={() => { setActiveTab('product'); resetProductForm(); }}
-              className={`flex-1 px-4 py-3 text-sm font-semibold transition ${activeTab === 'product' ? 'border-b-2 border-primary text-primary bg-primary/5' : 'text-neutral-500 hover:text-neutral-700'}`}
-            >
-              {editingProduct ? 'Modify/Change Product' : 'Add Product'}
-            </button>
-            <button
-              type="button"
-              onClick={() => { setActiveTab('category'); resetProductForm(); }}
-              className={`flex-1 px-4 py-3 text-sm font-semibold transition ${activeTab === 'category' ? 'border-b-2 border-primary text-primary bg-primary/5' : 'text-neutral-500 hover:text-neutral-700'}`}
-            >
-              Add Category
-            </button>
+      <div className="space-y-6">
+        <div className="hms-card overflow-hidden">
+          <div className="border-b border-neutral-200 px-5 py-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="font-display text-lg font-bold text-neutral-900">
+                  {editingProduct ? 'Modify/Change Product' : 'Add Product'}
+                </h2>
+                <p className="text-xs text-neutral-500">Use this panel to create or edit product master records.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {!isFormOpen && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingProduct(null);
+                      setFormError('');
+                      productForm.reset(defaultProductValues);
+                      setIsFormOpen(true);
+                    }}
+                    className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary/90"
+                  >
+                    + New Product
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsFormOpen((prev) => !prev)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-50"
+                >
+                  <span className="material-icons text-base" aria-hidden="true">{isFormOpen ? 'expand_less' : 'expand_more'}</span>
+                  {isFormOpen ? 'Hide Form' : 'Show Form'}
+                </button>
+              </div>
+            </div>
           </div>
 
-          <div className="p-5">
-            {activeTab === 'category' && (
-              <form className="space-y-3" onSubmit={categoryForm.handleSubmit(onCreateCategory)}>
-                <div>
-                  <label htmlFor="category_name" className="hms-label">Category name</label>
-                  <input id="category_name" className="hms-input" placeholder="Category name" {...categoryForm.register('name')} />
+          {isFormOpen && (
+            <div className="p-5">
+              {editingProduct && (
+                <div className="mb-4 flex items-center justify-between border-b border-neutral-200 pb-4">
+                  <h3 className="text-sm font-semibold text-neutral-900">Modifying/Changing: {editingProduct.name}</h3>
+                  <button type="button" onClick={resetProductForm} className="text-sm text-neutral-500 hover:text-neutral-700">Cancel</button>
+                </div>
+              )}
+              <form className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4" onSubmit={productForm.handleSubmit(onCreateProduct)}>
+                <div className="xl:col-span-2">
+                  <label htmlFor="product_name" className="hms-label">Product name *</label>
+                  <input id="product_name" className="hms-input" placeholder="Product name" {...productForm.register('name')} />
                 </div>
                 <div>
-                  <label htmlFor="category_description" className="hms-label">Description</label>
-                  <input id="category_description" className="hms-input" placeholder="Description" {...categoryForm.register('description')} />
+                  <label htmlFor="product_sku" className="hms-label">SKU</label>
+                  <input id="product_sku" className="hms-input" placeholder="SKU code (optional)" {...productForm.register('sku')} />
                 </div>
-                {categoryMutation.isError && <p className="text-sm text-danger">Failed to create category</p>}
-                {categoryMutation.isSuccess && <p className="text-sm text-success">Category created</p>}
-                <button type="submit" disabled={categoryMutation.isPending} className="w-full rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-primary/20 transition hover:bg-primary/90 disabled:opacity-60">
-                  {categoryMutation.isPending ? 'Saving...' : 'Create Category'}
-                </button>
-              </form>
-            )}
+                <div>
+                  <label htmlFor="hsn_code" className="hms-label">HSN code *</label>
+                  <input id="hsn_code" className="hms-input" placeholder="e.g. 84713010" {...productForm.register('hsn_code')} />
+                </div>
+                <div className="xl:col-span-2">
+                  <label htmlFor="product_description" className="hms-label">Description</label>
+                  <input id="product_description" className="hms-input" placeholder="Short description (optional)" {...productForm.register('description')} />
+                </div>
+                <div>
+                  <label htmlFor="category_id" className="hms-label">Category *</label>
+                  <select id="category_id" className="hms-input" {...productForm.register('category_id')}>
+                    <option value="">Select category</option>
+                    {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="uom_id" className="hms-label">Unit of measure *</label>
+                  <select id="uom_id" className="hms-input" {...productForm.register('uom_id')}>
+                    <option value="">Select UoM</option>
+                    {uoms.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.abbreviation})</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="gst_rate" className="hms-label">GST rate *</label>
+                  <select id="gst_rate" className="hms-input" {...productForm.register('gst_rate')}>
+                    <option value="0">0%</option><option value="5">5%</option><option value="12">12%</option><option value="18">18%</option><option value="28">28%</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="purchase_price" className="hms-label">Purchase ₹</label>
+                  <input id="purchase_price" type="number" step="0.01" className="hms-input" placeholder="0.00" {...productForm.register('purchase_price')} />
+                </div>
+                <div>
+                  <label htmlFor="selling_price" className="hms-label">Selling ₹</label>
+                  <input id="selling_price" type="number" step="0.01" className="hms-input" placeholder="0.00" {...productForm.register('selling_price')} />
+                </div>
+                <div>
+                  <label htmlFor="mrp" className="hms-label">MRP ₹</label>
+                  <input id="mrp" type="number" step="0.01" className="hms-input" placeholder="0.00" {...productForm.register('mrp')} />
+                </div>
+                <div>
+                  <label htmlFor="minimum_stock" className="hms-label">Min. stock</label>
+                  <input id="minimum_stock" type="number" className="hms-input" placeholder="0" {...productForm.register('minimum_stock')} />
+                </div>
+                <div>
+                  <label htmlFor="safety_stock" className="hms-label">Safety stock</label>
+                  <input id="safety_stock" type="number" className="hms-input" placeholder="0" {...productForm.register('safety_stock')} />
+                </div>
+                <div>
+                  <label htmlFor="opening_stock" className="hms-label">
+                    Opening stock {editingProduct && <span className="text-xs text-neutral-400">(read-only)</span>}
+                  </label>
+                  <input
+                    id="opening_stock"
+                    type="number"
+                    className="hms-input"
+                    placeholder="0"
+                    disabled={!!editingProduct}
+                    {...productForm.register('opening_stock')}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="status" className="hms-label">Status</label>
+                  <select id="status" className="hms-input" {...productForm.register('status')}>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                    <option value="flagged_for_deletion">Flagged for deletion</option>
+                  </select>
+                </div>
 
-            {activeTab === 'product' && (
-              <>
-                {editingProduct && (
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-semibold text-neutral-900">Modifying/Changing: {editingProduct.name}</h3>
-                    <button type="button" onClick={resetProductForm} className="text-sm text-neutral-500 hover:text-neutral-700">Cancel</button>
-                  </div>
-                )}
-                <form className="space-y-3" onSubmit={productForm.handleSubmit(onCreateProduct)}>
-                  <div>
-                    <label htmlFor="product_name" className="hms-label">Product name *</label>
-                    <input id="product_name" className="hms-input" placeholder="Product name" {...productForm.register('name')} />
-                  </div>
-                  <div>
-                    <label htmlFor="product_description" className="hms-label">Description</label>
-                    <input id="product_description" className="hms-input" placeholder="Short description (optional)" {...productForm.register('description')} />
-                  </div>
-                  <div>
-                    <label htmlFor="product_sku" className="hms-label">SKU</label>
-                    <input id="product_sku" className="hms-input" placeholder="SKU code (optional)" {...productForm.register('sku')} />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label htmlFor="hsn_code" className="hms-label">HSN code *</label>
-                      <input id="hsn_code" className="hms-input" placeholder="e.g. 84713010" {...productForm.register('hsn_code')} />
-                    </div>
-                    <div>
-                      <label htmlFor="gst_rate" className="hms-label">GST rate *</label>
-                      <select id="gst_rate" className="hms-input" {...productForm.register('gst_rate')}>
-                        <option value="0">0%</option><option value="5">5%</option><option value="12">12%</option><option value="18">18%</option><option value="28">28%</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <label htmlFor="category_id" className="hms-label">Category *</label>
-                    <select id="category_id" className="hms-input" {...productForm.register('category_id')}>
-                      <option value="">Select category</option>
-                      {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label htmlFor="uom_id" className="hms-label">Unit of measure *</label>
-                    <select id="uom_id" className="hms-input" {...productForm.register('uom_id')}>
-                      <option value="">Select UoM</option>
-                      {uoms.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.abbreviation})</option>)}
-                    </select>
-                  </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div>
-                      <label htmlFor="purchase_price" className="hms-label">Purchase ₹</label>
-                      <input id="purchase_price" type="number" step="0.01" className="hms-input" placeholder="0.00" {...productForm.register('purchase_price')} />
-                    </div>
-                    <div>
-                      <label htmlFor="selling_price" className="hms-label">Selling ₹</label>
-                      <input id="selling_price" type="number" step="0.01" className="hms-input" placeholder="0.00" {...productForm.register('selling_price')} />
-                    </div>
-                    <div>
-                      <label htmlFor="mrp" className="hms-label">MRP ₹</label>
-                      <input id="mrp" type="number" step="0.01" className="hms-input" placeholder="0.00" {...productForm.register('mrp')} />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div>
-                      <label htmlFor="minimum_stock" className="hms-label">Min. stock</label>
-                      <input id="minimum_stock" type="number" className="hms-input" placeholder="0" {...productForm.register('minimum_stock')} />
-                    </div>
-                    <div>
-                      <label htmlFor="safety_stock" className="hms-label">Safety stock</label>
-                      <input id="safety_stock" type="number" className="hms-input" placeholder="0" {...productForm.register('safety_stock')} />
-                    </div>
-                    <div>
-                      <label htmlFor="opening_stock" className="hms-label">
-                        Opening stock {editingProduct && <span className="text-xs text-neutral-400">(read-only)</span>}
-                      </label>
-                      <input
-                        id="opening_stock"
-                        type="number"
-                        className="hms-input"
-                        placeholder="0"
-                        disabled={!!editingProduct}
-                        {...productForm.register('opening_stock')}
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label htmlFor="status" className="hms-label">Status</label>
-                    <select id="status" className="hms-input" {...productForm.register('status')}>
-                      <option value="active">Active</option>
-                      <option value="inactive">Inactive</option>
-                      <option value="flagged_for_deletion">Flagged for deletion</option>
-                    </select>
-                  </div>
-
+                <div className="md:col-span-2 xl:col-span-4">
                   {formError && <p className="text-sm text-danger">{formError}</p>}
                   {productMutation.isSuccess && !editingProduct && <p className="text-sm text-success">Product created successfully</p>}
                   {updateMutation.isSuccess && <p className="text-sm text-success">Product updated successfully</p>}
-                  <button type="submit" disabled={isSaving} className="w-full rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-primary/20 transition hover:bg-primary/90 disabled:opacity-60">
+                </div>
+                <div className="md:col-span-2 xl:col-span-4">
+                  <button type="submit" disabled={isSaving} className="rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-primary/20 transition hover:bg-primary/90 disabled:opacity-60">
                     {isSaving ? 'Saving...' : editingProduct ? 'Update Product' : 'Create Product'}
                   </button>
-                </form>
-              </>
-            )}
-          </div>
+                </div>
+              </form>
+            </div>
+          )}
         </div>
 
-        <div className="hms-card xl:col-span-2 overflow-hidden">
+        <div className="hms-card overflow-hidden">
           <div className="border-b border-neutral-200 px-5 py-4">
             <h2 className="font-display text-lg font-bold text-neutral-900">Products</h2>
           </div>

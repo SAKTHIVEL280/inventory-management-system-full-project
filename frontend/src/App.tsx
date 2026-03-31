@@ -14,6 +14,7 @@ import CompanyPage from './pages/CompanyPage';
 import UsersPage from './pages/UsersPage';
 import CustomersPage from './pages/CustomersPage';
 import SuppliersPage from './pages/SuppliersPage';
+import CategoriesPage from './pages/CategoriesPage';
 import ProductsPage from './pages/ProductsPage';
 import PurchaseOrderPage from './pages/PurchaseOrderPage';
 import QuotationsPage from './pages/QuotationsPage';
@@ -25,9 +26,11 @@ import ReceivablesPage from './pages/ReceivablesPage';
 import PayablesPage from './pages/PayablesPage';
 import ReportsPage from './pages/ReportsPage';
 import { PERMISSION_SCOPES } from './types';
+import { Toaster } from 'sonner';
+import { authApi } from './api/auth';
 
 function App() {
-  const { initializeFromLocalStorage, isAuthenticated } = useAuthStore();
+  const { initializeFromLocalStorage, isAuthenticated, setUser, logout } = useAuthStore();
   const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
@@ -35,6 +38,23 @@ function App() {
     initializeFromLocalStorage();
     setIsInitialized(true);
   }, [initializeFromLocalStorage]);
+
+  useEffect(() => {
+    if (!isInitialized || !isAuthenticated) {
+      return;
+    }
+
+    // Always refresh effective permissions from backend so action buttons
+    // don't disappear due to stale localStorage user payload.
+    authApi
+      .getMe()
+      .then((user) => {
+        setUser(user);
+      })
+      .catch(() => {
+        logout();
+      });
+  }, [isInitialized, isAuthenticated, setUser, logout]);
 
   if (!isInitialized) {
     return (
@@ -49,6 +69,7 @@ function App() {
 
   return (
     <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <Toaster richColors position="top-right" closeButton />
       <Routes>
         {/* Public routes */}
         <Route
@@ -108,6 +129,16 @@ function App() {
           }
         />
         <Route path="/suppliers" element={<Navigate to="/masters/suppliers" replace />} />
+
+        <Route
+          path="/masters/categories"
+          element={
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.PRODUCTS_READ}>
+              <CategoriesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/categories" element={<Navigate to="/masters/categories" replace />} />
 
         <Route
           path="/masters/products"

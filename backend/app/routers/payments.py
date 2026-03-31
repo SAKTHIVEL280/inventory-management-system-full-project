@@ -5,7 +5,7 @@ Production-ready with fixes for:
 - BUG-15: Supplier GRN allocation tracking implemented
 - BUG-03: Thread-safe payment number generation
 """
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -82,12 +82,18 @@ async def list_payments(
     customer_id: UUID | None = Query(default=None),
     supplier_id: UUID | None = Query(default=None),
     status: str | None = Query(default=None),
+    archived_only: bool = Query(default=False),
+    include_archived: bool = Query(default=False),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("payments_read", "receipts_read")),
 ):
-    query = db.query(Payment).filter(Payment.is_deleted == False)
+    query = db.query(Payment)
+    if archived_only:
+        query = query.filter(Payment.is_deleted == True)
+    elif not include_archived:
+        query = query.filter(Payment.is_deleted == False)
     if party_type:
         query = query.filter(Payment.party_type == party_type)
     if customer_id:
@@ -229,6 +235,40 @@ async def update_payment_status(
                 _reverse_grn_allocation(db, allocation.purchase_grn_id, allocation.allocated_amount)
 
     payment.status = payload.status
+    db.commit()
+    db.refresh(payment)
+    return payment
+
+
+@router.patch("/{payment_id}/archive")
+async def archive_payment(
+    payment_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("payments_write", "receipts_write")),
+):
+    payment = db.query(Payment).filter(Payment.id == payment_id, Payment.is_deleted == False).first()
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+
+    payment.is_deleted = True
+    payment.deleted_at = datetime.utcnow()
+    db.commit()
+    db.refresh(payment)
+    return payment
+
+
+@router.patch("/{payment_id}/restore")
+async def restore_payment(
+    payment_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("payments_write", "receipts_write")),
+):
+    payment = db.query(Payment).filter(Payment.id == payment_id, Payment.is_deleted == True).first()
+    if not payment:
+        raise HTTPException(status_code=404, detail="Archived payment not found")
+
+    payment.is_deleted = False
+    payment.deleted_at = None
     db.commit()
     db.refresh(payment)
     return payment

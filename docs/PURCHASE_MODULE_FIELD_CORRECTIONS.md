@@ -1,4 +1,4 @@
-# Purchase Module - Actual Fields vs Test Data Discrepancies
+﻿# Purchase Module - Actual Fields vs Test Data Discrepancies
 
 **Date:** March 29, 2026  
 **Purpose:** Identify field discrepancies between test documentation and actual application implementation  
@@ -6,17 +6,17 @@
 
 ---
 
-## 🔍 Executive Summary
+## [SEARCH] Executive Summary
 
 The test data provided earlier included some fields that **DO NOT EXIST** in the current application. This document identifies all discrepancies and provides **CORRECTED test data** based on the actual database schema and frontend forms.
 
 ---
 
-## 📋 Field Discrepancies Analysis
+## [LIST] Field Discrepancies Analysis
 
 ### **Purchase Order (PO) Module**
 
-#### ❌ Fields Mentioned in Test Data (DO NOT EXIST):
+#### [FAIL] Fields Mentioned in Test Data (DO NOT EXIST):
 ```
 1. PO Items → "Line Total" field
    - Test data showed: "Line Total: ₹4,20,000 + ₹75,600 (IGST) = ₹4,95,600"
@@ -26,7 +26,7 @@ The test data provided earlier included some fields that **DO NOT EXIST** in the
    - Reality: Notes is OPTIONAL (nullable)
 ```
 
-#### ✅ Actual PO Fields (Frontend Form):
+#### [OK] Actual PO Fields (Frontend Form):
 ```typescript
 // Header Fields (from PurchaseOrderPage.tsx)
 {
@@ -69,7 +69,7 @@ The test data provided earlier included some fields that **DO NOT EXIST** in the
 
 ### **GRN (Goods Receipt Note) Module**
 
-#### ❌ Fields Mentioned in Test Data (DO NOT EXIST):
+#### [FAIL] Fields Mentioned in Test Data (DO NOT EXIST):
 ```
 1. GRN Items → "PO Quantity" as separate field
    - Reality: PO quantity is shown as REFERENCE ONLY (received_quantity vs quantity)
@@ -78,7 +78,7 @@ The test data provided earlier included some fields that **DO NOT EXIST** in the
    - Reality: supplier_invoice_date is OPTIONAL
 ```
 
-#### ✅ Actual GRN Fields (Frontend Form - GRNPage.tsx):
+#### [OK] Actual GRN Fields (Frontend Form - GRNPage.tsx):
 ```typescript
 // Header Fields
 {
@@ -126,7 +126,7 @@ The test data provided earlier included some fields that **DO NOT EXIST** in the
 
 ---
 
-## ✅ CORRECTED Test Data (Matching Actual Application)
+## [OK] CORRECTED Test Data (Matching Actual Application)
 
 ### **PHASE 1: Master Data Setup** (UNCHANGED - These are correct)
 
@@ -148,7 +148,7 @@ Product Details:
 ├─ Minimum Stock: 5
 └─ Opening Stock: 0
 
-✅ This is CORRECT - all fields exist in application
+[OK] This is CORRECT - all fields exist in application
 ```
 
 #### **1.2 Create Supplier**
@@ -174,7 +174,7 @@ Supplier Details:
 ├─ Payment Terms: 30 days
 └─ Opening Balance: ₹0
 
-✅ This is CORRECT - all fields exist in application
+[OK] This is CORRECT - all fields exist in application
 ```
 
 ---
@@ -251,10 +251,10 @@ STEP 4: Save PO
 └─────────────────────────────────────────────────────────────┘
 
 Expected Result:
-✅ PO Number auto-generated: PO-00001
-✅ Status: draft OR sent
-✅ Total Amount: ₹5,16,250 (auto-calculated)
-✅ IGST applied (Karnataka company → Maharashtra supplier)
+[OK] PO Number auto-generated: PO-00001
+[OK] Status: draft OR sent
+[OK] Total Amount: ₹5,16,250 (auto-calculated)
+[OK] IGST applied (Karnataka company → Maharashtra supplier)
 ```
 
 ---
@@ -344,10 +344,10 @@ STEP 3: Save GRN
 └─────────────────────────────────────────────────────────────┘
 
 Expected Result:
-✅ GRN Number auto-generated: GRN-00001
-✅ Status: draft
-✅ Items auto-filled from PO
-✅ Supplier invoice number saved
+[OK] GRN Number auto-generated: GRN-00001
+[OK] Status: draft
+[OK] Items auto-filled from PO
+[OK] Supplier invoice number saved
 ```
 
 #### **3.2 Confirm GRN (Stock Update)**
@@ -382,7 +382,7 @@ STEP 2: Click "View" button to open detail modal
 │ └──────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
 
-STEP 3: Click "✓ Confirm & Add Stock" button
+STEP 3: Click "[OK] Confirm & Add Stock" button
 ┌─────────────────────────────────────────────────────────────┐
 │ Confirmation dialog:                                        │
 │ "Confirm this GRN? Stock will be added to inventory."       │
@@ -391,40 +391,40 @@ STEP 3: Click "✓ Confirm & Add Stock" button
 └─────────────────────────────────────────────────────────────┘
 
 Expected Results:
-✅ GRN Status: draft → confirmed
-✅ PO Status: sent → received (if full qty)
-✅ Stock Ledger Entries Created:
+[OK] GRN Status: draft → confirmed
+[OK] PO Status: sent → received (if full qty)
+[OK] Stock Ledger Entries Created:
    - Dell Laptop: +10 units @ ₹42,000
    - Logitech Mouse: +50 units @ ₹350
-✅ Current Stock Updated:
+[OK] Current Stock Updated:
    - Dell Laptop: 10 units
    - Logitech Mouse: 50 units
 ```
 
 ---
 
-## 📊 Complete Field Reference Table
+## [METRICS] Complete Field Reference Table
 
 ### **Purchase Order Fields**
 
 | Field | Type | Required | User Input | Auto | Notes |
 |-------|------|----------|------------|------|-------|
 | **Header** |
-| supplier_id | UUID | ✅ | Dropdown | | Select from suppliers |
-| order_date | Date | ✅ | Date picker | Default: today | |
-| expected_delivery_date | Date | ❌ | Date picker | | Optional |
-| notes | Text | ❌ | Textarea | | Optional |
+| supplier_id | UUID | [OK] | Dropdown | | Select from suppliers |
+| order_date | Date | [OK] | Date picker | Default: today | |
+| expected_delivery_date | Date | [FAIL] | Date picker | | Optional |
+| notes | Text | [FAIL] | Textarea | | Optional |
 | status | String | - | Button click | Auto | draft/sent via button |
-| po_number | String | - | | ✅ Auto | Generated on save |
-| total_amount | Integer | - | | ✅ Auto | Calculated from items |
+| po_number | String | - | | [OK] Auto | Generated on save |
+| total_amount | Integer | - | | [OK] Auto | Calculated from items |
 | **Line Items** |
-| product_id | UUID | ✅ | Dropdown | | Select from products |
-| quantity | Number | ✅ | Number input | | Positive integer/decimal |
-| unit_price | Integer | ✅ | Number (₹) | Convert to paise | User enters rupees |
-| discount_percent | Float | ❌ | Number (0-100) | Default: 0 | Percentage |
-| gst_rate | Integer | ✅ | Dropdown | | 0/5/12/18/28 |
-| description | String | - | | ✅ Auto | From product name |
-| received_quantity | Number | - | | ✅ Auto | Default: 0, updated on GRN |
+| product_id | UUID | [OK] | Dropdown | | Select from products |
+| quantity | Number | [OK] | Number input | | Positive integer/decimal |
+| unit_price | Integer | [OK] | Number (₹) | Convert to paise | User enters rupees |
+| discount_percent | Float | [FAIL] | Number (0-100) | Default: 0 | Percentage |
+| gst_rate | Integer | [OK] | Dropdown | | 0/5/12/18/28 |
+| description | String | - | | [OK] Auto | From product name |
+| received_quantity | Number | - | | [OK] Auto | Default: 0, updated on GRN |
 
 ---
 
@@ -433,26 +433,26 @@ Expected Results:
 | Field | Type | Required | User Input | Auto | Notes |
 |-------|------|----------|------------|------|-------|
 | **Header** |
-| supplier_id | UUID | ✅ | Dropdown | | Select from suppliers |
-| purchase_order_id | UUID | ❌ | Dropdown | | Link to PO (optional) |
-| receipt_date | Date | ✅ | Date picker | Default: today | |
-| supplier_invoice_number | String | ❌ | Text input | | Optional but recommended |
-| supplier_invoice_date | Date | ❌ | Date input | | Optional |
-| notes | Text | ❌ | Textarea | | Optional |
-| grn_number | String | - | | ✅ Auto | Generated on save |
-| status | String | - | | ✅ Auto | Default: draft |
-| total_amount | Integer | - | | ✅ Auto | Calculated from items |
+| supplier_id | UUID | [OK] | Dropdown | | Select from suppliers |
+| purchase_order_id | UUID | [FAIL] | Dropdown | | Link to PO (optional) |
+| receipt_date | Date | [OK] | Date picker | Default: today | |
+| supplier_invoice_number | String | [FAIL] | Text input | | Optional but recommended |
+| supplier_invoice_date | Date | [FAIL] | Date input | | Optional |
+| notes | Text | [FAIL] | Textarea | | Optional |
+| grn_number | String | - | | [OK] Auto | Generated on save |
+| status | String | - | | [OK] Auto | Default: draft |
+| total_amount | Integer | - | | [OK] Auto | Calculated from items |
 | **Line Items** |
-| product_id | UUID | ✅ | Dropdown | | Select from products |
-| purchase_order_item_id | UUID | ❌ | | ✅ Auto | If linked to PO |
-| quantity | Number | ✅ | Number input | | Actual received qty |
-| unit_price | Integer | ✅ | Number (₹) | Auto-fill from PO/product | Convert to paise |
-| discount_percent | Float | ❌ | Number (0-100) | Default: 0 | |
-| gst_rate | Integer | ✅ | Dropdown | Auto-fill from product | 0/5/12/18/28 |
+| product_id | UUID | [OK] | Dropdown | | Select from products |
+| purchase_order_item_id | UUID | [FAIL] | | [OK] Auto | If linked to PO |
+| quantity | Number | [OK] | Number input | | Actual received qty |
+| unit_price | Integer | [OK] | Number (₹) | Auto-fill from PO/product | Convert to paise |
+| discount_percent | Float | [FAIL] | Number (0-100) | Default: 0 | |
+| gst_rate | Integer | [OK] | Dropdown | Auto-fill from product | 0/5/12/18/28 |
 
 ---
 
-## 🎯 Key Differences Summary
+## [TARGET] Key Differences Summary
 
 ### **What Users DO:**
 1. Select supplier from dropdown
@@ -476,7 +476,7 @@ Expected Results:
 
 ---
 
-## ✅ Updated Test Checklist
+## [OK] Updated Test Checklist
 
 ### **PO Creation Test**
 - [ ] Select supplier: Dell India Pvt Ltd
@@ -505,7 +505,7 @@ Expected Results:
 ### **GRN Confirmation Test**
 - [ ] Open GRN-00001 detail modal
 - [ ] Verify all items and amounts
-- [ ] Click "✓ Confirm & Add Stock"
+- [ ] Click "[OK] Confirm & Add Stock"
 - [ ] Verify status: draft → confirmed
 - [ ] Navigate to Inventory → Stock
 - [ ] Verify Dell Laptop stock: 10 units
@@ -514,7 +514,7 @@ Expected Results:
 
 ---
 
-## 📝 Notes for Testing
+## [NOTES] Notes for Testing
 
 1. **Price Handling:**
    - Frontend: User enters prices in RUPEES (₹42,000)
@@ -541,3 +541,5 @@ Expected Results:
 **Document Version:** 1.0  
 **Last Updated:** March 29, 2026  
 **Next Step:** Use this corrected test data for actual testing
+
+

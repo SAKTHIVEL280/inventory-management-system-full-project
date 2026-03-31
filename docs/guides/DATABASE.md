@@ -1,10 +1,10 @@
-# Database Setup & Management Guide
+﻿# Database Setup & Management Guide
 
 This guide covers database configuration, initialization, migration, and troubleshooting.
 
 ---
 
-## 📋 Quick Reference
+## [LIST] Quick Reference
 
 - **Development**: PostgreSQL 15+ (Docker or local install)
 - **Production**: PostgreSQL 15+ (required)
@@ -12,7 +12,7 @@ This guide covers database configuration, initialization, migration, and trouble
 
 ---
 
-## 🐘 PostgreSQL Setup (Docker)
+## [POSTGRES] PostgreSQL Setup (Docker)
 
 ### Prerequisites
 - Docker installed
@@ -76,7 +76,7 @@ SELECT 'suppliers', COUNT(*) FROM suppliers;
 
 ---
 
-## 📦 Database Schema Overview
+## [PACKAGE] Database Schema Overview
 
 ### Core Tables
 
@@ -124,7 +124,7 @@ permission_overrides: dict = Column(JSON, nullable=True)
 
 ---
 
-## 🔄 Database Migrations
+## [SYNC] Database Migrations
 
 Use the compatibility migration script whenever new columns are introduced.
 
@@ -137,7 +137,7 @@ This is idempotent and safe to run multiple times.
 
 ---
 
-## 📊 Database Initialization Scripts
+## [METRICS] Database Initialization Scripts
 
 ### setup_db.py (Full Setup)
 ```bash
@@ -146,11 +146,11 @@ python setup_db.py
 ```
 
 **What it does:**
-1. ✅ Connects to the PostgreSQL database
-2. ✅ Creates all tables (via SQLAlchemy metadata)
-3. ✅ Seeds admin user: `admin@company.com` / `Admin@123`
-4. ✅ Seeds product units: PCS, KG, LTR, BOX, etc.
-5. ✅ Creates default company record
+1. [OK] Connects to the PostgreSQL database
+2. [OK] Creates all tables (via SQLAlchemy metadata)
+3. [OK] Seeds admin user: `admin@company.com` / `Admin@123`
+4. [OK] Seeds product units: PCS, KG, LTR, BOX, etc.
+5. [OK] Creates default company record
 
 **Main script location:** `setup_db.py` (wrapper also available at `backend/setup_db.py`)
 
@@ -167,7 +167,7 @@ python seed_db.py
 
 ---
 
-## 🔐 Security Best Practices
+## [SECURITY] Security Best Practices
 
 ### Development
 ```env
@@ -227,7 +227,7 @@ docker exec -it ims-postgres psql -U ims_admin -d ims_db -c "SELECT pg_size_pret
 
 ---
 
-## 📈 Performance Optimization
+## [GROWTH] Performance Optimization
 
 ### Add Indexes (After Heavy Usage)
 ```python
@@ -258,7 +258,7 @@ engine = create_engine(
 
 ---
 
-## 🔄 Backup & Restore
+## [SYNC] Backup & Restore
 
 ### PostgreSQL Backup
 ```bash
@@ -283,7 +283,7 @@ docker exec -i ims-postgres pg_restore -U ims_admin -d ims_db backup.dump
 
 ---
 
-## 📋 Checklist for New Developers
+## [LIST] Checklist for New Developers
 
 - [ ] Read this guide completely
 - [ ] Run database initialization: `python setup_db.py`
@@ -295,7 +295,7 @@ docker exec -i ims-postgres pg_restore -U ims_admin -d ims_db backup.dump
 
 ---
 
-## 📞 Common Questions
+## [SUPPORT] Common Questions
 
 **Q: Can I use MySQL instead of PostgreSQL?**  
 A: Not supported. This repository is PostgreSQL-only.
@@ -316,3 +316,5 @@ A: PostgreSQL handles billions of rows. No practical limit for this application.
 
 **Last Updated:** March 25, 2026  
 **Database Version:** PostgreSQL 15+
+
+

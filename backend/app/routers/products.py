@@ -2,7 +2,8 @@
 from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
@@ -21,6 +22,15 @@ from app.schemas.product import (
 )
 
 router = APIRouter(prefix="/api/v1/products", tags=["products"])
+
+
+def _to_integrity_http_error(exc: IntegrityError) -> HTTPException:
+    message = str(getattr(exc, "orig", exc)).lower()
+    if "products_sku_key" in message or "key (sku)" in message:
+        return HTTPException(status_code=400, detail="SKU already exists. Please use a unique SKU.")
+    if "products_product_code_key" in message or "key (product_code)" in message:
+        return HTTPException(status_code=400, detail="Product code already exists. Please retry.")
+    return HTTPException(status_code=400, detail="Unable to save product due to duplicate values.")
 
 
 def _generate_product_code(db: Session) -> str:
@@ -132,9 +142,9 @@ async def create_product(
             raise HTTPException(status_code=400, detail="Invalid alt_uom_id")
 
     if payload.sku:
-        duplicate_sku = db.query(Product).filter(Product.sku == payload.sku, Product.is_deleted == False).first()
+        duplicate_sku = db.query(Product).filter(Product.sku == payload.sku).first()
         if duplicate_sku:
-            raise HTTPException(status_code=400, detail="SKU already exists")
+            raise HTTPException(status_code=400, detail="SKU already exists. Please use a unique SKU.")
 
     product = Product(
         **payload.model_dump(exclude={"product_code"}),
@@ -142,7 +152,11 @@ async def create_product(
         created_by=current_user.id,
     )
     db.add(product)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        raise _to_integrity_http_error(exc)
 
     if payload.opening_stock > 0:
         ledger_entry = StockLedger(
@@ -158,7 +172,11 @@ async def create_product(
         )
         db.add(ledger_entry)
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise _to_integrity_http_error(exc)
     db.refresh(product)
     return _to_product_with_stock(product, _current_stock(db, product.id))
 
@@ -185,11 +203,22 @@ async def create_category(
 ):
     existing = (
         db.query(ProductCategory)
-        .filter(func.lower(ProductCategory.name) == payload.name.lower(), ProductCategory.is_deleted == False)
+        .filter(func.lower(ProductCategory.name) == payload.name.lower())
         .first()
     )
-    if existing:
+    if existing and not existing.is_deleted:
         raise HTTPException(status_code=400, detail="Category already exists")
+
+    # A soft-deleted row with the same name still exists in DB with a unique key.
+    # Revive that row instead of inserting a duplicate and causing IntegrityError.
+    if existing and existing.is_deleted:
+        existing.description = payload.description
+        existing.is_deleted = False
+        existing.deleted_at = None
+        existing.is_active = True
+        db.commit()
+        db.refresh(existing)
+        return ProductCategoryResponse.model_validate(existing)
 
     category = ProductCategory(
         name=payload.name,
@@ -197,9 +226,66 @@ async def create_category(
         created_by=current_user.id,
     )
     db.add(category)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=400, detail="Category already exists")
     db.refresh(category)
     return ProductCategoryResponse.model_validate(category)
+
+
+
+
+
+@router.post("/apply-category-action")
+async def apply_category_action(
+    action: str = Query(..., description="Action: 'update' or 'delete'"),
+    category_id: UUID = Query(..., description="Category ID"),
+    name: str = Query(None, description="New name (for update action)"),
+    description: str = Query(None, description="New description (for update action)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("categories_write")),
+):
+    """Universal endpoint for category update and delete operations."""
+    category = (
+        db.query(ProductCategory)
+        .filter(ProductCategory.id == category_id, ProductCategory.is_deleted == False)
+        .first()
+    )
+    if not category:
+        raise HTTPException(status_code=404, detail="Category not found")
+
+    if action.lower() == "update":
+        if not name:
+            raise HTTPException(status_code=400, detail="Name is required for update")
+        
+        # Check if another category with the same name already exists
+        existing = (
+            db.query(ProductCategory)
+            .filter(
+                func.lower(ProductCategory.name) == name.lower(),
+                ProductCategory.id != category_id,
+                ProductCategory.is_deleted == False,
+            )
+            .first()
+        )
+        if existing:
+            raise HTTPException(status_code=400, detail="Category name already exists")
+
+        category.name = name
+        category.description = description or category.description
+        db.commit()
+        db.refresh(category)
+        return ProductCategoryResponse.model_validate(category)
+    
+    elif action.lower() == "delete":
+        category.is_deleted = True
+        db.commit()
+        return {"message": "Category deleted successfully"}
+    
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown action: {action}. Use 'update' or 'delete'")
 
 
 @router.get("/uom", response_model=list[UnitOfMeasureResponse])
@@ -254,17 +340,21 @@ async def update_product(
     if payload.sku:
         duplicate_sku = (
             db.query(Product)
-            .filter(Product.sku == payload.sku, Product.id != product_id, Product.is_deleted == False)
+            .filter(Product.sku == payload.sku, Product.id != product_id)
             .first()
         )
         if duplicate_sku:
-            raise HTTPException(status_code=400, detail="SKU already exists")
+            raise HTTPException(status_code=400, detail="SKU already exists. Please use a unique SKU.")
 
     update_data = payload.model_dump(exclude={"product_code"})
     for field, value in update_data.items():
         setattr(product, field, value)
 
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise _to_integrity_http_error(exc)
     db.refresh(product)
     return _to_product_with_stock(product, _current_stock(db, product.id))
 

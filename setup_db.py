@@ -1,4 +1,4 @@
-"""Bootstrap IMS backend database and seed data safely.
+﻿"""Bootstrap IMS backend database and seed data safely.
 
 This script is intentionally idempotent. You can run it multiple times.
 """
@@ -131,7 +131,7 @@ def main() -> int:
     env_values = _load_env_file(BACKEND_ENV)
     database_url = env_values.get("DATABASE_URL", "").strip()
     if not database_url:
-        print("  ✗ DATABASE_URL is missing in backend/.env")
+        print("  [FAIL] DATABASE_URL is missing in backend/.env")
         return 1
 
     _print_step("[2/5] Ensuring Python virtual environment + dependencies")
@@ -140,7 +140,7 @@ def main() -> int:
     req_file = BACKEND / "requirements.txt"
     install = subprocess.run([str(pip_cmd), "install", "-r", str(req_file)], text=True, capture_output=True)
     if install.returncode != 0:
-        print("  ✗ Dependency installation failed")
+        print("  [FAIL] Dependency installation failed")
         print((install.stderr or install.stdout or "")[:400])
         return 1
     print("  - Dependencies installed")
@@ -159,7 +159,7 @@ def main() -> int:
         env=proc_env,
     )
     if migrate.returncode != 0:
-        print("  ✗ Migration failed")
+        print("  [FAIL] Migration failed")
         print((migrate.stderr or migrate.stdout or "")[:500])
         return 1
     print("  - Compatibility migration applied")
@@ -173,12 +173,12 @@ def main() -> int:
         env=proc_env,
     )
     if seed.returncode != 0:
-        print("  ✗ Seeding failed")
+        print("  [FAIL] Seeding failed")
         print((seed.stderr or seed.stdout or "")[:700])
         return 1
     print("  - Seed complete")
 
-    print("\n✓ Setup completed successfully")
+    print("\n[OK] Setup completed successfully")
     print("\nNext steps:")
     print(f"  1. Backend:  cd backend && {venv_dir_name}\\Scripts\\activate && uvicorn app.main:app --reload")
     print("  2. Frontend: cd frontend && npm install && npm run dev")
@@ -190,3 +190,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

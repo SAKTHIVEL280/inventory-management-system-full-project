@@ -6,7 +6,7 @@ import { customersApi } from '../api/customers';
 import { Customer } from '../types';
 import { AppLayout } from '../components/AppLayout';
 import { PageEmpty, PageError, PageLoading } from '../components/PageState';
-import { showError, showSuccess, confirmDelete, confirmWithToast } from '../utils/toastHelper';
+import { showError, showSuccess, confirmWithToast } from '../utils/toastHelper';
 
 const schema = z.object({
   company_name: z.string().min(1, 'Company name required'),
@@ -95,6 +95,7 @@ const CustomersPage = () => {
     mutationFn: (id: string) => customersApi.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
+      showSuccess('Customer deleted successfully');
     },
     onError: (error: unknown) => {
       const axiosErr = error as any;
@@ -103,10 +104,10 @@ const CustomersPage = () => {
 
       if (typeof detail === 'string') {
         errorMessage = detail;
+      } else if (detail?.error_code === 'OUTSTANDING_EXISTS') {
+        errorMessage = 'Cannot delete customer: outstanding balance exists. Please clear dues before deleting.';
       } else if (detail?.message) {
         errorMessage = detail.message;
-      } else if (detail?.error_code === 'OUTSTANDING_EXISTS') {
-        errorMessage = 'Cannot delete customer: They have outstanding invoice balance. Please clear all dues before deleting.';
       } else if (Array.isArray(detail)) {
         errorMessage = detail.map((d: any) => d.msg).join(', ');
       }
@@ -330,7 +331,12 @@ const CustomersPage = () => {
                           type="button" 
                           onClick={() => {
                             const customerName = item.company_name;
-                            confirmDelete(customerName, () => deleteMutation.mutate(item.id));
+                            const confirmed = window.confirm(
+                              `Are you sure you want to delete "${customerName}"? This action cannot be undone.`
+                            );
+                            if (confirmed) {
+                              deleteMutation.mutate(item.id);
+                            }
                           }} 
                           className="rounded px-2 py-1 text-xs font-semibold text-danger hover:bg-red-50 transition"
                         >

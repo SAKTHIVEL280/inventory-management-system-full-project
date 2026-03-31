@@ -3,6 +3,7 @@
  * Record payments to suppliers.
  */
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { AppLayout } from '../components/AppLayout';
 import { paymentsApi, type Payment, type CreatePaymentPayload } from '../api/payments';
 import { apiClient } from '../api/client';
@@ -16,6 +17,12 @@ const PayablesPage = () => {
   const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [modeFilter, setModeFilter] = useState('');
+  const [archiveView, setArchiveView] = useState<'active' | 'archived'>('active');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   const [supplierId, setSupplierId] = useState('');
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
@@ -25,15 +32,43 @@ const PayablesPage = () => {
   const [notes, setNotes] = useState('');
 
   const fetchPayments = async () => {
-    try { setLoading(true); const res = await paymentsApi.listPayments({ party_type: 'supplier' }); setPayments(res.data.items || []); } catch { /* */ } finally { setLoading(false); }
+    try {
+      setLoading(true);
+      const res = await paymentsApi.listPayments({ party_type: 'supplier', archived_only: archiveView === 'archived' });
+      setPayments(res.data.items || []);
+    } catch {
+      /* */
+    } finally {
+      setLoading(false);
+    }
   };
   const fetchSuppliers = async () => {
     try { const res = await apiClient.get('/api/v1/suppliers', { params: { page_size: 100 } }); setSuppliers(res.data.items || []); } catch { /* */ }
   };
 
-  useEffect(() => { fetchPayments(); fetchSuppliers(); }, []);
+  useEffect(() => { fetchPayments(); }, [archiveView]);
+  useEffect(() => { fetchSuppliers(); }, []);
   const resetForm = () => { setSupplierId(''); setPaymentDate(new Date().toISOString().split('T')[0]); setAmount(0); setPaymentMode('bank_transfer'); setReferenceNumber(''); setNotes(''); setError(''); };
   const formatAmount = (p: number) => `₹${(p / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+  const supplierNameById = (id?: string | null) => suppliers.find((s) => s.id === id)?.company_name || '-';
+
+  const filteredPayments = payments.filter((p) => {
+    const term = searchQuery.trim().toLowerCase();
+    const allocationRefs = p.allocations?.map((a: any) => a.po_number || a.grn_number).filter(Boolean).join(' ') || '';
+    const matchesSearch =
+      !term ||
+      supplierNameById(p.supplier_id).toLowerCase().includes(term) ||
+      p.payment_date.toLowerCase().includes(term) ||
+      p.status.toLowerCase().includes(term) ||
+      p.payment_mode.toLowerCase().includes(term) ||
+      allocationRefs.toLowerCase().includes(term) ||
+      (p.reference_number || '').toLowerCase().includes(term);
+    const matchesStatus = !statusFilter || p.status === statusFilter;
+    const matchesMode = !modeFilter || p.payment_mode === modeFilter;
+    const matchesFrom = !dateFrom || p.payment_date >= dateFrom;
+    const matchesTo = !dateTo || p.payment_date <= dateTo;
+    return matchesSearch && matchesStatus && matchesMode && matchesFrom && matchesTo;
+  });
 
   const handleSubmit = async () => {
     if (!supplierId || amount <= 0) { setError('Select supplier and enter amount'); return; }
@@ -55,13 +90,61 @@ const PayablesPage = () => {
     try { await paymentsApi.updatePaymentStatus(id, status); fetchPayments(); } catch { alert('Failed'); }
   };
 
+  const handleArchiveToggle = async (id: string, archived: boolean) => {
+    try {
+      if (archived) {
+        await paymentsApi.restorePayment(id);
+      } else {
+        await paymentsApi.archivePayment(id);
+      }
+      fetchPayments();
+    } catch {
+      alert(archived ? 'Restore failed' : 'Archive failed');
+    }
+  };
+
   const sc: Record<string, string> = { pending: 'bg-amber-100 text-amber-700', cleared: 'bg-green-100 text-green-700', bounced: 'bg-red-100 text-red-700', cancelled: 'bg-gray-100 text-gray-700' };
 
   return (
     <AppLayout title="Payables (Supplier Payments)">
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <p className="text-sm text-neutral-500">Record and manage payments made to suppliers</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              type="text"
+              className="w-64 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm"
+              placeholder="Search supplier, PO/GRN, ref #, status..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            <select className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              <option value="">All Statuses</option>
+              <option value="pending">Pending</option>
+              <option value="cleared">Cleared</option>
+              <option value="bounced">Bounced</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+            <select className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm" value={modeFilter} onChange={(e) => setModeFilter(e.target.value)}>
+              <option value="">All Modes</option>
+              <option value="cash">Cash</option>
+              <option value="bank_transfer">Bank Transfer</option>
+              <option value="cheque">Cheque</option>
+              <option value="upi">UPI</option>
+              <option value="card">Card</option>
+            </select>
+            <select className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm" value={archiveView} onChange={(e) => setArchiveView(e.target.value as 'active' | 'archived')}>
+              <option value="active">Active Only</option>
+              <option value="archived">Archived Only</option>
+            </select>
+            <div className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm">
+              <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">From</span>
+              <input type="date" className="bg-transparent text-sm outline-none" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} title="Payment date from" />
+            </div>
+            <div className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm">
+              <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">To</span>
+              <input type="date" className="bg-transparent text-sm outline-none" value={dateTo} onChange={(e) => setDateTo(e.target.value)} title="Payment date to" />
+            </div>
+          </div>
           <button onClick={() => { resetForm(); setShowForm(true); }} className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/20 hover:bg-primary/90">+ Record Payment</button>
         </div>
 
@@ -78,35 +161,39 @@ const PayablesPage = () => {
                 <th className="px-4 py-3 text-center font-semibold text-neutral-600">Actions</th>
               </tr></thead>
               <tbody>
-                {loading ? <tr><td colSpan={6} className="px-4 py-8 text-center text-neutral-500">Loading...</td></tr>
-                : payments.length === 0 ? <tr><td colSpan={6} className="px-4 py-8 text-center text-neutral-500">No payments recorded</td></tr>
-                : payments.map(p => (
+                {loading ? <tr><td colSpan={7} className="px-4 py-8 text-center text-neutral-500">Loading...</td></tr>
+                : filteredPayments.length === 0 ? <tr><td colSpan={7} className="px-4 py-8 text-center text-neutral-500">No payments recorded</td></tr>
+                : filteredPayments.map(p => (
                   <tr key={p.id} className="border-b border-neutral-100 hover:bg-neutral-50">
                     <td className="px-4 py-3 font-medium text-xs">
                       {p.allocations?.map((a: any) => a.po_number || a.grn_number).filter(Boolean).join(', ') || 'Unallocated'}
                     </td>
-                    <td className="px-4 py-3">{suppliers.find(s => s.id === p.supplier_id)?.company_name || '-'}</td>
+                    <td className="px-4 py-3">{supplierNameById(p.supplier_id)}</td>
                     <td className="px-4 py-3">{p.payment_date}</td>
                     <td className="px-4 py-3 capitalize">{p.payment_mode.replace('_', ' ')}</td>
                     <td className="px-4 py-3 text-right font-medium">{formatAmount(p.amount)}</td>
                     <td className="px-4 py-3 text-center"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${sc[p.status]}`}>{p.status}</span></td>
                     <td className="px-4 py-3 text-center">
-                      {p.status === 'pending' && (
-                        <div className="flex items-center justify-center gap-1">
-                          <button onClick={() => handleStatusChange(p.id, 'cleared')} className="rounded px-2 py-1 text-xs font-medium text-green-600 hover:bg-green-50">Clear</button>
-                          <button onClick={() => handleStatusChange(p.id, 'cancelled')} className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">Cancel</button>
-                        </div>
-                      )}
+                      <div className="flex items-center justify-center gap-1">
+                        {archiveView === 'active' && p.status === 'pending' && (
+                          <>
+                            <button onClick={() => handleStatusChange(p.id, 'cleared')} className="rounded px-2 py-1 text-xs font-medium text-green-600 hover:bg-green-50">Clear</button>
+                            <button onClick={() => handleStatusChange(p.id, 'cancelled')} className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">Cancel</button>
+                          </>
+                        )}
+                        <button onClick={() => handleArchiveToggle(p.id, archiveView === 'archived')} className={`rounded px-2 py-1 text-xs font-medium ${archiveView === 'archived' ? 'text-emerald-700 hover:bg-emerald-50' : 'text-red-600 hover:bg-red-50'}`}>{archiveView === 'archived' ? 'Restore' : 'Archive'}</button>
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          {!loading && <p className="border-t border-neutral-200 px-4 py-3 text-xs text-neutral-500">Showing {filteredPayments.length} of {payments.length}</p>}
         </div>
 
-        {showForm && (
-          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm">
+        {showForm && createPortal(
+          <div className="fixed inset-0 z-[100] m-0 flex min-h-screen w-screen items-start justify-center overflow-y-auto bg-black/45 p-4 pt-6 backdrop-blur-sm">
             <div className="hms-card my-8 w-full max-w-lg space-y-6 p-6">
               <h2 className="font-display text-xl font-bold">Record Supplier Payment</h2>
               {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>}
@@ -123,7 +210,8 @@ const PayablesPage = () => {
                 <button onClick={handleSubmit} disabled={submitting} className="rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/20 disabled:opacity-50">{submitting ? 'Recording...' : 'Record Payment'}</button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
       </div>
     </AppLayout>

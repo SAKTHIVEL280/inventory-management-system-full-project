@@ -1,8 +1,9 @@
-/**
+﻿/**
  * Quotations Page
  * List, create, edit quotations. Send to customer, convert to Sales Order.
  */
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { AppLayout } from '../components/AppLayout';
 import { salesApi, type Quotation, type CreateQuotationPayload, type SalesLineItem } from '../api/sales';
 import { apiClient } from '../api/client';
@@ -27,6 +28,10 @@ const QuotationsPage = () => {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('');
+  const [archiveView, setArchiveView] = useState<'active' | 'archived'>('active');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -42,7 +47,9 @@ const QuotationsPage = () => {
   const fetchQuotations = async () => {
     try {
       setLoading(true);
-      const res = await salesApi.listQuotations(statusFilter || undefined);
+      const res = await salesApi.listQuotations(statusFilter || undefined, 1, 20, {
+        archived_only: archiveView === 'archived',
+      });
       setQuotations(res.data.items || []);
     } catch {
       setError('Failed to load quotations');
@@ -64,7 +71,7 @@ const QuotationsPage = () => {
     }
   };
 
-  useEffect(() => { fetchQuotations(); }, [statusFilter]);
+  useEffect(() => { fetchQuotations(); }, [statusFilter, archiveView]);
   useEffect(() => { fetchMasterData(); }, []);
 
   const resetForm = () => {
@@ -168,6 +175,20 @@ const QuotationsPage = () => {
     }
   };
 
+  const handleArchiveToggle = async (id: string, archived: boolean) => {
+    try {
+      if (archived) {
+        await salesApi.restoreQuotation(id);
+      } else {
+        await salesApi.archiveQuotation(id);
+      }
+      fetchQuotations();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      alert(typeof msg === 'string' ? msg : archived ? 'Restore failed' : 'Archive failed');
+    }
+  };
+
   const statusColors: Record<string, string> = {
     draft: 'bg-gray-100 text-gray-700',
     sent: 'bg-blue-100 text-blue-700',
@@ -178,6 +199,23 @@ const QuotationsPage = () => {
   };
 
   const formatAmount = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+
+  const customerNameById = (id: string) => customers.find((c) => c.id === id)?.company_name || '-';
+
+  const filteredQuotations = quotations.filter((q) => {
+    const term = searchQuery.trim().toLowerCase();
+    const customerName = customerNameById(q.customer_id).toLowerCase();
+    const matchesSearch =
+      !term ||
+      q.quotation_number.toLowerCase().includes(term) ||
+      customerName.includes(term) ||
+      q.status.toLowerCase().includes(term) ||
+      q.quotation_date.toLowerCase().includes(term) ||
+      (q.valid_until || '').toLowerCase().includes(term);
+    const matchesFrom = !dateFrom || q.quotation_date >= dateFrom;
+    const matchesTo = !dateTo || q.quotation_date <= dateTo;
+    return matchesSearch && matchesFrom && matchesTo;
+  });
 
   return (
     <AppLayout title="Quotations">
@@ -198,6 +236,41 @@ const QuotationsPage = () => {
               <option value="expired">Expired</option>
               <option value="converted">Converted</option>
             </select>
+            <select
+              className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm"
+              value={archiveView}
+              onChange={(e) => setArchiveView(e.target.value as 'active' | 'archived')}
+            >
+              <option value="active">Active Only</option>
+              <option value="archived">Archived Only</option>
+            </select>
+            <input
+              type="text"
+              className="w-64 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm"
+              placeholder="Search quotation #, customer, status..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            <div className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm">
+              <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">From</span>
+              <input
+                type="date"
+                className="bg-transparent text-sm outline-none"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                title="Quotation date from"
+              />
+            </div>
+            <div className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm">
+              <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">To</span>
+              <input
+                type="date"
+                className="bg-transparent text-sm outline-none"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                title="Quotation date to"
+              />
+            </div>
           </div>
           <button
             onClick={() => { resetForm(); setShowForm(true); }}
@@ -225,12 +298,12 @@ const QuotationsPage = () => {
               <tbody>
                 {loading ? (
                   <tr><td colSpan={7} className="px-4 py-8 text-center text-neutral-500">Loading...</td></tr>
-                ) : quotations.length === 0 ? (
+                ) : filteredQuotations.length === 0 ? (
                   <tr><td colSpan={7} className="px-4 py-8 text-center text-neutral-500">No quotations found</td></tr>
-                ) : quotations.map(q => (
+                ) : filteredQuotations.map(q => (
                   <tr key={q.id} className="border-b border-neutral-100 hover:bg-neutral-50">
                     <td className="px-4 py-3 font-medium">{q.quotation_number}</td>
-                    <td className="px-4 py-3">{customers.find(c => c.id === q.customer_id)?.company_name || q.customer_id}</td>
+                    <td className="px-4 py-3">{customerNameById(q.customer_id)}</td>
                     <td className="px-4 py-3">{q.quotation_date}</td>
                     <td className="px-4 py-3">{q.valid_until || '-'}</td>
                     <td className="px-4 py-3 text-right font-medium">{formatAmount(q.total_amount)}</td>
@@ -241,18 +314,24 @@ const QuotationsPage = () => {
                     </td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1">
-                        {q.status === 'draft' && (
+                        {archiveView === 'active' && q.status === 'draft' && (
                           <button onClick={() => handleStatusChange(q.id, 'sent')} className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50">Send</button>
                         )}
-                        {q.status === 'sent' && (
+                        {archiveView === 'active' && q.status === 'sent' && (
                           <>
                             <button onClick={() => handleStatusChange(q.id, 'accepted')} className="rounded px-2 py-1 text-xs font-medium text-green-600 hover:bg-green-50">Accept</button>
                             <button onClick={() => handleStatusChange(q.id, 'rejected')} className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">Reject</button>
                           </>
                         )}
-                        {(q.status === 'sent' || q.status === 'accepted') && (
+                        {archiveView === 'active' && (q.status === 'sent' || q.status === 'accepted') && (
                           <button onClick={() => handleConvertToSO(q.id)} className="rounded px-2 py-1 text-xs font-medium text-purple-600 hover:bg-purple-50">→ SO</button>
                         )}
+                        <button
+                          onClick={() => handleArchiveToggle(q.id, archiveView === 'archived')}
+                          className={`rounded px-2 py-1 text-xs font-medium ${archiveView === 'archived' ? 'text-emerald-700 hover:bg-emerald-50' : 'text-red-600 hover:bg-red-50'}`}
+                        >
+                          {archiveView === 'archived' ? 'Restore' : 'Archive'}
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -260,11 +339,11 @@ const QuotationsPage = () => {
               </tbody>
             </table>
           </div>
-          {!loading && <p className="border-t border-neutral-200 px-4 py-3 text-xs text-neutral-500">Total: {quotations.length} record(s)</p>}
+          {!loading && <p className="border-t border-neutral-200 px-4 py-3 text-xs text-neutral-500">Showing {filteredQuotations.length} of {quotations.length} record(s)</p>}
         </div>
 
         {/* Create/Edit Modal */}
-        {showForm && (
+        {showForm && createPortal(
           <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm">
             <div className="hms-card my-8 w-full max-w-4xl space-y-6 p-6">
               <h2 className="font-display text-xl font-bold text-neutral-900">
@@ -328,7 +407,7 @@ const QuotationsPage = () => {
                             </select>
                           </td>
                           <td className="px-3 py-2 text-right font-medium">{formatAmount(calcItemTotal(item))}</td>
-                          <td className="px-3 py-2"><button onClick={() => removeItem(idx)} className="text-red-500 hover:text-red-700">✕</button></td>
+                          <td className="px-3 py-2"><button onClick={() => removeItem(idx)} className="inline-flex items-center gap-1 text-red-500 hover:text-red-700"><span className="material-icons text-sm" aria-hidden="true">delete_outline</span>Remove</button></td>
                         </tr>
                       ))}
                       {items.length === 0 && <tr><td colSpan={7} className="px-3 py-4 text-center text-neutral-400">No items added</td></tr>}
@@ -358,7 +437,8 @@ const QuotationsPage = () => {
                 </button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
       </div>
     </AppLayout>
@@ -366,3 +446,4 @@ const QuotationsPage = () => {
 };
 
 export default QuotationsPage;
+

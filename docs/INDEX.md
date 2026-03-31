@@ -1,10 +1,10 @@
-# Inventory Management System - Documentation Index
+﻿# Inventory Management System - Documentation Index
 
 Welcome to the IMS documentation. This guide helps you navigate the entire project structure and find what you need.
 
 ---
 
-## 📋 Quick Navigation
+## [LIST] Quick Navigation
 
 ### Getting Started
 - [Setup Guide](./guides/SETUP.md) — Complete installation and configuration
@@ -26,7 +26,7 @@ Welcome to the IMS documentation. This guide helps you navigate the entire proje
 
 ---
 
-## 📂 Project Structure
+## [FILES] Project Structure
 
 ```
 ims1/
@@ -96,7 +96,7 @@ ims1/
 
 ---
 
-## 🚀 Quick Start
+## [START] Quick Start
 
 1. **First time setup?** → Start with [First-Time Setup Checklist](./guides/FIRST_TIME_SETUP_CHECKLIST.md)
 2. **Need full details?** → Read [Setup Guide](./guides/SETUP.md)
@@ -107,7 +107,7 @@ ims1/
 
 ---
 
-## 📚 Key Documents
+## [DOCS] Key Documents
 
 | Document | Purpose | Read Time |
 |----------|---------|-----------|
@@ -119,7 +119,7 @@ ims1/
 
 ---
 
-## 🔧 Development Stack
+## [TOOLS] Development Stack
 
 | Layer | Technology |
 |-------|-----------|
@@ -133,7 +133,7 @@ ims1/
 
 ---
 
-## 💡 Common Tasks
+## [IDEA] Common Tasks
 
 ### Add a New Feature
 1. Read relevant workflow doc (WF_*.md)
@@ -153,7 +153,7 @@ ims1/
 
 ---
 
-## 📞 Support
+## [SUPPORT] Support
 
 - **Questions about the system?** → Check [MASTER_SPEC.md](./MASTER_SPEC.md)
 - **How to implement something?** → Find workflow in [Workflows](./workflows/)
@@ -164,3 +164,4 @@ ims1/
 
 **Last Updated:** March 25, 2026  
 **Version:** 1.0
+

@@ -3,8 +3,9 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
 from app.config import settings
-from app.routers import auth, company, users, customers, suppliers, products, purchase, sales, payments, reports, stock
+from app.routers import auth, company, users, customers, suppliers, products, purchase, sales, payments, reports, stock, archive
 from fastapi.staticfiles import StaticFiles
 import os
 
@@ -39,6 +40,7 @@ allowed_origins = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["*"],
@@ -58,6 +60,34 @@ app.include_router(sales.router)
 app.include_router(payments.router)
 app.include_router(reports.router)
 app.include_router(stock.router)
+app.include_router(archive.router)
+
+
+@app.exception_handler(IntegrityError)
+async def integrity_error_handler(request: Request, exc: IntegrityError):
+    message = str(getattr(exc, "orig", exc))
+    lower = message.lower()
+
+    if "unique" in lower or "duplicate key value" in lower:
+        detail = "Duplicate value found. Please use a unique value."
+        if "sku" in lower:
+            detail = "SKU already exists. Please use a unique SKU."
+        elif "email" in lower:
+            detail = "Email already exists. Please use a different email."
+        elif "product_code" in lower:
+            detail = "Product code already exists. Please try again."
+        return JSONResponse(status_code=400, content={"detail": detail, "path": request.url.path})
+
+    if "foreign key" in lower:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "Referenced record does not exist or is in use.", "path": request.url.path},
+        )
+
+    return JSONResponse(
+        status_code=400,
+        content={"detail": "Invalid data for this operation.", "path": request.url.path},
+    )
 
 
 @app.exception_handler(Exception)

@@ -1,10 +1,10 @@
-# Inventory Management System (IMS)
+﻿# Inventory Management System (IMS)
 
 A modern, production-ready Inventory Management System built with React, FastAPI, and PostgreSQL. Designed for Indian businesses with full GST compliance and comprehensive reporting.
 
 ---
 
-## 🚀 Quick Start
+## [START] Quick Start
 
 ### First Time? Start Here
 1. **[Setup Guide](./docs/guides/SETUP.md)** — Complete installation steps (15 min)
@@ -24,19 +24,19 @@ A modern, production-ready Inventory Management System built with React, FastAPI
 
 ---
 
-## 📋 What's Included
+## [LIST] What's Included
 
 ### Features
-✅ **Authentication & Authorization** — JWT + 4-role RBAC with admin overrides  
-✅ **Masters Management** — Company, Users, Products, Customers, Suppliers  
-✅ **Purchase Module** — PO → GRN → Returns with full stock tracking  
-✅ **Sales Module** — Quotation → SO → Invoice → Returns  
-✅ **Payment Tracking** — Receivables/Payables with invoice allocation  
-✅ **Inventory Management** — Real-time stock ledger with low-stock alerts  
-✅ **Reports** — Dashboard, Stock, Sales, Purchase, P&L, GSTR-1/3B  
-✅ **GST Compliance** — IGST/CGST/SGST auto-split, GSTR-1/3B export  
-✅ **PDF Generation** — Tax invoices with server-side WeasyPrint  
-✅ **Email Integration** — Send invoices via email  
+[OK] **Authentication & Authorization** — JWT + 4-role RBAC with admin overrides  
+[OK] **Masters Management** — Company, Users, Products, Customers, Suppliers  
+[OK] **Purchase Module** — PO → GRN → Returns with full stock tracking  
+[OK] **Sales Module** — Quotation → SO → Invoice → Returns  
+[OK] **Payment Tracking** — Receivables/Payables with invoice allocation  
+[OK] **Inventory Management** — Real-time stock ledger with low-stock alerts  
+[OK] **Reports** — Dashboard, Stock, Sales, Purchase, P&L, GSTR-1/3B  
+[OK] **GST Compliance** — IGST/CGST/SGST auto-split, GSTR-1/3B export  
+[OK] **PDF Generation** — Tax invoices with server-side WeasyPrint  
+[OK] **Email Integration** — Send invoices via email  
 
 ### Technology Stack
 | Layer | Technology |
@@ -50,7 +50,7 @@ A modern, production-ready Inventory Management System built with React, FastAPI
 
 ---
 
-## 📂 Project Structure
+## [FILES] Project Structure
 
 ```
 ims1/
@@ -114,7 +114,7 @@ ims1/
 
 ---
 
-## 🛠️ Development
+## [FIX]️ Development
 
 ### Prerequisites
 - Node.js 20.x LTS
@@ -148,11 +148,11 @@ Default login after setup:
 - Password: Admin@123
 
 
-## 📖 Documentation Structure
+## [DOCS] Documentation Structure
 
 ```
 docs/
-├── INDEX.md                    # 📍 START HERE - Navigation hub
+├── INDEX.md                    # [PIN] START HERE - Navigation hub
 ├── MASTER_SPEC.md              # Complete system blueprint
 ├── guides/
 │   ├── SETUP.md                # Installation (15 min)
@@ -171,7 +171,7 @@ docs/
 
 ---
 
-## 🎯 Common Tasks
+## [TARGET] Common Tasks
 
 ### Add a Customer
 1. Read: [WF_02_MASTERS.md](./docs/workflows/WF_02_MASTERS.md)
@@ -197,7 +197,7 @@ docs/
 
 ---
 
-## 🔐 Security Notes
+## [SECURITY] Security Notes
 
 ### Never Commit to Git
 - `.env` files with credentials
@@ -214,7 +214,7 @@ docs/
 
 ---
 
-## 📊 Database Overview
+## [METRICS] Database Overview
 
 Core tables: `users`, `company`, `customers`, `suppliers`, `products`, `purchase_orders`, `sales_invoices`, `payments`, `stock_ledger`.
 
@@ -222,7 +222,7 @@ Full schema in [MASTER_SPEC.md](./docs/MASTER_SPEC.md).
 
 ---
 
-## 🧪 Testing
+## [TEST] Testing
 
 ```bash
 # Backend tests
@@ -234,7 +234,7 @@ cd frontend && npm run test
 
 ---
 
-## 🚀 Production
+## [START] Production
 
 See [SETUP.md](./docs/guides/SETUP.md) for production deployment with:
 - Gunicorn backend setup
@@ -244,7 +244,7 @@ See [SETUP.md](./docs/guides/SETUP.md) for production deployment with:
 
 ---
 
-## 📞 Support
+## [SUPPORT] Support
 
 - **System spec?** → [MASTER_SPEC.md](./docs/MASTER_SPEC.md)
 - **How to?** → [Workflows](./docs/workflows/)
@@ -254,13 +254,15 @@ See [SETUP.md](./docs/guides/SETUP.md) for production deployment with:
 
 ---
 
-## 📄 License
+## [FILE] License
 
 Proprietary. All rights reserved.
 
 ---
 
 **Last Updated:** March 25, 2026  
-**Status:** Production Ready ✨
+**Status:** Production Ready [DONE]
 
-👉 **[Start with the Documentation Index →](./docs/INDEX.md)**
+[NEXT] **[Start with the Documentation Index →](./docs/INDEX.md)**
+
+

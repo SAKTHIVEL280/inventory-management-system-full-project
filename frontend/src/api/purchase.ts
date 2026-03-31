@@ -14,6 +14,9 @@ export interface PurchaseLineItem {
   id?: string;
   product_id: string;
   description?: string;
+  batch_no?: string;
+  manufacture_date?: string;
+  expiry_date?: string;
   quantity: number;
   unit_price: number;
   discount_percent?: number;
@@ -126,6 +129,9 @@ export interface GRNItemResponse {
   grn_id: string;
   product_id: string;
   purchase_order_item_id?: string;
+  batch_no?: string;
+  manufacture_date?: string;
+  expiry_date?: string;
   quantity: number;
   unit_price: number;
   discount_percent: number;
@@ -155,9 +161,16 @@ export interface PurchaseReturn {
 class PurchaseApiClient {
   // ========== Purchase Orders ==========
 
-  async listPOs(status?: string, page = 1, page_size = 20) {
-    const params: Record<string, string | number> = { page, page_size };
+  async listPOs(
+    status?: string,
+    page = 1,
+    page_size = 20,
+    options?: { archived_only?: boolean; include_archived?: boolean }
+  ) {
+    const params: Record<string, string | number | boolean> = { page, page_size };
     if (status) params.status = status;
+    if (options?.archived_only) params.archived_only = true;
+    if (options?.include_archived) params.include_archived = true;
     return apiClient.get<{ items: PurchaseOrder[]; total: number }>('/api/v1/purchase-orders', { params });
   }
 
@@ -177,11 +190,26 @@ class PurchaseApiClient {
     return apiClient.patch<PurchaseOrder>(`/api/v1/purchase-orders/${id}/status`, { status });
   }
 
+  async archivePO(id: string) {
+    return apiClient.patch<PurchaseOrder>(`/api/v1/purchase-orders/${id}/archive`, {});
+  }
+
+  async restorePO(id: string) {
+    return apiClient.patch<PurchaseOrder>(`/api/v1/purchase-orders/${id}/restore`, {});
+  }
+
   // ========== Goods Receipt Notes ==========
 
-  async listGRNs(status?: string, page = 1, page_size = 20) {
-    const params: Record<string, string | number> = { page, page_size };
+  async listGRNs(
+    status?: string,
+    page = 1,
+    page_size = 20,
+    options?: { archived_only?: boolean; include_archived?: boolean }
+  ) {
+    const params: Record<string, string | number | boolean> = { page, page_size };
     if (status) params.status = status;
+    if (options?.archived_only) params.archived_only = true;
+    if (options?.include_archived) params.include_archived = true;
     return apiClient.get<{ items: GoodsReceiptNote[]; total: number }>('/api/v1/grn', { params });
   }
 
@@ -203,6 +231,14 @@ class PurchaseApiClient {
 
   async cancelGRN(id: string) {
     return apiClient.post<GoodsReceiptNote>(`/api/v1/grn/${id}/cancel`, {});
+  }
+
+  async archiveGRN(id: string) {
+    return apiClient.patch<GoodsReceiptNote>(`/api/v1/grn/${id}/archive`, {});
+  }
+
+  async restoreGRN(id: string) {
+    return apiClient.patch<GoodsReceiptNote>(`/api/v1/grn/${id}/restore`, {});
   }
 
   // ========== Purchase Returns ==========

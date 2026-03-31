@@ -1,4 +1,4 @@
-"""Verify all prerequisites are installed before attempting project setup.
+﻿"""Verify all prerequisites are installed before attempting project setup.
 
 Run this FIRST on a new machine to catch missing tools early.
 Usage: python verify_prerequisites.py
@@ -30,19 +30,19 @@ def _check_command(cmd, name, min_version=None):
         
         if result.returncode == 0:
             version_str = result.stdout.strip() or result.stderr.strip()
-            print(f"✓ {name:20} {version_str}")
+            print(f"[OK] {name:20} {version_str}")
             return True
         else:
-            print(f"✗ {name:20} FAILED to run")
+            print(f"[FAIL] {name:20} FAILED to run")
             return False
     except FileNotFoundError:
-        print(f"✗ {name:20} NOT FOUND (not in PATH)")
+        print(f"[FAIL] {name:20} NOT FOUND (not in PATH)")
         return False
     except subprocess.TimeoutExpired:
-        print(f"✗ {name:20} TIMEOUT")
+        print(f"[FAIL] {name:20} TIMEOUT")
         return False
     except Exception as e:
-        print(f"✗ {name:20} ERROR: {e}")
+        print(f"[FAIL] {name:20} ERROR: {e}")
         return False
 
 
@@ -57,13 +57,13 @@ def _check_postgres_running():
         sock.close()
         
         if result == 0:
-            print(f"✓ {'PostgreSQL Running':20} Server is listening on localhost:5432")
+            print(f"[OK] {'PostgreSQL Running':20} Server is listening on localhost:5432")
             return True
         else:
-            print(f"✗ {'PostgreSQL Running':20} NOT RUNNING (start it in Windows Services)")
+            print(f"[FAIL] {'PostgreSQL Running':20} NOT RUNNING (start it in Windows Services)")
             return False
     except Exception as e:
-        print(f"⚠ {'PostgreSQL Running':20} Cannot check: {str(e)[:50]}")
+        print(f"[WARN] {'PostgreSQL Running':20} Cannot check: {str(e)[:50]}")
         return None
 
 
@@ -102,7 +102,7 @@ def main():
     print("=" * 70)
     
     if all_pass:
-        print("✓ All prerequisites are installed!")
+        print("[OK] All prerequisites are installed!")
         print()
         print("Next steps:")
         print("  1. Edit backend/.env (verify DATABASE_URL password)") 
@@ -110,7 +110,7 @@ def main():
         print()
         return 0
     else:
-        print("✗ Some prerequisites are missing or not running!")
+        print("[FAIL] Some prerequisites are missing or not running!")
         print()
         print("Install missing tools:")
         print("  - Python:     https://www.python.org/downloads/")
@@ -125,3 +125,5 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
+

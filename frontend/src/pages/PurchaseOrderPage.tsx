@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -64,7 +64,12 @@ const PurchaseOrderPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [formError, setFormError] = useState('');
+  const [isFormOpen, setIsFormOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
+  const [archiveView, setArchiveView] = useState<'active' | 'archived'>('active');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [lineItems, setLineItems] = useState<POLineItem[]>([]);
   const [newItem, setNewItem] = useState<Partial<POLineItem>>({
     discount_percent: 0,
@@ -76,7 +81,10 @@ const PurchaseOrderPage = () => {
   const [poDetailItems, setPODetailItems] = useState<PurchaseLineItem[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
-  const posQuery = useQuery({ queryKey: ['purchase-orders', statusFilter], queryFn: () => purchaseApi.listPOs(statusFilter ?? undefined) });
+  const posQuery = useQuery({
+    queryKey: ['purchase-orders', statusFilter, archiveView],
+    queryFn: () => purchaseApi.listPOs(statusFilter ?? undefined, 1, 20, { archived_only: archiveView === 'archived' }),
+  });
   const suppliersQuery = useQuery({ queryKey: ['suppliers'], queryFn: suppliersApi.list });
   const productsQuery = useQuery({ queryKey: ['products'], queryFn: productsApi.list });
 
@@ -108,6 +116,7 @@ const PurchaseOrderPage = () => {
       setLineItems([]);
       setNewItem({ discount_percent: 0, gst_rate: 18 });
       setFormError('');
+      setIsFormOpen(false);
       if (submitMode === 'draft') {
         toast.success('Purchase Order saved as draft');
       }
@@ -154,25 +163,38 @@ const PurchaseOrderPage = () => {
     },
   });
 
-  const handleDownloadPDF = async () => {
-    if (!selectedPO) return;
+  const downloadPOPdf = async (poId: string, poNumber: string) => {
     try {
       toast.info('Generating PDF...');
-      const response = await purchaseApi.downloadPOPdf(selectedPO.id);
+      const response = await purchaseApi.downloadPOPdf(poId);
       
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `PO-${selectedPO.po_number}.pdf`);
+      link.setAttribute('download', `PO-${poNumber}.pdf`);
       document.body.appendChild(link);
       link.click();
       window.URL.revokeObjectURL(url);
       link.remove();
       toast.success('PDF downloaded successfully');
-    } catch (error) {
-      toast.error('Failed to download PDF');
+    } catch (error: unknown) {
+      const axiosErr = error as AxiosError<{ detail?: string }>;
+      const detail = axiosErr.response?.data?.detail;
+
+      if (axiosErr.code === 'ERR_NETWORK') {
+        toast.error('Failed to download PDF: network/CORS issue. Use the same host for frontend and backend (localhost vs 127.0.0.1).');
+      } else if (typeof detail === 'string' && detail.trim()) {
+        toast.error(`Failed to download PDF: ${detail}`);
+      } else {
+        toast.error('Failed to download PDF');
+      }
       console.error(error);
     }
+  };
+
+  const handleDownloadPDF = async () => {
+    if (!selectedPO) return;
+    await downloadPOPdf(selectedPO.id, selectedPO.po_number);
   };
 
   const handleOpenPO = async (po: PurchaseOrder) => {
@@ -207,6 +229,23 @@ const PurchaseOrderPage = () => {
         onConfirm: () => cancelPOMutation.mutate(selectedPO.id),
         type: 'danger',
       });
+    }
+  };
+
+  const handleArchiveToggle = async (poId: string, archived: boolean) => {
+    try {
+      if (archived) {
+        await purchaseApi.restorePO(poId);
+      } else {
+        await purchaseApi.archivePO(poId);
+      }
+      queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
+      if (selectedPO?.id === poId) {
+        setShowPODetail(false);
+        setSelectedPO(null);
+      }
+    } catch {
+      toast.error(archived ? 'Failed to restore PO' : 'Failed to archive PO');
     }
   };
 
@@ -315,16 +354,55 @@ const PurchaseOrderPage = () => {
     return supplier ? supplier.company_name : `Invalid supplier (${supplierId.slice(0, 8)}...)`;
   };
 
+  const filteredPOs = pos.filter((po) => {
+    const term = searchQuery.trim().toLowerCase();
+    const supplierName = supplierNameById(po.supplier_id).toLowerCase();
+    const matchesSearch =
+      !term ||
+      po.po_number.toLowerCase().includes(term) ||
+      supplierName.includes(term) ||
+      po.status.toLowerCase().includes(term) ||
+      po.order_date.toLowerCase().includes(term);
+    const matchesFrom = !dateFrom || po.order_date >= dateFrom;
+    const matchesTo = !dateTo || po.order_date <= dateTo;
+    return matchesSearch && matchesFrom && matchesTo;
+  });
+
   return (
     <AppLayout title="Purchase Orders">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="space-y-6">
         {/* Form Card */}
-        <div className="hms-card lg:col-span-1">
-          <div className="p-5 border-b border-neutral-200">
-            <h2 className="font-display text-lg font-bold">New Purchase Order</h2>
+        <div className="hms-card overflow-hidden">
+          <div className="border-b border-neutral-200 p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="font-display text-lg font-bold">New Purchase Order</h2>
+                <p className="text-xs text-neutral-500">Create a PO in a collapsible form and keep the list full width.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {!isFormOpen && (
+                  <button
+                    type="button"
+                    onClick={() => setIsFormOpen(true)}
+                    className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary/90"
+                  >
+                    + New PO
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsFormOpen((prev) => !prev)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-50"
+                >
+                  <span className="material-icons text-base" aria-hidden="true">{isFormOpen ? 'expand_less' : 'expand_more'}</span>
+                  {isFormOpen ? 'Hide Form' : 'Show Form'}
+                </button>
+              </div>
+            </div>
           </div>
 
-          <form className="p-5 space-y-4" onSubmit={form.handleSubmit(onSubmit)}>
+          {isFormOpen && (
+            <form className="grid grid-cols-1 gap-4 p-5 md:grid-cols-2 xl:grid-cols-4" onSubmit={form.handleSubmit(onSubmit)}>
             <div>
               <label htmlFor="supplier_id" className="hms-label">
                 Supplier
@@ -377,7 +455,7 @@ const PurchaseOrderPage = () => {
             </div>
 
             {/* Line Items Section */}
-            <div className="pt-4 border-t border-neutral-200">
+            <div className="border-t border-neutral-200 pt-4 md:col-span-2 xl:col-span-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-semibold text-sm">Line Items</h3>
                 <span className="text-xs text-neutral-500">{lineItems.length} item(s) added</span>
@@ -535,31 +613,36 @@ const PurchaseOrderPage = () => {
               )}
             </div>
 
-            {formError && <p className="text-sm text-danger">{formError}</p>}
-            {createMutation.isError && <p className="text-sm text-danger">Failed to create PO</p>}
-            {createMutation.isSuccess && <p className="text-sm text-success">PO created successfully</p>}
+            <div className="md:col-span-2 xl:col-span-4">
+              {formError && <p className="text-sm text-danger">{formError}</p>}
+              {createMutation.isError && <p className="text-sm text-danger">Failed to create PO</p>}
+              {createMutation.isSuccess && <p className="text-sm text-success">PO created successfully</p>}
+            </div>
 
-            <button
-              type="submit"
-              onClick={() => setSubmitMode('draft')}
-              disabled={createMutation.isPending}
-              className="w-full bg-primary text-white px-5 py-2.5 rounded font-semibold hover:bg-primary/90 disabled:opacity-60"
-            >
-              {createMutation.isPending ? 'Saving...' : 'Save as Draft'}
-            </button>
-            <button
-              type="submit"
-              onClick={() => setSubmitMode('sent')}
-              disabled={createMutation.isPending}
-              className="w-full bg-secondary text-white px-5 py-2.5 rounded font-semibold hover:bg-secondary/90 disabled:opacity-60"
-            >
-              {createMutation.isPending ? 'Saving...' : 'Save and Send'}
-            </button>
+            <div className="flex flex-col gap-3 md:col-span-2 xl:col-span-4 sm:flex-row">
+              <button
+                type="submit"
+                onClick={() => setSubmitMode('draft')}
+                disabled={createMutation.isPending}
+                className="bg-primary text-white px-5 py-2.5 rounded font-semibold hover:bg-primary/90 disabled:opacity-60"
+              >
+                {createMutation.isPending ? 'Saving...' : 'Save as Draft'}
+              </button>
+              <button
+                type="submit"
+                onClick={() => setSubmitMode('sent')}
+                disabled={createMutation.isPending}
+                className="bg-secondary text-white px-5 py-2.5 rounded font-semibold hover:bg-secondary/90 disabled:opacity-60"
+              >
+                {createMutation.isPending ? 'Saving...' : 'Save and Send'}
+              </button>
+            </div>
           </form>
+          )}
         </div>
 
         {/* List Card */}
-        <div className="hms-card lg:col-span-2">
+        <div className="hms-card overflow-hidden">
           <div className="p-5 border-b border-neutral-200">
             <h2 className="font-display text-lg font-bold mb-4">Purchase Orders</h2>
             <div className="flex gap-2 flex-wrap">
@@ -579,67 +662,131 @@ const PurchaseOrderPage = () => {
                 </button>
               ))}
             </div>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <select
+                className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm"
+                value={archiveView}
+                onChange={(e) => setArchiveView(e.target.value as 'active' | 'archived')}
+              >
+                <option value="active">Active Only</option>
+                <option value="archived">Archived Only</option>
+              </select>
+              <input
+                type="text"
+                className="w-64 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm"
+                placeholder="Search PO #, supplier, status..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              <div className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm">
+                <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">From</span>
+                <input
+                  type="date"
+                  className="bg-transparent text-sm outline-none"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  title="Order date from"
+                />
+              </div>
+              <div className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm">
+                <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">To</span>
+                <input
+                  type="date"
+                  className="bg-transparent text-sm outline-none"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  title="Order date to"
+                />
+              </div>
+            </div>
           </div>
 
           <div className="p-5">
             {posQuery.isLoading && <PageLoading message="Loading purchase orders..." />}
             {posQuery.isError && <PageError message="Failed to load purchase orders" />}
-            {!posQuery.isLoading && !posQuery.isError && pos.length === 0 && <PageEmpty message="No purchase orders found" />}
-            {!posQuery.isLoading && !posQuery.isError && pos.length > 0 && (
-              <table className="w-full text-sm">
-                <caption className="sr-only">Purchase orders list</caption>
-                <thead className="bg-neutral-50">
-                  <tr className="border-y border-neutral-200">
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold uppercase">
-                      PO Number
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold uppercase">
-                      Supplier
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold uppercase">
-                      Order Date
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold uppercase">
-                      Total Amount
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold uppercase">
-                      Status
-                    </th>
-                    <th scope="col" className="px-4 py-3 text-left text-xs font-bold uppercase">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-100">
-                  {pos.map((po) => (
-                    <tr key={po.id} className="hover:bg-neutral-50 cursor-pointer" onClick={() => handleOpenPO(po)}>
-                      <td className="px-4 py-3 font-medium">{po.po_number}</td>
-                      <td className="px-4 py-3">{supplierNameById(po.supplier_id)}</td>
-                      <td className="px-4 py-3">{new Date(po.order_date).toLocaleDateString('en-IN')}</td>
-                      <td className="px-4 py-3">₹{(po.total_amount / 100).toFixed(2)}</td>
-                      <td className="px-4 py-3">
-                        <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
-                          po.status === 'draft' ? 'bg-yellow-100 text-yellow-700' :
-                          po.status === 'sent' ? 'bg-blue-100 text-blue-700' :
-                          po.status === 'partial' ? 'bg-orange-100 text-orange-700' :
-                          po.status === 'received' ? 'bg-green-100 text-green-700' :
-                          'bg-gray-100 text-gray-700'
-                        }`}>
-                          {po.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleOpenPO(po); }}
-                          className="text-primary hover:text-primary/80 text-xs font-medium"
-                        >
-                          View
-                        </button>
-                      </td>
+            {!posQuery.isLoading && !posQuery.isError && filteredPOs.length === 0 && <PageEmpty message="No purchase orders found" />}
+            {!posQuery.isLoading && !posQuery.isError && filteredPOs.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <caption className="sr-only">Purchase orders list</caption>
+                  <thead className="bg-neutral-50">
+                    <tr className="border-y border-neutral-200">
+                      <th scope="col" className="px-4 py-3 text-left text-xs font-bold uppercase">
+                        PO Number
+                      </th>
+                      <th scope="col" className="px-4 py-3 text-left text-xs font-bold uppercase">
+                        Supplier
+                      </th>
+                      <th scope="col" className="px-4 py-3 text-left text-xs font-bold uppercase">
+                        Order Date
+                      </th>
+                      <th scope="col" className="px-4 py-3 text-left text-xs font-bold uppercase">
+                        Total Amount
+                      </th>
+                      <th scope="col" className="px-4 py-3 text-left text-xs font-bold uppercase">
+                        Status
+                      </th>
+                      <th scope="col" className="px-4 py-3 text-left text-xs font-bold uppercase">
+                        Actions
+                      </th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {filteredPOs.map((po) => (
+                      <tr key={po.id} className="cursor-pointer hover:bg-neutral-50" onClick={() => handleOpenPO(po)}>
+                        <td className="px-4 py-3 font-medium">{po.po_number}</td>
+                        <td className="px-4 py-3">{supplierNameById(po.supplier_id)}</td>
+                        <td className="px-4 py-3">{new Date(po.order_date).toLocaleDateString('en-IN')}</td>
+                        <td className="px-4 py-3">₹{(po.total_amount / 100).toFixed(2)}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
+                            po.status === 'draft' ? 'bg-yellow-100 text-yellow-700' :
+                            po.status === 'sent' ? 'bg-blue-100 text-blue-700' :
+                            po.status === 'partial' ? 'bg-orange-100 text-orange-700' :
+                            po.status === 'received' ? 'bg-green-100 text-green-700' :
+                            'bg-gray-100 text-gray-700'
+                          }`}>
+                            {po.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleOpenPO(po); }}
+                              className="rounded border border-primary/20 bg-primary/5 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/10"
+                            >
+                              View
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void downloadPOPdf(po.id, po.po_number);
+                              }}
+                              className="inline-flex items-center gap-1 rounded border border-neutral-200 bg-white px-2.5 py-1 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
+                              title="Download PDF"
+                            >
+                              <span className="material-icons text-sm" aria-hidden="true">picture_as_pdf</span>
+                              Download PDF
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void handleArchiveToggle(po.id, archiveView === 'archived');
+                              }}
+                              className={`rounded border px-2.5 py-1 text-xs font-semibold ${archiveView === 'archived' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100'}`}
+                            >
+                              {archiveView === 'archived' ? 'Restore' : 'Archive'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {!posQuery.isLoading && !posQuery.isError && (
+              <p className="border-t border-neutral-200 px-1 pt-3 text-xs text-neutral-500">Showing {filteredPOs.length} of {pos.length}</p>
             )}
           </div>
         </div>
@@ -742,7 +889,7 @@ const PurchaseOrderPage = () => {
                       disabled={sendMutation.isPending}
                       className="bg-primary text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-primary/90 disabled:opacity-50"
                     >
-                      {sendMutation.isPending ? 'Sending...' : '📤 Send PO'}
+                      {sendMutation.isPending ? 'Sending...' : 'Send PO'}
                     </button>
                     <button
                       onClick={handleCancelPO}
@@ -761,7 +908,7 @@ const PurchaseOrderPage = () => {
                     }}
                     className="bg-secondary text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-secondary/90"
                   >
-                    📦 Create GRN
+                    <span className="inline-flex items-center gap-1"><span className="material-icons text-sm" aria-hidden="true">inventory_2</span>Create GRN</span>
                   </button>
                 )}
               </div>
@@ -780,3 +927,5 @@ const PurchaseOrderPage = () => {
 };
 
 export default PurchaseOrderPage;
+
+

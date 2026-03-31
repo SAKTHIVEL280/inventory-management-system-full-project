@@ -75,10 +75,12 @@ class PaymentsApiClient {
     customer_id?: string;
     supplier_id?: string;
     status?: string;
+    archived_only?: boolean;
+    include_archived?: boolean;
     page?: number;
     page_size?: number;
   }) {
-    const params: Record<string, string | number> = {
+    const params: Record<string, string | number | boolean> = {
       page: options?.page ?? 1,
       page_size: options?.page_size ?? 20,
     };
@@ -87,6 +89,8 @@ class PaymentsApiClient {
     if (options?.customer_id) params.customer_id = options.customer_id;
     if (options?.supplier_id) params.supplier_id = options.supplier_id;
     if (options?.status) params.status = options.status;
+    if (options?.archived_only) params.archived_only = true;
+    if (options?.include_archived) params.include_archived = true;
 
     return apiClient.get<{ items: Payment[]; total: number }>('/api/v1/payments', { params });
   }
@@ -101,6 +105,14 @@ class PaymentsApiClient {
 
   async updatePaymentStatus(id: string, status: string) {
     return apiClient.patch<Payment>(`/api/v1/payments/${id}/status`, { status });
+  }
+
+  async archivePayment(id: string) {
+    return apiClient.patch<Payment>(`/api/v1/payments/${id}/archive`, {});
+  }
+
+  async restorePayment(id: string) {
+    return apiClient.patch<Payment>(`/api/v1/payments/${id}/restore`, {});
   }
 }
 

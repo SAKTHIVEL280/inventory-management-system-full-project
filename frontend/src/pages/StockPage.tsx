@@ -21,6 +21,7 @@ const StockPage = () => {
   const [loading, setLoading] = useState(true);
   const [lowStockOnly, setLowStockOnly] = useState(false);
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
 
   const fetchStock = async () => {
     try {
@@ -36,10 +37,17 @@ const StockPage = () => {
 
   useEffect(() => { fetchStock(); }, [lowStockOnly]);
 
-  const filtered = items.filter(i =>
-    i.product_name.toLowerCase().includes(search.toLowerCase()) ||
-    i.product_code.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = items.filter(i => {
+    const q = search.trim().toLowerCase();
+    const matchesSearch =
+      !q ||
+      i.product_name.toLowerCase().includes(q) ||
+      i.product_code.toLowerCase().includes(q) ||
+      i.hsn.toLowerCase().includes(q) ||
+      i.status.toLowerCase().includes(q);
+    const matchesStatus = !statusFilter || i.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
 
   const sc: Record<string, string> = {
     'Normal': 'bg-green-100 text-green-700',
@@ -107,10 +115,21 @@ const StockPage = () => {
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-3">
           <input
-            type="text" placeholder="Search by name or code..."
+            type="text" placeholder="Search by name, code, HSN, status..."
             className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm w-64"
             value={search} onChange={e => setSearch(e.target.value)}
           />
+          <select
+            className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm"
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value)}
+          >
+            <option value="">All Statuses</option>
+            <option value="Normal">Normal</option>
+            <option value="Below Safety Stock">Below Safety Stock</option>
+            <option value="Low Stock">Low Stock</option>
+            <option value="Out of Stock">Out of Stock</option>
+          </select>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={lowStockOnly} onChange={e => setLowStockOnly(e.target.checked)} className="rounded" />
             <span>Low/Out of Stock only</span>

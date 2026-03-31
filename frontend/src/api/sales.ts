@@ -201,9 +201,16 @@ export interface SalesReturn {
 class SalesApiClient {
   // ========== Quotations ==========
 
-  async listQuotations(status?: string, page = 1, page_size = 20) {
-    const params: Record<string, string | number> = { page, page_size };
+  async listQuotations(
+    status?: string,
+    page = 1,
+    page_size = 20,
+    options?: { archived_only?: boolean; include_archived?: boolean }
+  ) {
+    const params: Record<string, string | number | boolean> = { page, page_size };
     if (status) params.status = status;
+    if (options?.archived_only) params.archived_only = true;
+    if (options?.include_archived) params.include_archived = true;
     return apiClient.get<{ items: Quotation[]; total: number }>('/api/v1/quotations', { params });
   }
 
@@ -223,15 +230,30 @@ class SalesApiClient {
     return apiClient.patch<Quotation>(`/api/v1/quotations/${id}/status`, { status });
   }
 
+  async archiveQuotation(id: string) {
+    return apiClient.patch<Quotation>(`/api/v1/quotations/${id}/archive`, {});
+  }
+
+  async restoreQuotation(id: string) {
+    return apiClient.patch<Quotation>(`/api/v1/quotations/${id}/restore`, {});
+  }
+
   async convertQuotationToSO(id: string, payload?: ConvertQuotationToSOPayload) {
     return apiClient.post<SalesOrder>(`/api/v1/quotations/${id}/convert-to-so`, payload || {});
   }
 
   // ========== Sales Orders ==========
 
-  async listSalesOrders(status?: string, page = 1, page_size = 20) {
-    const params: Record<string, string | number> = { page, page_size };
+  async listSalesOrders(
+    status?: string,
+    page = 1,
+    page_size = 20,
+    options?: { archived_only?: boolean; include_archived?: boolean }
+  ) {
+    const params: Record<string, string | number | boolean> = { page, page_size };
     if (status) params.status = status;
+    if (options?.archived_only) params.archived_only = true;
+    if (options?.include_archived) params.include_archived = true;
     return apiClient.get<{ items: SalesOrder[]; total: number }>('/api/v1/sales-orders', { params });
   }
 
@@ -253,6 +275,14 @@ class SalesApiClient {
 
   async updateSalesOrderStatus(id: string, status: string) {
     return apiClient.patch<SalesOrder>(`/api/v1/sales-orders/${id}/status`, { status });
+  }
+
+  async archiveSalesOrder(id: string) {
+    return apiClient.patch<SalesOrder>(`/api/v1/sales-orders/${id}/archive`, {});
+  }
+
+  async restoreSalesOrder(id: string) {
+    return apiClient.patch<SalesOrder>(`/api/v1/sales-orders/${id}/restore`, {});
   }
 
   // BUG-05: Convert Sales Order to Invoice

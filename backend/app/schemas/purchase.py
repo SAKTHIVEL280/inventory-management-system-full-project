@@ -8,6 +8,9 @@ from pydantic import BaseModel
 class PurchaseLineItemRequest(BaseModel):
     product_id: UUID
     description: Optional[str] = None
+    batch_no: Optional[str] = None
+    manufacture_date: Optional[date] = None
+    expiry_date: Optional[date] = None
     quantity: float
     unit_price: int
     discount_percent: float = 0

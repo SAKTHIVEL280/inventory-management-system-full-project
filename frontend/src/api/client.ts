@@ -1,7 +1,83 @@
 import axios, { AxiosInstance } from 'axios';
 import { useAuthStore } from '../store/auth';
+import { toast } from 'sonner';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const defaultApiBaseUrl =
+  typeof window !== 'undefined'
+    ? `${window.location.protocol}//${window.location.hostname}:8000`
+    : 'http://localhost:8000';
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || defaultApiBaseUrl;
+
+type ApiErrorDetail =
+  | string
+  | {
+      message?: string;
+      error?: string;
+      code?: string;
+    }
+  | Array<{
+      msg?: string;
+      message?: string;
+    }>;
+
+const errorToastHistory = new Map<string, number>();
+
+const normalizeApiErrorMessage = (error: any): string => {
+  if (!error?.response) {
+    return 'Cannot reach server. Check internet/CORS/backend status and host (localhost vs 127.0.0.1).';
+  }
+
+  const status = error.response.status as number;
+  const detail = error.response?.data?.detail as ApiErrorDetail;
+  const fallbackByStatus: Record<number, string> = {
+    400: 'Invalid input. Please check the entered values.',
+    401: 'Session expired. Please login again.',
+    403: 'You do not have permission to perform this action.',
+    404: 'Requested resource was not found.',
+    409: 'This action conflicts with existing data.',
+    422: 'Some fields are invalid. Please correct and try again.',
+  };
+
+  if (typeof detail === 'string' && detail.trim()) {
+    return detail;
+  }
+
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((d) => d?.msg || d?.message)
+      .filter((m): m is string => Boolean(m && m.trim()));
+    if (messages.length > 0) {
+      return messages.join(', ');
+    }
+  }
+
+  if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
+    if (typeof detail.message === 'string' && detail.message.trim()) {
+      return detail.message;
+    }
+    if (typeof detail.error === 'string' && detail.error.trim()) {
+      return detail.error;
+    }
+  }
+
+  if (status >= 500) {
+    return 'Server error occurred. Please retry. If it continues, contact support.';
+  }
+
+  return fallbackByStatus[status] || 'Request failed. Please try again.';
+};
+
+const shouldShowToast = (message: string): boolean => {
+  const now = Date.now();
+  const last = errorToastHistory.get(message) || 0;
+  // Prevent toast spam for repeated parallel failures
+  if (now - last < 1500) {
+    return false;
+  }
+  errorToastHistory.set(message, now);
+  return true;
+};
 
 class ApiClient {
   public readonly instance: AxiosInstance;
@@ -47,8 +123,18 @@ class ApiClient {
             return this.instance(originalRequest);
           } catch (_refreshError) {
             useAuthStore.getState().logout();
+            if (shouldShowToast('Session expired. Please login again.')) {
+              toast.error('Session expired. Please login again.');
+            }
             window.location.href = '/login';
           }
+        }
+
+        // Global user-facing error message for all API failures.
+        // Pages can still show inline form errors; this ensures errors never stay console-only.
+        const message = normalizeApiErrorMessage(error);
+        if (shouldShowToast(message)) {
+          toast.error(message);
         }
 
         return Promise.reject(error);

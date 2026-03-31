@@ -9,7 +9,7 @@ Production-ready with fixes for:
 - BUG-19: Sales return tax matches original invoice
 - BUG-25: Sales return adjusts invoice amount_due
 """
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -75,12 +75,18 @@ def _auto_expire_quotation(q: Quotation) -> None:
 @router.get("/api/v1/quotations", response_model=QuotationsListResponse)
 async def list_quotations(
     status: str | None = Query(default=None),
+    archived_only: bool = Query(default=False),
+    include_archived: bool = Query(default=False),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("quotations_read")),
 ):
-    query = db.query(Quotation).filter(Quotation.is_deleted == False)
+    query = db.query(Quotation)
+    if archived_only:
+        query = query.filter(Quotation.is_deleted == True)
+    elif not include_archived:
+        query = query.filter(Quotation.is_deleted == False)
     if status:
         query = query.filter(Quotation.status == status)
     total = query.count()
@@ -278,6 +284,40 @@ async def quotation_status(
     return q
 
 
+@router.patch("/api/v1/quotations/{quotation_id}/archive", response_model=QuotationResponse)
+async def archive_quotation(
+    quotation_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("quotations_write")),
+):
+    q = db.query(Quotation).filter(Quotation.id == quotation_id, Quotation.is_deleted == False).first()
+    if not q:
+        raise HTTPException(status_code=404, detail="Quotation not found")
+
+    q.is_deleted = True
+    q.deleted_at = datetime.utcnow()
+    db.commit()
+    db.refresh(q)
+    return q
+
+
+@router.patch("/api/v1/quotations/{quotation_id}/restore", response_model=QuotationResponse)
+async def restore_quotation(
+    quotation_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("quotations_write")),
+):
+    q = db.query(Quotation).filter(Quotation.id == quotation_id, Quotation.is_deleted == True).first()
+    if not q:
+        raise HTTPException(status_code=404, detail="Archived quotation not found")
+
+    q.is_deleted = False
+    q.deleted_at = None
+    db.commit()
+    db.refresh(q)
+    return q
+
+
 @router.post("/api/v1/quotations/{quotation_id}/convert-to-so")
 async def convert_quotation_to_so(
     quotation_id: UUID,
@@ -345,12 +385,18 @@ async def convert_quotation_to_so(
 @router.get("/api/v1/sales-orders", response_model=SalesOrdersListResponse)
 async def list_sales_orders(
     status: str | None = Query(default=None),
+    archived_only: bool = Query(default=False),
+    include_archived: bool = Query(default=False),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("sales_orders_read")),
 ):
-    query = db.query(SalesOrder).filter(SalesOrder.is_deleted == False)
+    query = db.query(SalesOrder)
+    if archived_only:
+        query = query.filter(SalesOrder.is_deleted == True)
+    elif not include_archived:
+        query = query.filter(SalesOrder.is_deleted == False)
     if status:
         query = query.filter(SalesOrder.status == status)
     total = query.count()
@@ -572,6 +618,40 @@ async def sales_order_status(
         raise HTTPException(status_code=400, detail="Invalid status transition")
 
     so.status = payload.status
+    db.commit()
+    db.refresh(so)
+    return so
+
+
+@router.patch("/api/v1/sales-orders/{so_id}/archive")
+async def archive_sales_order(
+    so_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("sales_orders_write")),
+):
+    so = db.query(SalesOrder).filter(SalesOrder.id == so_id, SalesOrder.is_deleted == False).first()
+    if not so:
+        raise HTTPException(status_code=404, detail="Sales order not found")
+
+    so.is_deleted = True
+    so.deleted_at = datetime.utcnow()
+    db.commit()
+    db.refresh(so)
+    return so
+
+
+@router.patch("/api/v1/sales-orders/{so_id}/restore")
+async def restore_sales_order(
+    so_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("sales_orders_write")),
+):
+    so = db.query(SalesOrder).filter(SalesOrder.id == so_id, SalesOrder.is_deleted == True).first()
+    if not so:
+        raise HTTPException(status_code=404, detail="Archived sales order not found")
+
+    so.is_deleted = False
+    so.deleted_at = None
     db.commit()
     db.refresh(so)
     return so

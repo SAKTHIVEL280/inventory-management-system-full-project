@@ -1,4 +1,4 @@
-# Setup Guide
+﻿# Setup Guide
 
 ## Prerequisites
 
@@ -32,7 +32,7 @@ Choose **ONE** of the paths below to set up your environment.
 
 ---
 
-### 🟢 Path A: The Easy Way (Recommended)
+### [A] Path A: The Easy Way (Recommended)
 
 Use the automated bootstrap to handle environment setup, dependency install, compatibility migration (including currency fields), and seeding in one go.
 
@@ -53,7 +53,7 @@ python3 setup_db.py
 
 ---
 
-### 🔵 Path B: The Manual Way (Step-by-Step)
+### [B] Path B: The Manual Way (Step-by-Step)
 
 Use this path if you want full control over your environment or if the automated script fails.
 
@@ -251,3 +251,4 @@ num2words==0.5.13
 pytest==8.2.0
 httpx==0.27.0
 ```
+

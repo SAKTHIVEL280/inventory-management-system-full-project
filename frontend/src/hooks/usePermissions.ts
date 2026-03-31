@@ -7,24 +7,25 @@
 
 import { useAuthStore } from '../store/auth';
 import { PermissionScope } from '../types';
+import { useCallback, useMemo } from 'react';
 
 export const usePermissions = () => {
   const user = useAuthStore((state) => state.user);
 
-  const can = (permission: PermissionScope | string): boolean => {
+  const can = useCallback((permission: PermissionScope | string): boolean => {
     if (!user) return false;
     return user.effective_access?.includes(permission) ?? false;
-  };
+  }, [user]);
 
-  const canWrite = (scope: string): boolean => {
+  const canWrite = useCallback((scope: string): boolean => {
     return can(`${scope}_write` as PermissionScope);
-  };
+  }, [can]);
 
-  const canRead = (scope: string): boolean => {
+  const canRead = useCallback((scope: string): boolean => {
     return can(`${scope}_read` as PermissionScope);
-  };
+  }, [can]);
 
-  return {
+  return useMemo(() => ({
     can,
     canRead,
     canWrite,
@@ -32,5 +33,5 @@ export const usePermissions = () => {
     isAccounting: user?.role === 'accounting',
     isSales: user?.role === 'sales',
     isInventory: user?.role === 'inventory',
-  };
+  }), [can, canRead, canWrite, user]);
 };

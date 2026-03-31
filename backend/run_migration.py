@@ -51,6 +51,11 @@ def main() -> int:
         "ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS exchange_rate NUMERIC(12, 6) NOT NULL DEFAULT 1.0",
         "ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS currency_code VARCHAR(3) NOT NULL DEFAULT 'INR'",
         "ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS exchange_rate NUMERIC(12, 6) NOT NULL DEFAULT 1.0",
+
+        # GRN batch tracking fields
+        "ALTER TABLE grn_items ADD COLUMN IF NOT EXISTS batch_no VARCHAR(100)",
+        "ALTER TABLE grn_items ADD COLUMN IF NOT EXISTS manufacture_date DATE",
+        "ALTER TABLE grn_items ADD COLUMN IF NOT EXISTS expiry_date DATE",
     ]
 
     with engine.begin() as conn:

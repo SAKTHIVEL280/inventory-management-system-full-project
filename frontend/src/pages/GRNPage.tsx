@@ -1,4 +1,4 @@
-/**
+﻿/**
  * GRN (Goods Receipt Notes) Page
  * List, create, confirm GRNs. Confirms add stock to ledger.
  * 
@@ -11,6 +11,7 @@
  * - Better validation and error messaging
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { useSearchParams } from 'react-router-dom';
 import { AppLayout } from '../components/AppLayout';
@@ -25,6 +26,9 @@ interface SupplierOption { id: string; company_name: string; supplier_code: stri
 interface GRNLineItem {
   product_id: string;
   purchase_order_item_id?: string;
+  batch_no?: string;
+  manufacture_date?: string;
+  expiry_date?: string;
   quantity: number;
   unit_price: number;      // paise
   discount_percent: number;
@@ -40,6 +44,10 @@ const GRNPage = () => {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
+  const [archiveView, setArchiveView] = useState<'active' | 'archived'>('active');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -64,7 +72,15 @@ const GRNPage = () => {
   const pendingPoId = useRef<string | null>(null);
 
   const fetchGRNs = async () => {
-    try { setLoading(true); const res = await purchaseApi.listGRNs(statusFilter || undefined); setGRNs(res.data.items || []); } catch { setError('Failed to load GRNs'); } finally { setLoading(false); }
+    try {
+      setLoading(true);
+      const res = await purchaseApi.listGRNs(statusFilter || undefined, 1, 20, { archived_only: archiveView === 'archived' });
+      setGRNs(res.data.items || []);
+    } catch {
+      setError('Failed to load GRNs');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const fetchMaster = useCallback(async () => {
@@ -112,7 +128,7 @@ const GRNPage = () => {
     }
   }, [searchParams]);
 
-  useEffect(() => { fetchGRNs(); }, [statusFilter]);
+  useEffect(() => { fetchGRNs(); }, [statusFilter, archiveView]);
   useEffect(() => { fetchMaster(); fetchPOs(); }, []);
 
   const loadPOData = async (poId: string) => {
@@ -134,6 +150,9 @@ const GRNPage = () => {
           return {
             product_id: item.product_id,
             purchase_order_item_id: item.id,
+            batch_no: '',
+            manufacture_date: '',
+            expiry_date: '',
             quantity: pendingQty > 0 ? pendingQty : 0,
             unit_price: Number(item.unit_price) || 0,  // Already in paise from backend
             discount_percent: Number(item.discount_percent || 0),
@@ -163,7 +182,7 @@ const GRNPage = () => {
   };
 
   const addItem = () => {
-    setItems([...items, { product_id: '', quantity: 1, unit_price: 0, discount_percent: 0, gst_rate: 18 }]);
+    setItems([...items, { product_id: '', batch_no: '', manufacture_date: '', expiry_date: '', quantity: 1, unit_price: 0, discount_percent: 0, gst_rate: 18 }]);
   };
 
   const updateItem = (idx: number, field: keyof GRNLineItem, value: string | number) => {
@@ -206,6 +225,20 @@ const GRNPage = () => {
     const zeroQtyItems = items.filter(i => !i.quantity || i.quantity <= 0);
     if (zeroQtyItems.length > 0) { setError('All items must have a quantity greater than 0'); return; }
 
+    const invalidDateItemIndex = items.findIndex(
+      (i) => i.manufacture_date && i.expiry_date && i.expiry_date < i.manufacture_date,
+    );
+    if (invalidDateItemIndex >= 0) {
+      setError(`Line item ${invalidDateItemIndex + 1}: expiry date cannot be earlier than manufacture date`);
+      return;
+    }
+
+    const todayIso = new Date().toISOString().split('T')[0];
+    const expiredCount = items.filter((i) => i.expiry_date && i.expiry_date < todayIso).length;
+    if (expiredCount > 0) {
+      toast.warning(`${expiredCount} line item(s) have an expiry date in the past. Please verify before saving.`);
+    }
+
     setSubmitting(true); setError('');
     try {
       const payload: CreateGRNPayload = {
@@ -218,6 +251,9 @@ const GRNPage = () => {
         items: items.map(i => ({
           product_id: i.product_id,
           purchase_order_item_id: i.purchase_order_item_id || undefined,
+          batch_no: i.batch_no || undefined,
+          manufacture_date: i.manufacture_date || undefined,
+          expiry_date: i.expiry_date || undefined,
           quantity: Number(i.quantity),
           unit_price: Number(i.unit_price),  // Already in paise
           discount_percent: Number(i.discount_percent || 0),
@@ -281,7 +317,45 @@ const GRNPage = () => {
     } catch { toast.error('Failed to cancel GRN'); }
   };
 
+  const handleArchiveToggle = async (id: string, archived: boolean) => {
+    try {
+      if (archived) {
+        await purchaseApi.restoreGRN(id);
+      } else {
+        await purchaseApi.archiveGRN(id);
+      }
+      toast.success(archived ? 'GRN restored' : 'GRN archived');
+      fetchGRNs();
+      if (detailGRN?.id === id) {
+        setDetailGRN(null);
+      }
+    } catch {
+      toast.error(archived ? 'Failed to restore GRN' : 'Failed to archive GRN');
+    }
+  };
+
   const sc: Record<string, string> = { draft: 'bg-gray-100 text-gray-700', confirmed: 'bg-green-100 text-green-700', cancelled: 'bg-red-100 text-red-700' };
+
+  const supplierNameById = (id: string) => suppliers.find((s) => s.id === id)?.company_name || '-';
+
+  const filteredGRNs = grns.filter((g) => {
+    const q = searchQuery.trim().toLowerCase();
+    const supplierName = supplierNameById(g.supplier_id);
+    const poLabel = g.purchase_order_id ? 'linked' : 'unlinked';
+    const matchesSearch =
+      !q ||
+      g.grn_number.toLowerCase().includes(q) ||
+      supplierName.toLowerCase().includes(q) ||
+      (g.supplier_invoice_number || '').toLowerCase().includes(q) ||
+      g.receipt_date.toLowerCase().includes(q) ||
+      g.status.toLowerCase().includes(q) ||
+      poLabel.includes(q);
+
+    const matchesFrom = !dateFrom || g.receipt_date >= dateFrom;
+    const matchesTo = !dateTo || g.receipt_date <= dateTo;
+
+    return matchesSearch && matchesFrom && matchesTo;
+  });
 
   // Products available for selection — filtered to PO products when linked
   const availableProducts = selectedPO
@@ -292,9 +366,42 @@ const GRNPage = () => {
     <AppLayout title="Goods Receipt Notes (GRN)">
       <div className="space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <select className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-            <option value="">All</option><option value="draft">Draft</option><option value="confirmed">Confirmed</option><option value="cancelled">Cancelled</option>
-          </select>
+          <div className="flex flex-wrap items-center gap-3">
+            <select className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+              <option value="">All</option><option value="draft">Draft</option><option value="confirmed">Confirmed</option><option value="cancelled">Cancelled</option>
+            </select>
+            <select className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm" value={archiveView} onChange={e => setArchiveView(e.target.value as 'active' | 'archived')}>
+              <option value="active">Active Only</option>
+              <option value="archived">Archived Only</option>
+            </select>
+            <input
+              type="text"
+              className="w-64 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm"
+              placeholder="Search GRN #, supplier, invoice #, status..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            <div className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm">
+              <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">From</span>
+              <input
+                type="date"
+                className="bg-transparent text-sm outline-none"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                title="Receipt date from"
+              />
+            </div>
+            <div className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm">
+              <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">To</span>
+              <input
+                type="date"
+                className="bg-transparent text-sm outline-none"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                title="Receipt date to"
+              />
+            </div>
+          </div>
           <button onClick={() => { resetForm(); setShowForm(true); }} className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/20 hover:bg-primary/90">+ New GRN</button>
         </div>
 
@@ -313,35 +420,45 @@ const GRNPage = () => {
               </tr></thead>
               <tbody>
                 {loading ? <tr><td colSpan={8} className="px-4 py-8 text-center text-neutral-500">Loading...</td></tr>
-                : grns.length === 0 ? <tr><td colSpan={8} className="px-4 py-8 text-center text-neutral-500">No GRNs found</td></tr>
-                : grns.map(g => (
+                : filteredGRNs.length === 0 ? <tr><td colSpan={8} className="px-4 py-8 text-center text-neutral-500">No GRNs found</td></tr>
+                : filteredGRNs.map(g => (
                   <tr key={g.id} className="border-b border-neutral-100 hover:bg-neutral-50 cursor-pointer" onClick={() => handleOpenDetail(g)}>
                     <td className="px-4 py-3 font-medium">{g.grn_number}</td>
-                    <td className="px-4 py-3">{suppliers.find(s => s.id === g.supplier_id)?.company_name || '-'}</td>
-                    <td className="px-4 py-3 text-xs">{g.purchase_order_id ? '✔ Linked' : '—'}</td>
+                    <td className="px-4 py-3">{supplierNameById(g.supplier_id)}</td>
+                    <td className="px-4 py-3 text-xs">
+                      {g.purchase_order_id ? (
+                        <span className="inline-flex items-center gap-1 text-green-700">
+                          <span className="material-icons text-sm" aria-hidden="true">check_circle</span>
+                          Linked
+                        </span>
+                      ) : '—'}
+                    </td>
                     <td className="px-4 py-3">{g.receipt_date}</td>
                     <td className="px-4 py-3">{g.supplier_invoice_number || '-'}</td>
                     <td className="px-4 py-3 text-right font-medium">{formatPaise(g.total_amount)}</td>
                     <td className="px-4 py-3 text-center"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${sc[g.status] || 'bg-gray-100'}`}>{g.status}</span></td>
                     <td className="px-4 py-3 text-center">
-                      {g.status === 'draft' && (
-                        <div className="flex items-center justify-center gap-1">
-                          <button onClick={(e) => { e.stopPropagation(); handleConfirm(g.id); }} className="rounded px-2 py-1 text-xs font-medium text-green-600 hover:bg-green-50">Confirm</button>
-                          <button onClick={(e) => { e.stopPropagation(); handleCancel(g.id); }} className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">Cancel</button>
-                        </div>
-                      )}
-                      <button onClick={(e) => { e.stopPropagation(); handleOpenDetail(g); }} className="rounded px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10">View</button>
+                      <div className="flex items-center justify-center gap-1">
+                        {archiveView === 'active' && g.status === 'draft' && (
+                          <>
+                            <button onClick={(e) => { e.stopPropagation(); handleConfirm(g.id); }} className="rounded px-2 py-1 text-xs font-medium text-green-600 hover:bg-green-50">Confirm</button>
+                            <button onClick={(e) => { e.stopPropagation(); handleCancel(g.id); }} className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">Cancel</button>
+                          </>
+                        )}
+                        <button onClick={(e) => { e.stopPropagation(); handleOpenDetail(g); }} className="rounded px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10">View</button>
+                        <button onClick={(e) => { e.stopPropagation(); void handleArchiveToggle(g.id, archiveView === 'archived'); }} className={`rounded px-2 py-1 text-xs font-medium ${archiveView === 'archived' ? 'text-emerald-700 hover:bg-emerald-50' : 'text-red-600 hover:bg-red-50'}`}>{archiveView === 'archived' ? 'Restore' : 'Archive'}</button>
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          {!loading && <p className="border-t border-neutral-200 px-4 py-3 text-xs text-neutral-500">Total: {grns.length}</p>}
+          {!loading && <p className="border-t border-neutral-200 px-4 py-3 text-xs text-neutral-500">Showing {filteredGRNs.length} of {grns.length}</p>}
         </div>
 
         {/* ══════════════════ GRN Detail Modal ══════════════════ */}
-        {detailGRN && (
+        {detailGRN && createPortal(
           <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm" onClick={() => setDetailGRN(null)}>
             <div className="hms-card my-8 w-full max-w-4xl space-y-6 p-6" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-start justify-between">
@@ -383,6 +500,9 @@ const GRNPage = () => {
                     <table className="w-full text-sm">
                       <thead><tr className="bg-neutral-50 border-b border-neutral-200">
                         <th className="px-3 py-2 text-left text-xs font-semibold">Product</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold">Batch No</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold">MFG Date</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold">EXP Date</th>
                         <th className="px-3 py-2 text-right text-xs font-semibold">Qty</th>
                         <th className="px-3 py-2 text-right text-xs font-semibold">Unit Price</th>
                         <th className="px-3 py-2 text-right text-xs font-semibold">Disc %</th>
@@ -395,6 +515,9 @@ const GRNPage = () => {
                           return (
                             <tr key={idx} className="border-t border-neutral-100">
                               <td className="px-3 py-2 font-medium">{product?.name || 'Unknown'}</td>
+                              <td className="px-3 py-2">{item.batch_no || '-'}</td>
+                              <td className="px-3 py-2">{item.manufacture_date || '-'}</td>
+                              <td className="px-3 py-2">{item.expiry_date || '-'}</td>
                               <td className="px-3 py-2 text-right">{item.quantity}</td>
                               <td className="px-3 py-2 text-right">{formatPaise(item.unit_price)}</td>
                               <td className="px-3 py-2 text-right">{item.discount_percent || 0}%</td>
@@ -413,7 +536,7 @@ const GRNPage = () => {
               <div className="flex gap-3">
                 {detailGRN.status === 'draft' && (
                   <>
-                    <button onClick={() => handleConfirm(detailGRN.id)} className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700">✓ Confirm & Add Stock</button>
+                    <button onClick={() => handleConfirm(detailGRN.id)} className="inline-flex items-center gap-1 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700"><span className="material-icons text-sm" aria-hidden="true">task_alt</span>Confirm & Add Stock</button>
                     <button onClick={() => handleCancel(detailGRN.id)} className="bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-red-100">Cancel GRN</button>
                   </>
                 )}
@@ -426,11 +549,12 @@ const GRNPage = () => {
                 <button onClick={() => setDetailGRN(null)} className="rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm font-semibold hover:bg-neutral-50">Close</button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
 
         {/* ══════════════════ Create GRN Form Modal ══════════════════ */}
-        {showForm && (
+        {showForm && createPortal(
           <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm">
             <div className="hms-card my-8 w-full max-w-4xl space-y-6 p-6">
               <div className="flex items-start justify-between">
@@ -501,6 +625,9 @@ const GRNPage = () => {
                       {selectedPO && <th className="px-3 py-2 text-right w-20">Ordered</th>}
                       {selectedPO && <th className="px-3 py-2 text-right w-20">Received</th>}
                       <th className="px-3 py-2 text-right w-20">Qty *</th>
+                      <th className="px-3 py-2 text-left w-32">Batch No</th>
+                      <th className="px-3 py-2 text-left w-36">MFG Date</th>
+                      <th className="px-3 py-2 text-left w-36">EXP Date</th>
                       <th className="px-3 py-2 text-right w-28">Price (₹)</th>
                       <th className="px-3 py-2 text-right w-20">Disc %</th>
                       <th className="px-3 py-2 text-right w-20">GST</th>
@@ -527,6 +654,32 @@ const GRNPage = () => {
                               onChange={e => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} />
                           </td>
                           <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              className="w-full rounded border px-2 py-1.5 text-sm"
+                              value={item.batch_no || ''}
+                              onChange={e => updateItem(idx, 'batch_no', e.target.value)}
+                              placeholder="e.g. BATCH-001"
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="date"
+                              className="w-full rounded border px-2 py-1.5 text-sm"
+                              value={item.manufacture_date || ''}
+                              onChange={e => updateItem(idx, 'manufacture_date', e.target.value)}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input
+                              type="date"
+                              className="w-full rounded border px-2 py-1.5 text-sm"
+                              value={item.expiry_date || ''}
+                              min={item.manufacture_date || undefined}
+                              onChange={e => updateItem(idx, 'expiry_date', e.target.value)}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
                             <input type="number" min="0" step="0.01" className="w-full rounded border px-2 py-1.5 text-right text-sm"
                               value={paiseToRupees(item.unit_price)}
                               onChange={e => updateItem(idx, 'unit_price', rupeesToPaise(e.target.value))} />
@@ -542,15 +695,15 @@ const GRNPage = () => {
                           </td>
                           <td className="px-3 py-2 text-right font-medium">{formatPaise(calcTotal(item))}</td>
                           {!selectedPO && (
-                            <td className="px-3 py-2"><button onClick={() => removeItem(idx)} className="text-red-500">✕</button></td>
+                            <td className="px-3 py-2"><button onClick={() => removeItem(idx)} className="inline-flex items-center gap-1 text-red-500"><span className="material-icons text-sm" aria-hidden="true">delete_outline</span>Remove</button></td>
                           )}
                         </tr>
                       ))}
-                      {items.length === 0 && <tr><td colSpan={selectedPO ? 8 : 8} className="px-3 py-4 text-center text-neutral-400">No items — {selectedPO ? 'link a PO to prefill items' : 'click "+ Add Item" to add items'}</td></tr>}
+                      {items.length === 0 && <tr><td colSpan={selectedPO ? 11 : 10} className="px-3 py-4 text-center text-neutral-400">No items — {selectedPO ? 'link a PO to prefill items' : 'click "+ Add Item" to add items'}</td></tr>}
                     </tbody>
                     {items.length > 0 && (
                       <tfoot><tr className="border-t-2 bg-neutral-50">
-                        <td colSpan={selectedPO ? 7 : 5} className="px-3 py-2 text-right font-semibold">Total:</td>
+                        <td colSpan={selectedPO ? 10 : 8} className="px-3 py-2 text-right font-semibold">Total:</td>
                         <td className="px-3 py-2 text-right font-bold text-primary">{formatPaise(items.reduce((s, i) => s + calcTotal(i), 0))}</td>
                         {!selectedPO && <td></td>}
                       </tr></tfoot>
@@ -565,7 +718,8 @@ const GRNPage = () => {
                 <button onClick={handleSubmit} disabled={submitting || suppliers.length === 0} className="rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/20 disabled:opacity-50">{submitting ? 'Saving...' : 'Create GRN'}</button>
               </div>
             </div>
-          </div>
+          </div>,
+          document.body
         )}
       </div>
     </AppLayout>
@@ -573,3 +727,4 @@ const GRNPage = () => {
 };
 
 export default GRNPage;
+
