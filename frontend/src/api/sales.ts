@@ -184,6 +184,23 @@ export interface SalesInvoice {
   created_at: string;
 }
 
+export interface SalesInvoiceItem {
+  id: string;
+  invoice_id: string;
+  product_id: string;
+  description?: string;
+  quantity: number;
+  unit_price: number;
+  discount_percent?: number;
+  gst_rate: number;
+  total_amount: number;
+}
+
+export interface InvoiceDetailResponse {
+  invoice: SalesInvoice;
+  items: SalesInvoiceItem[];
+}
+
 export interface SalesReturn {
   id: string;
   return_number: string;
@@ -299,7 +316,7 @@ class SalesApiClient {
   }
 
   async getInvoice(id: string) {
-    return apiClient.get<SalesInvoice>(`/api/v1/invoices/${id}`);
+    return apiClient.get<InvoiceDetailResponse>(`/api/v1/invoices/${id}`);
   }
 
   async createInvoice(payload: CreateInvoicePayload) {

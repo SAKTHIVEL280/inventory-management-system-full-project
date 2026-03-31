@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AppLayout } from '../components/AppLayout';
-import { salesApi, type SalesInvoice, type CreateInvoicePayload, type SalesLineItem, type SalesOrder } from '../api/sales';
+import { salesApi, type SalesInvoice, type CreateInvoicePayload, type SalesLineItem, type SalesOrder, type SalesInvoiceItem } from '../api/sales';
 import { apiClient } from '../api/client';
 import { toast } from 'sonner';
 import { confirmWithToast } from '../utils/toastHelper';
@@ -27,6 +27,7 @@ const InvoicesPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [selectedInvoice, setSelectedInvoice] = useState<SalesInvoice | null>(null);
+  const [selectedInvoiceItems, setSelectedInvoiceItems] = useState<SalesInvoiceItem[]>([]);
   const [showInvoiceDetail, setShowInvoiceDetail] = useState(false);
   const [salesOrders, setSalesOrders] = useState<SalesOrder[]>([]);
   const [loadingSOs, setLoadingSOs] = useState(false);
@@ -132,10 +133,12 @@ const InvoicesPage = () => {
   const handleViewInvoice = async (inv: SalesInvoice) => {
     try {
       const { data } = await salesApi.getInvoice(inv.id);
-      setSelectedInvoice(data);
+      setSelectedInvoice(data.invoice || inv);
+      setSelectedInvoiceItems(data.items || []);
       setShowInvoiceDetail(true);
     } catch {
       setSelectedInvoice(inv);
+      setSelectedInvoiceItems([]);
       setShowInvoiceDetail(true);
     }
   };
@@ -170,6 +173,9 @@ const InvoicesPage = () => {
 
   const customerNameById = (customerId: string) => {
     return customers.find((c) => c.id === customerId)?.company_name || 'Unknown customer';
+  };
+  const productNameById = (productId: string) => {
+    return products.find((p) => p.id === productId)?.name || productId;
   };
 
   const filteredInvoices = invoices.filter((inv) => {
@@ -323,7 +329,7 @@ const InvoicesPage = () => {
                         {loadingSOs ? (
                           <div className="px-3 py-2 text-sm text-neutral-500">Loading sales orders...</div>
                         ) : soSuggestions.length === 0 ? (
-                          <div className="px-3 py-2 text-sm text-neutral-500">No matching eligible sales orders (only delivered/closed are shown)</div>
+                          <div className="px-3 py-2 text-sm text-neutral-500">No matching eligible sales orders (only confirmed/partial/fulfilled are shown)</div>
                         ) : (
                           soSuggestions.map((so) => (
                             <button
@@ -485,6 +491,38 @@ const InvoicesPage = () => {
                 <div>
                   <p className="mb-1 text-xs text-neutral-600">Notes</p>
                   <p className="rounded-lg bg-neutral-50 p-3 text-sm text-neutral-700">{selectedInvoice.notes}</p>
+                </div>
+              )}
+
+              {selectedInvoiceItems.length > 0 && (
+                <div>
+                  <p className="mb-2 text-sm font-semibold text-neutral-700">Items</p>
+                  <div className="overflow-x-auto rounded-lg border border-neutral-200">
+                    <table className="w-full min-w-[700px] text-sm">
+                      <thead>
+                        <tr className="bg-neutral-50">
+                          <th className="px-3 py-2 text-left">Product</th>
+                          <th className="px-3 py-2 text-right">Qty</th>
+                          <th className="px-3 py-2 text-right">Unit Price</th>
+                          <th className="px-3 py-2 text-right">Discount %</th>
+                          <th className="px-3 py-2 text-right">GST %</th>
+                          <th className="px-3 py-2 text-right">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedInvoiceItems.map((item) => (
+                          <tr key={item.id} className="border-t border-neutral-100">
+                            <td className="px-3 py-2">{item.description || productNameById(item.product_id)}</td>
+                            <td className="px-3 py-2 text-right">{item.quantity}</td>
+                            <td className="px-3 py-2 text-right">{formatAmount(item.unit_price)}</td>
+                            <td className="px-3 py-2 text-right">{item.discount_percent || 0}</td>
+                            <td className="px-3 py-2 text-right">{item.gst_rate}</td>
+                            <td className="px-3 py-2 text-right font-medium">{formatAmount(item.total_amount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )}
 
