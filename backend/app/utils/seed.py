@@ -8,11 +8,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from app.database import SessionLocal, engine, Base
 import app.models  # noqa: F401 - ensures all model tables are registered on Base metadata
 from app.models.user import User
-from app.models.supplier import Supplier
-from app.models.product import Product, UnitOfMeasure, ProductCategory
+from app.models.product import UnitOfMeasure, ProductCategory
 from app.models.company import Company
 from app.services.auth_service import hash_password
-from datetime import datetime
 
 def seed_database():
     """Create initial database records."""
@@ -43,49 +41,6 @@ def seed_database():
         else:
             print("[OK] Admin user already exists")
 
-        # Create sample suppliers
-        sample_suppliers = [
-            Supplier(
-                supplier_code="SUPP-00001",
-                company_name="Tech Electronics Pvt Ltd",
-                contact_person="Rajesh Kumar",
-                phone="9876543210",
-                email="sales@techelectronics.com",
-                gstin="27AABCT1234A1Z5",
-                address_line1="123 Electronics Market",
-                address_line2="Lamington Road",
-                city="Mumbai",
-                state="Maharashtra",
-                state_code="27",
-                pincode="400008",
-                payment_terms_days=30,
-                is_active=True,
-                created_by=admin_user.id,
-            ),
-            Supplier(
-                supplier_code="SUPP-00002",
-                company_name="Digital Solutions Inc",
-                contact_person="Priya Sharma",
-                phone="9123456789",
-                email="info@digitalsolutions.in",
-                gstin="29AABCD5678B1Z3",
-                address_line1="45 Tech Park",
-                city="Bangalore",
-                state="Karnataka",
-                state_code="29",
-                pincode="560001",
-                payment_terms_days=15,
-                is_active=True,
-                created_by=admin_user.id,
-            ),
-        ]
-        for supplier in sample_suppliers:
-            existing = db.query(Supplier).filter(Supplier.supplier_code == supplier.supplier_code).first()
-            if not existing:
-                db.add(supplier)
-        db.commit()
-        print(f"[OK] Created {len(sample_suppliers)} sample suppliers")
-
         # Create units of measure
         uom_data = [
             ("Piece", "PCS"),
@@ -105,69 +60,19 @@ def seed_database():
                 db.add(UnitOfMeasure(name=name, abbreviation=abbreviation, is_active=True))
         db.commit()
 
-        # Create product categories
-        electronics_cat = db.query(ProductCategory).filter(ProductCategory.name == "Electronics").first()
-        if not electronics_cat:
-            electronics_cat = ProductCategory(
-                name="Electronics",
-                description="Electronic items and accessories",
-                created_by=admin_user.id
+        # Create a single default category used by product master setup
+        general_cat = db.query(ProductCategory).filter(ProductCategory.name == "General").first()
+        if not general_cat:
+            general_cat = ProductCategory(
+                name="General",
+                description="Default category",
+                created_by=admin_user.id,
             )
-            db.add(electronics_cat)
+            db.add(general_cat)
             db.commit()
-
-        # Create sample products
-        pcs_uom = db.query(UnitOfMeasure).filter(UnitOfMeasure.abbreviation == "PCS").first()
-        sample_products = [
-            Product(
-                name="LED Monitor 24 inch",
-                product_code="PROD-00001",
-                description="24 inch Full HD LED Monitor",
-                category_id=electronics_cat.id if electronics_cat else None,
-                uom_id=pcs_uom.id if pcs_uom else None,
-                hsn_code="852852",
-                purchase_price=850000,  # in paise (₹8,500)
-                mrp=1200000,  # in paise (₹12,000)
-                selling_price=1100000,  # in paise (₹11,000)
-                gst_rate=18,
-                is_active=True,
-                created_by=admin_user.id,
-            ),
-            Product(
-                name="Wireless Keyboard",
-                product_code="PROD-00002",
-                description="Wireless USB Keyboard",
-                category_id=electronics_cat.id if electronics_cat else None,
-                uom_id=pcs_uom.id if pcs_uom else None,
-                hsn_code="847160",
-                purchase_price=45000,  # in paise (₹450)
-                mrp=75000,  # in paise (₹750)
-                selling_price=65000,  # in paise (₹650)
-                gst_rate=18,
-                is_active=True,
-                created_by=admin_user.id,
-            ),
-            Product(
-                name="USB Mouse",
-                product_code="PROD-00003",
-                description="Optical USB Mouse",
-                category_id=electronics_cat.id if electronics_cat else None,
-                uom_id=pcs_uom.id if pcs_uom else None,
-                hsn_code="847160",
-                purchase_price=25000,  # in paise (₹250)
-                mrp=45000,  # in paise (₹450)
-                selling_price=40000,  # in paise (₹400)
-                gst_rate=18,
-                is_active=True,
-                created_by=admin_user.id,
-            ),
-        ]
-        for product in sample_products:
-            existing = db.query(Product).filter(Product.product_code == product.product_code).first()
-            if not existing:
-                db.add(product)
-        db.commit()
-        print(f"[OK] Created {len(sample_products)} sample products")
+            print("[OK] Created default product category")
+        else:
+            print("[OK] Default product category already exists")
 
         # Create default company
         company = db.query(Company).first()
@@ -201,8 +106,6 @@ def seed_database():
 if __name__ == "__main__":
     seed_database()
     print("\n[OK] Database seeding completed successfully!")
-    print("\nSample data created:")
+    print("\nBootstrap data created:")
     print("  - Admin user: admin@company.com / Admin@123")
-    print("  - Suppliers: Tech Electronics, Digital Solutions")
-    print("  - Products: LED Monitor, Wireless Keyboard, USB Mouse")
-    print("\nYou can now create Purchase Orders and GRNs!")
+    print("  - Default company, units of measure, and General category")
