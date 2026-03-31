@@ -225,9 +225,6 @@ const LoginPage = () => {
           </button>
         </form>
 
-        <p className="mt-4 text-center text-xs font-medium text-neutral-500">
-          Demo credentials: admin@company.com / Admin@123
-        </p>
       </div>
     </div>
   );
