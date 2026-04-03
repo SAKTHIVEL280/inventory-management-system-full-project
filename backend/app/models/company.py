@@ -14,7 +14,10 @@ class Company(Base):
     name = Column(String(255), nullable=False)
     legal_name = Column(String(255), nullable=True)
     gstin = Column(String(15), unique=True, nullable=True)
+    gstin_status = Column(String(20), nullable=False, default='non-registered')
     pan = Column(String(10), nullable=True)
+    company_director_name = Column(String(255), nullable=True)
+    company_director_contact = Column(String(255), nullable=True)
 
     address_line1 = Column(String(255), nullable=True)
     address_line2 = Column(String(255), nullable=True)

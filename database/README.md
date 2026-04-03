@@ -35,3 +35,10 @@ python run_migration.py
 - The backend must point at this DB using:
 	- `DATABASE_URL=postgresql://ims_user:IMS%402026@localhost:5432/ims_db`
 
+## Migration Safety Policy
+
+- Feature migration SQL files must be non-destructive.
+- Allowed: `ADD COLUMN IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`, `COMMENT ON COLUMN`.
+- Not allowed in feature migrations: `DELETE`, `TRUNCATE`, `DROP TABLE`, `DROP COLUMN`.
+- Rule: add new columns only, keep all existing rows and sample data unchanged.
+

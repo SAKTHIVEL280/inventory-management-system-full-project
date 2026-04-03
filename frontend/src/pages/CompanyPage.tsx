@@ -14,7 +14,10 @@ const schema = z.object({
   name: z.string().min(1, 'Company name is required'),
   legal_name: z.string().optional(),
   gstin: z.string().optional(),
+  gstin_status: z.string().optional(),
   pan: z.string().optional(),
+  company_director_name: z.string().optional(),
+  company_director_contact: z.string().optional(),
   state_code: z.string().optional(),
   phone: z.string().optional(),
   email: z.string().optional(),
@@ -61,12 +64,15 @@ const CompanyPage = () => {
     queryFn: companyApi.get,
   });
 
-  const { register, handleSubmit, reset } = useForm<CompanyForm>({
+  const { register, handleSubmit, reset, watch } = useForm<CompanyForm>({
     values: {
       name: data?.name ?? '',
       legal_name: data?.legal_name ?? '',
       gstin: data?.gstin ?? '',
+      gstin_status: data?.gstin_status ?? 'non-registered',
       pan: data?.pan ?? '',
+      company_director_name: data?.company_director_name ?? '',
+      company_director_contact: data?.company_director_contact ?? '',
       state_code: data?.state_code ?? '',
       phone: data?.phone ?? '',
       email: data?.email ?? '',
@@ -83,6 +89,8 @@ const CompanyPage = () => {
     },
   });
 
+  const gstin_status = watch('gstin_status');
+
   const mutation = useMutation({
     mutationFn: (payload: Company) => companyApi.update(payload),
     onSuccess: (updated) => {
@@ -91,7 +99,10 @@ const CompanyPage = () => {
         name: updated.name,
         legal_name: updated.legal_name ?? '',
         gstin: updated.gstin ?? '',
+        gstin_status: updated.gstin_status ?? 'non-registered',
         pan: updated.pan ?? '',
+        company_director_name: updated.company_director_name ?? '',
+        company_director_contact: updated.company_director_contact ?? '',
         state_code: updated.state_code ?? '',
         phone: updated.phone ?? '',
         email: updated.email ?? '',
@@ -137,7 +148,10 @@ const CompanyPage = () => {
       ...parsed.data,
       legal_name: normalizeOptional(parsed.data.legal_name),
       gstin: normalizeOptional(parsed.data.gstin)?.toUpperCase() ?? null,
+      gstin_status: parsed.data.gstin_status ?? 'non-registered',
       pan: normalizeOptional(parsed.data.pan)?.toUpperCase() ?? null,
+      company_director_name: normalizeOptional(parsed.data.company_director_name),
+      company_director_contact: normalizeOptional(parsed.data.company_director_contact),
       state_code: normalizeOptional(parsed.data.state_code)?.toUpperCase() ?? null,
       phone: normalizeOptional(parsed.data.phone),
       email: normalizeOptional(parsed.data.email),
@@ -195,8 +209,33 @@ const CompanyPage = () => {
                   <input id="legal_name" className="hms-input" {...register('legal_name')} />
                 </div>
                 <div>
-                  <label htmlFor="company_gstin" className="hms-label">GSTIN</label>
-                  <input id="company_gstin" className="hms-input" placeholder="e.g. 33AABCT1234F1Z5" {...register('gstin')} />
+                  <label htmlFor="company_director_name" className="hms-label">Company Director Name</label>
+                  <input id="company_director_name" className="hms-input" placeholder="e.g., John Doe" {...register('company_director_name')} />
+                </div>
+                <div>
+                  <label htmlFor="company_director_contact" className="hms-label">Company Director Contact</label>
+                  <input id="company_director_contact" className="hms-input" placeholder="e.g., +91-9876543210" {...register('company_director_contact')} />
+                </div>
+                <div>
+                  <label htmlFor="gstin_status" className="hms-label">GSTIN Registration Status</label>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" value="registered" {...register('gstin_status')} className="w-4 h-4" />
+                      <span className="text-sm">Registered</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" value="non-registered" {...register('gstin_status')} className="w-4 h-4" />
+                      <span className="text-sm">Non-Registered</span>
+                    </label>
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="company_gstin" className="hms-label">{gstin_status === 'registered' ? 'GSTIN *' : 'GSTIN'}</label>
+                  {gstin_status === 'registered' ? (
+                    <input id="company_gstin" className="hms-input" placeholder="e.g. 33AABCT1234F1Z5" {...register('gstin')} />
+                  ) : (
+                    <div className="hms-input bg-neutral-100 text-neutral-500 flex items-center">NA</div>
+                  )}
                 </div>
                 <div>
                   <label htmlFor="company_pan" className="hms-label">PAN</label>

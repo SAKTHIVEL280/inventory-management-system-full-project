@@ -129,6 +129,43 @@ async def dashboard_report(
         for row in top_products_query
     ]
 
+    def _build_cash_in_flow(start_date: date):
+        rows = db.query(
+            Customer.id,
+            Customer.company_name,
+            func.coalesce(func.sum(SalesInvoice.amount_due), 0).label("receivables_amount"),
+        ).join(
+            SalesInvoice,
+            SalesInvoice.customer_id == Customer.id,
+        ).filter(
+            SalesInvoice.invoice_date >= start_date,
+            SalesInvoice.invoice_date <= today,
+            SalesInvoice.status.in_(["issued", "partial_paid"]),
+            SalesInvoice.amount_due > 0,
+            SalesInvoice.is_deleted == False,
+            Customer.is_deleted == False,
+        ).group_by(
+            Customer.id,
+            Customer.company_name,
+        ).order_by(
+            text("receivables_amount DESC")
+        ).limit(12).all()
+
+        return [
+            {
+                "customer_id": str(row.id),
+                "customer_name": row.company_name,
+                "receivables_amount": int(row.receivables_amount),
+            }
+            for row in rows
+        ]
+
+    cash_in_flow = {
+        "daily": _build_cash_in_flow(today),
+        "weekly": _build_cash_in_flow(today - timedelta(days=6)),
+        "monthly": _build_cash_in_flow(month_start),
+    }
+
     # Recent invoices with customer names
     recent_invoices_rows = db.query(
         SalesInvoice, 
@@ -173,6 +210,7 @@ async def dashboard_report(
         "overdue_invoices_count": int(overdue_invoices_count),
         "sales_trend": sales_trend,
         "top_products": top_products,
+        "cash_in_flow": cash_in_flow,
         "recent_invoices": recent_invoices,
     }
 

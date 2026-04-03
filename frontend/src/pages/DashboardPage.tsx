@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { getDashboardStats, type DashboardStats as APIDashboardStats } from '../api/reports';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { FileQuestion } from 'lucide-react';
 
 const NoDataPlaceholder = ({ message }: { message: string }) => (
@@ -27,6 +27,7 @@ const NoDataPlaceholder = ({ message }: { message: string }) => (
 const DashboardPage = () => {
   const [stats, setStats] = useState<APIDashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [cashInFlowView, setCashInFlowView] = useState<'daily' | 'weekly' | 'monthly'>('daily');
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -56,7 +57,11 @@ const DashboardPage = () => {
 
 
   const salesTrend = stats?.sales_trend || [];
-  const topProducts = stats?.top_products || [];
+  const cashInFlowRows = stats?.cash_in_flow?.[cashInFlowView] || [];
+  const cashInFlow = cashInFlowRows.map((item) => ({
+    ...item,
+    customer_label: item.customer_name || item.customer_id.slice(0, 8),
+  }));
   const recentInvoices = stats?.recent_invoices || [];
 
   return (
@@ -161,23 +166,49 @@ const DashboardPage = () => {
           </div>
 
           <div className="hms-card p-6">
-            <h3 className="mb-4 text-sm font-bold text-neutral-700">Top Selling Products</h3>
-            {!loading && topProducts.length > 0 ? (
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h3 className="text-sm font-bold text-neutral-700">Cash In Flow Graph</h3>
+              <div className="flex rounded-lg border border-neutral-200 bg-neutral-50 p-1">
+                {(['daily', 'weekly', 'monthly'] as const).map((view) => (
+                  <button
+                    key={view}
+                    type="button"
+                    onClick={() => setCashInFlowView(view)}
+                    className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                      cashInFlowView === view
+                        ? 'bg-white text-primary shadow-sm'
+                        : 'text-neutral-600 hover:text-neutral-900'
+                    }`}
+                  >
+                    {view.charAt(0).toUpperCase() + view.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {!loading && cashInFlow.length > 0 ? (
               <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={topProducts.slice(0, 5)} layout="vertical">
+                <BarChart data={cashInFlow}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis type="number" tick={{ fontSize: 11 }} />
-                  <YAxis dataKey="product_name" type="category" tick={{ fontSize: 11 }} width={100} />
-                  <Tooltip formatter={(v: number) => formatAmount(v)} />
-                  <Bar dataKey="amount" radius={[0, 4, 4, 0]}>
-                    {topProducts.slice(0, 5).map((_, idx) => (
-                      <Cell key={idx} fill={['#1E3A5F', '#2E86AB', '#22c55e', '#f59e0b', '#8b5cf6'][idx]} />
-                    ))}
-                  </Bar>
+                  <XAxis
+                    dataKey="customer_label"
+                    tick={{ fontSize: 11 }}
+                    interval={0}
+                    angle={-20}
+                    textAnchor="end"
+                    height={55}
+                    label={{ value: 'Customers', position: 'insideBottom', offset: -6 }}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11 }}
+                    tickFormatter={(v) => formatAmountShort(v)}
+                    label={{ value: 'Receivables Amount', angle: -90, position: 'insideLeft' }}
+                  />
+                  <Tooltip formatter={(v: number) => formatAmount(v)} labelStyle={{ fontWeight: 600 }} />
+                  <Bar dataKey="receivables_amount" fill="#1E3A5F" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <NoDataPlaceholder message="Your top performing products will appear here." />
+              <NoDataPlaceholder message="No receivables found for selected period in Cash In Flow graph." />
             )}
           </div>
         </section>
