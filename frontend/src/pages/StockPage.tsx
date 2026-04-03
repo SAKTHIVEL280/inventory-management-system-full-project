@@ -36,7 +36,8 @@ const StockPage = () => {
     }
   };
 
-  useEffect(() => { fetchStock(); }, [lowStockOnly]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchStock should run when lowOnly/archiveView filters change
+  useEffect(() => { fetchStock(); }, [lowStockOnly, statusFilter]);
 
   const filtered = items.filter(i => {
     const q = search.trim().toLowerCase();

@@ -19,6 +19,8 @@ import { purchaseApi, type GoodsReceiptNote, type CreateGRNPayload, type Purchas
 import { apiClient } from '../api/client';
 import { toast } from 'sonner';
 import { confirmWithToast } from '../utils/toastHelper';
+import { addDaysToDateInputValue, todayLocalDateInputValue } from '../utils/date';
+import { emptyWhenZero } from '../utils/numberInput';
 
 interface ProductOption { id: string; name: string; product_code: string; purchase_price: number; gst_rate: number; }
 interface SupplierOption { id: string; company_name: string; supplier_code: string; payment_terms_days: number; }
@@ -66,7 +68,7 @@ const GRNPage = () => {
   const [paymentTermsDays, setPaymentTermsDays] = useState(30);
   const [paymentDueDate, setPaymentDueDate] = useState('');
   const [purchaseOrderId, setPurchaseOrderId] = useState<string | undefined>(undefined);
-  const [receiptDate, setReceiptDate] = useState(new Date().toISOString().split('T')[0]);
+  const [receiptDate, setReceiptDate] = useState(todayLocalDateInputValue());
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState('');
   const [supplierInvoiceDate, setSupplierInvoiceDate] = useState('');
   const [notes, setNotes] = useState('');
@@ -78,9 +80,7 @@ const GRNPage = () => {
   // Calculate payment due date from receipt date + payment terms
   const calculateDueDate = useCallback((receipt: string, terms: number) => {
     if (!receipt) return '';
-    const date = new Date(receipt);
-    date.setDate(date.getDate() + terms);
-    return date.toISOString().split('T')[0];
+    return addDaysToDateInputValue(receipt, terms);
   }, []);
 
   const fetchGRNs = async () => {
@@ -95,6 +95,7 @@ const GRNPage = () => {
     }
   };
 
+  /* eslint-disable react-hooks/exhaustive-deps -- loadPOData is intentionally referenced after master data load to resolve pending PO deep-link */
   const fetchMaster = useCallback(async () => {
     try {
       const s = await apiClient.get('/api/v1/suppliers', { params: { page_size: 100 } });
@@ -117,6 +118,7 @@ const GRNPage = () => {
       loadPOData(poId);
     }
   }, []);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
   const fetchPOs = async () => {
     try {
@@ -132,6 +134,7 @@ const GRNPage = () => {
     }
   };
 
+  /* eslint-disable react-hooks/exhaustive-deps -- loadPOData intentionally excluded to avoid reloading PO data on unrelated state changes */
   useEffect(() => {
     const poId = searchParams.get('po_id');
     if (poId) {
@@ -139,8 +142,11 @@ const GRNPage = () => {
       else { pendingPoId.current = poId; }
     }
   }, [searchParams]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchGRNs is stable for this dependency set and should only run when filters change
   useEffect(() => { fetchGRNs(); }, [statusFilter, archiveView]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- one-time bootstrap for master + PO lists on mount
   useEffect(() => { fetchMaster(); fetchPOs(); }, []);
   
   // Recalculate due date when receipt date or payment terms change
@@ -204,7 +210,7 @@ const GRNPage = () => {
 
   const resetForm = () => {
     setSupplierId(''); setPaymentTermsDays(30); setPaymentDueDate(''); setPurchaseOrderId(undefined); setSelectedPO(null);
-    setReceiptDate(new Date().toISOString().split('T')[0]);
+    setReceiptDate(todayLocalDateInputValue());
     setSupplierInvoiceNumber(''); setSupplierInvoiceDate('');
     setNotes(''); setItems([]); setError('');
   };
@@ -273,7 +279,7 @@ const GRNPage = () => {
     }
 
     // Validate manufacture date is not today or in the future
-    const todayIso = new Date().toISOString().split('T')[0];
+    const todayIso = todayLocalDateInputValue();
     const invalidMfgDateIndex = items.findIndex(
       (i) => i.manufacture_date && i.manufacture_date >= todayIso,
     );
@@ -291,7 +297,7 @@ const GRNPage = () => {
       return;
     }
 
-    const todayIso2 = new Date().toISOString().split('T')[0];
+    const todayIso2 = todayLocalDateInputValue();
     const expiredCount = items.filter((i) => i.expiry_date && i.expiry_date < todayIso2).length;
     if (expiredCount > 0) {
       toast.warning(`${expiredCount} line item(s) have an expiry date in the past. Please verify before saving.`);
@@ -403,6 +409,20 @@ const GRNPage = () => {
 
   const supplierNameById = (id: string) => suppliers.find((s) => s.id === id)?.company_name || '-';
 
+  const handleDateFromChange = (value: string) => {
+    setDateFrom(value);
+    if (dateTo && value && value > dateTo) {
+      setDateTo(value);
+    }
+  };
+
+  const handleDateToChange = (value: string) => {
+    setDateTo(value);
+    if (dateFrom && value && value < dateFrom) {
+      setDateFrom(value);
+    }
+  };
+
   const filteredGRNs = grns.filter((g) => {
     const q = searchQuery.trim().toLowerCase();
     const supplierName = supplierNameById(g.supplier_id);
@@ -452,7 +472,8 @@ const GRNPage = () => {
                 type="date"
                 className="bg-transparent text-sm outline-none"
                 value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
+                max={dateTo || undefined}
+                onChange={(e) => handleDateFromChange(e.target.value)}
                 title="Receipt date from"
               />
             </div>
@@ -462,7 +483,8 @@ const GRNPage = () => {
                 type="date"
                 className="bg-transparent text-sm outline-none"
                 value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
+                min={dateFrom || undefined}
+                onChange={(e) => handleDateToChange(e.target.value)}
                 title="Receipt date to"
               />
             </div>
@@ -495,7 +517,7 @@ const GRNPage = () => {
                       {g.purchase_order_id ? (
                         <span className="inline-flex items-center gap-1 text-green-700 font-medium">
                           <span className="material-icons text-sm" aria-hidden="true">check_circle</span>
-                          {(g as any).po_number || 'Linked'}
+                          {g.po_number || 'Linked'}
                         </span>
                       ) : '—'}
                     </td>
@@ -779,7 +801,7 @@ const GRNPage = () => {
                               min="0"
                               step="0.01"
                               className="w-full rounded border px-2 py-1.5 text-right text-sm"
-                              value={item.free_quantity ?? ''}
+                              value={emptyWhenZero(item.free_quantity)}
                               onChange={e => {
                                 const val = e.target.value;
                                 updateItem(idx, 'free_quantity', val === '' ? 0 : (parseFloat(val) || 0));
@@ -815,11 +837,11 @@ const GRNPage = () => {
                           </td>
                           <td className="px-3 py-2">
                             <input type="number" min="0" step="0.01" className="w-full rounded border px-2 py-1.5 text-right text-sm"
-                              value={paiseToRupees(item.unit_price)}
+                              value={item.unit_price ? paiseToRupees(item.unit_price) : ''}
                               onChange={e => updateItem(idx, 'unit_price', rupeesToPaise(e.target.value))} />
                           </td>
                           <td className="px-3 py-2">
-                            <input type="number" min="0" max="100" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={item.discount_percent || 0}
+                            <input type="number" min="0" max="100" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={emptyWhenZero(item.discount_percent)}
                               onChange={e => updateItem(idx, 'discount_percent', parseFloat(e.target.value) || 0)} />
                           </td>
                           <td className="px-3 py-2">

@@ -17,6 +17,7 @@ import { AppLayout } from '../components/AppLayout';
 import { paymentsApi, type Payment, type CreatePaymentPayload, type PaymentAllocationRequest } from '../api/payments';
 import { salesApi, type SalesInvoice } from '../api/sales';
 import { apiClient } from '../api/client';
+import { todayLocalDateInputValue } from '../utils/date';
 import { showError, showSuccess, confirmWithToast } from '../utils/toastHelper';
 
 interface CustomerOption { id: string; company_name: string; }
@@ -43,7 +44,7 @@ const ReceivablesPage = () => {
 
   // Form
   const [customerId, setCustomerId] = useState('');
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [paymentDate, setPaymentDate] = useState(todayLocalDateInputValue());
   const [amount, setAmount] = useState(0);
   const [paymentMode, setPaymentMode] = useState('bank_transfer');
   const [referenceNumber, setReferenceNumber] = useState('');
@@ -65,6 +66,7 @@ const ReceivablesPage = () => {
     try { const res = await apiClient.get('/api/v1/customers', { params: { page_size: 100 } }); setCustomers(res.data.items || []); } catch { /* */ }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchPayments should run when archiveView changes
   useEffect(() => { fetchPayments(); }, [archiveView]);
   useEffect(() => { fetchCustomers(); }, []);
 
@@ -81,7 +83,7 @@ const ReceivablesPage = () => {
     })();
   }, [customerId]);
 
-  const resetForm = () => { setCustomerId(''); setPaymentDate(new Date().toISOString().split('T')[0]); setAmount(0); setPaymentMode('bank_transfer'); setReferenceNumber(''); setNotes(''); setAllocations({}); setError(''); setEditingPayment(null); };
+  const resetForm = () => { setCustomerId(''); setPaymentDate(todayLocalDateInputValue()); setAmount(0); setPaymentMode('bank_transfer'); setReferenceNumber(''); setNotes(''); setAllocations({}); setError(''); setEditingPayment(null); };
   const paiseToRupees = (paise: number) => (Number.isFinite(paise) ? paise / 100 : 0);
   const rupeesToPaise = (value: string | number) => {
     const num = typeof value === 'number' ? value : parseFloat(value);
@@ -89,6 +91,20 @@ const ReceivablesPage = () => {
   };
   const formatAmount = (p: number) => `₹${(p / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
   const customerNameById = (id?: string | null) => customers.find((c) => c.id === id)?.company_name || '-';
+
+  const handleDateFromChange = (value: string) => {
+    setDateFrom(value);
+    if (dateTo && value && value > dateTo) {
+      setDateTo(value);
+    }
+  };
+
+  const handleDateToChange = (value: string) => {
+    setDateTo(value);
+    if (dateFrom && value && value < dateFrom) {
+      setDateFrom(value);
+    }
+  };
 
   // REC-003/004: Map backend status to display labels
   const statusDisplayLabel = (status: string) => {
@@ -103,7 +119,7 @@ const ReceivablesPage = () => {
 
   const filteredPayments = payments.filter((p) => {
     const term = searchQuery.trim().toLowerCase();
-    const invoiceRefs = p.allocations?.map((a: any) => a.invoice_number).filter(Boolean).join(' ') || '';
+    const invoiceRefs = p.allocations?.map((a) => a.invoice_number).filter(Boolean).join(' ') || '';
     const matchesSearch =
       !term ||
       customerNameById(p.customer_id).toLowerCase().includes(term) ||
@@ -251,11 +267,11 @@ const ReceivablesPage = () => {
             </select>
             <div className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm">
               <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">From</span>
-              <input type="date" className="bg-transparent text-sm outline-none" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} title="Payment date from" />
+              <input type="date" className="bg-transparent text-sm outline-none" value={dateFrom} max={dateTo || undefined} onChange={(e) => handleDateFromChange(e.target.value)} title="Payment date from" />
             </div>
             <div className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm">
               <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">To</span>
-              <input type="date" className="bg-transparent text-sm outline-none" value={dateTo} onChange={(e) => setDateTo(e.target.value)} title="Payment date to" />
+              <input type="date" className="bg-transparent text-sm outline-none" value={dateTo} min={dateFrom || undefined} onChange={(e) => handleDateToChange(e.target.value)} title="Payment date to" />
             </div>
           </div>
           <button onClick={() => { resetForm(); setShowForm(true); }} className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/20 hover:bg-primary/90">+ Record Payment</button>
@@ -279,7 +295,7 @@ const ReceivablesPage = () => {
                 : filteredPayments.map(p => (
                   <tr key={p.id} className="border-b border-neutral-100 hover:bg-neutral-50">
                     <td className="px-4 py-3 font-medium">
-                      {p.allocations?.map((a: any) => a.invoice_number).filter(Boolean).join(', ') || 'Unallocated'}
+                      {p.allocations?.map((a) => a.invoice_number).filter(Boolean).join(', ') || 'Unallocated'}
                     </td>
                     <td className="px-4 py-3">{customerNameById(p.customer_id)}</td>
                     <td className="px-4 py-3">{p.payment_date}</td>
@@ -315,7 +331,7 @@ const ReceivablesPage = () => {
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Customer *</label><select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={customerId} onChange={e => setCustomerId(e.target.value)}><option value="">Select</option>{customers.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}</select></div>
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Date *</label><input type="date" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} /></div>
-                <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Amount (₹) *</label><input type="number" step="0.01" min="0.01" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={paiseToRupees(amount)} onChange={e => setAmount(rupeesToPaise(e.target.value))} /></div>
+                <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Amount (₹) *</label><input type="number" step="0.01" min="0.01" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={amount > 0 ? paiseToRupees(amount) : ''} onChange={e => setAmount(rupeesToPaise(e.target.value))} /></div>
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Mode</label><select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={paymentMode} onChange={e => setPaymentMode(e.target.value)}><option value="cash">Cash</option><option value="bank_transfer">Bank Transfer</option><option value="cheque">Cheque</option><option value="upi">UPI</option><option value="card">Card</option></select></div>
                 <div className="md:col-span-2"><label className="mb-1 block text-sm font-semibold text-neutral-700">Reference #</label><input type="text" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={referenceNumber} onChange={e => setReferenceNumber(e.target.value)} /></div>
               </div>
@@ -338,7 +354,7 @@ const ReceivablesPage = () => {
                           <tr key={inv.id} className="border-t border-neutral-100">
                             <td className="px-3 py-2">{inv.invoice_number}</td>
                             <td className="px-3 py-2 text-right">{formatAmount(inv.amount_due)}</td>
-                            <td className="px-3 py-2"><input type="number" step="0.01" min="0" max={paiseToRupees(inv.amount_due)} className="w-full rounded border px-2 py-1.5 text-right text-sm" value={paiseToRupees(allocations[inv.id] || 0)} onChange={e => {
+                            <td className="px-3 py-2"><input type="number" step="0.01" min="0" max={paiseToRupees(inv.amount_due)} className="w-full rounded border px-2 py-1.5 text-right text-sm" value={allocations[inv.id] ? paiseToRupees(allocations[inv.id]) : ''} onChange={e => {
                               const newVal = rupeesToPaise(e.target.value);
                               // REC-005: Clamp allocation to invoice due
                               const clamped = Math.min(newVal, inv.amount_due);

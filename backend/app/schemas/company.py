@@ -1,7 +1,7 @@
 """Company schemas."""
 from typing import Optional
 from uuid import UUID
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
 GSTIN_REGEX = r"^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$"
 
@@ -63,8 +63,7 @@ class CompanyUpdate(CompanyBase):
 class CompanyResponse(CompanyBase):
     id: UUID
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CompanyLogoResponse(BaseModel):

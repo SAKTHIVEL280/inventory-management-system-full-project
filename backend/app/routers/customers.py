@@ -84,7 +84,7 @@ def _generate_customer_code(db: Session, payload: CustomerCreateRequest | Custom
     prefix = "CUST-INT" if _is_international(payload) else f"CUST-{_state_code_from_payload(payload)}"
     existing_codes = (
         db.query(Customer.customer_code)
-        .filter(Customer.customer_code.like(f"{prefix}-%"), Customer.is_deleted == False)
+        .filter(Customer.customer_code.like(f"{prefix}-%"))
         .all()
     )
 

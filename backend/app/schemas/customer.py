@@ -1,7 +1,7 @@
 """Customer schemas."""
 from typing import Optional, List
 from uuid import UUID
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 GSTIN_REGEX = r"^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$"
 PAN_REGEX = r"^[A-Z]{5}\d{4}[A-Z]$"
@@ -159,8 +159,7 @@ class CustomerUpdateRequest(CustomerBase):
 class CustomerResponse(CustomerBase):
     id: UUID
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class CustomerBalanceResponse(BaseModel):

@@ -43,7 +43,7 @@ def _write_default_env_if_missing() -> None:
         "MAIL_SERVER=smtp.gmail.com\n"
         "MAIL_STARTTLS=true\n"
         "MAIL_SSL_TLS=false\n"
-        "FRONTEND_URL=http://localhost:5173\n"
+        "FRONTEND_URL=http://localhost:3001\n"
         "COMPANY_NAME=Your Company Name\n"
     )
 
@@ -180,7 +180,7 @@ def main() -> int:
 
     print("\n[OK] Setup completed successfully")
     print("\nNext steps:")
-    print(f"  1. Backend:  cd backend && {venv_dir_name}\\Scripts\\activate && uvicorn app.main:app --reload")
+    print(f"  1. Backend:  cd backend && {venv_dir_name}\\Scripts\\activate && uvicorn app.main:app --reload --host 127.0.0.1 --port 8001")
     print("  2. Frontend: cd frontend && npm install && npm run dev")
     print("\nDefault login:")
     print("  Email: admin@company.com")

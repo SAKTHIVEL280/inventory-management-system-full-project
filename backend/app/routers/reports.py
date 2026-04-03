@@ -1,6 +1,6 @@
 """Reports router."""
 from datetime import date, timedelta
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,15 @@ from app.models.supplier import Supplier
 router = APIRouter(prefix="/api/v1/reports", tags=["reports"])
 
 
+def _ensure_valid_date_range(from_date: date, to_date: date) -> None:
+    """Validate report date range parameters."""
+    if from_date > to_date:
+        raise HTTPException(
+            status_code=422,
+            detail="from_date must be less than or equal to to_date",
+        )
+
+
 @router.get("/dashboard")
 async def dashboard_report(
     db: Session = Depends(get_db),
@@ -23,6 +32,7 @@ async def dashboard_report(
 ):
     today = date.today()
     month_start = today.replace(day=1)
+    receivable_statuses = ["issued", "partial_paid"]
 
     # Count totals
     total_products = db.query(func.count(Product.id)).filter(
@@ -81,9 +91,10 @@ async def dashboard_report(
         SalesInvoice.is_deleted == False,
     ).scalar() or 0
 
-    # Outstanding receivables – include ALL unpaid/partially-paid invoices
+    # Outstanding receivables
     outstanding_receivables = db.query(func.coalesce(func.sum(SalesInvoice.amount_due), 0)).filter(
         SalesInvoice.amount_due > 0,
+        SalesInvoice.status.in_(receivable_statuses),
         SalesInvoice.is_deleted == False,
     ).scalar() or 0
 
@@ -129,8 +140,8 @@ async def dashboard_report(
         for row in top_products_query
     ]
 
-    def _build_cash_in_flow(start_date: date):
-        rows = db.query(
+    def _cash_in_flow_rows(start_date: date | None = None):
+        query = db.query(
             Customer.id,
             Customer.company_name,
             func.coalesce(func.sum(SalesInvoice.amount_due), 0).label("receivables_amount"),
@@ -138,18 +149,31 @@ async def dashboard_report(
             SalesInvoice,
             SalesInvoice.customer_id == Customer.id,
         ).filter(
-            SalesInvoice.invoice_date >= start_date,
-            SalesInvoice.invoice_date <= today,
-            SalesInvoice.status.in_(["issued", "partial_paid"]),
+            SalesInvoice.status.in_(receivable_statuses),
             SalesInvoice.amount_due > 0,
             SalesInvoice.is_deleted == False,
             Customer.is_deleted == False,
-        ).group_by(
+        )
+
+        if start_date is not None:
+            query = query.filter(
+                SalesInvoice.invoice_date >= start_date,
+                SalesInvoice.invoice_date <= today,
+            )
+
+        return query.group_by(
             Customer.id,
             Customer.company_name,
         ).order_by(
             text("receivables_amount DESC")
         ).limit(12).all()
+
+    def _build_cash_in_flow(start_date: date):
+        # If no receivables fall inside the date window, show overall outstanding
+        # customers so the graph doesn't appear empty while receivables exist.
+        rows = _cash_in_flow_rows(start_date)
+        if not rows:
+            rows = _cash_in_flow_rows()
 
         return [
             {
@@ -269,6 +293,7 @@ async def sales_report(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("reports_read")),
 ):
+    _ensure_valid_date_range(from_date, to_date)
     rows = db.query(SalesInvoice).filter(
         SalesInvoice.invoice_date >= from_date,
         SalesInvoice.invoice_date <= to_date,
@@ -299,6 +324,7 @@ async def purchase_report(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("reports_read")),
 ):
+    _ensure_valid_date_range(from_date, to_date)
     rows = db.query(GoodsReceiptNote).filter(
         GoodsReceiptNote.receipt_date >= from_date,
         GoodsReceiptNote.receipt_date <= to_date,
@@ -373,6 +399,7 @@ async def gstr1_report(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("reports_read")),
 ):
+    _ensure_valid_date_range(from_date, to_date)
     rows = db.query(SalesInvoice).filter(
         SalesInvoice.invoice_date >= from_date,
         SalesInvoice.invoice_date <= to_date,
@@ -397,6 +424,7 @@ async def gstr3b_report(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("reports_read")),
 ):
+    _ensure_valid_date_range(from_date, to_date)
     sales_rows = db.query(SalesInvoice).filter(
         SalesInvoice.invoice_date >= from_date,
         SalesInvoice.invoice_date <= to_date,
@@ -427,6 +455,7 @@ async def profit_and_loss_report(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("reports_read")),
 ):
+    _ensure_valid_date_range(from_date, to_date)
     sales_rows = db.query(SalesInvoice).filter(
         SalesInvoice.invoice_date >= from_date,
         SalesInvoice.invoice_date <= to_date,

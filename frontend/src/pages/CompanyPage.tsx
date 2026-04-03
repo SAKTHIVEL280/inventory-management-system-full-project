@@ -124,7 +124,7 @@ const CompanyPage = () => {
   const logoMutation = useMutation({
     mutationFn: companyApi.uploadLogo,
     onSuccess: (res) => {
-      queryClient.setQueryData(['company'], (old: any) => ({ ...old, logo_url: res.logo_url }));
+      queryClient.setQueryData(['company'], (old: Company | undefined) => ({ ...(old ?? emptyCompany), logo_url: res.logo_url }));
       toast.success('Logo uploaded successfully');
     },
     onError: () => toast.error('Failed to upload logo'),

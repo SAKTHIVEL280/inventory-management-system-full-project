@@ -7,7 +7,9 @@ import { createPortal } from 'react-dom';
 import { AppLayout } from '../components/AppLayout';
 import { salesApi, type SalesOrder, type CreateSalesOrderPayload, type SalesLineItem } from '../api/sales';
 import { apiClient } from '../api/client';
+import { todayLocalDateInputValue } from '../utils/date';
 import { showError, showSuccess } from '../utils/toastHelper';
+import { emptyWhenZero } from '../utils/numberInput';
 
 interface ProductOption { id: string; name: string; product_code: string; selling_price: number; gst_rate: number; }
 interface CustomerOption { id: string; company_name: string; customer_code: string; }
@@ -28,7 +30,7 @@ const SalesOrdersPage = () => {
   const [error, setError] = useState('');
 
   const [customerId, setCustomerId] = useState('');
-  const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
+  const [orderDate, setOrderDate] = useState(todayLocalDateInputValue());
   const [expectedDeliveryDate, setExpectedDeliveryDate] = useState('');
   const [currencyCode, setCurrencyCode] = useState('INR');
   const [exchangeRate, setExchangeRate] = useState(1.0);
@@ -55,10 +57,11 @@ const SalesOrdersPage = () => {
     } catch { /* ignore */ }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchOrders should run on status/archive filter changes
   useEffect(() => { fetchOrders(); }, [statusFilter, archiveView]);
   useEffect(() => { fetchMasterData(); }, []);
 
-  const resetForm = () => { setCustomerId(''); setOrderDate(new Date().toISOString().split('T')[0]); setExpectedDeliveryDate(''); setCurrencyCode('INR'); setExchangeRate(1.0); setNotes(''); setItems([]); setEditingId(null); setError(''); };
+  const resetForm = () => { setCustomerId(''); setOrderDate(todayLocalDateInputValue()); setExpectedDeliveryDate(''); setCurrencyCode('INR'); setExchangeRate(1.0); setNotes(''); setItems([]); setEditingId(null); setError(''); };
   const addItem = () => { setItems([...items, { product_id: '', quantity: 1, unit_price: 0, discount_percent: 0, gst_rate: 18 }]); };
   const paiseToRupees = (paise: number) => (Number.isFinite(paise) ? paise / 100 : 0);
   const rupeesToPaise = (value: string | number) => {
@@ -74,6 +77,20 @@ const SalesOrdersPage = () => {
   const calcTotal = (i: SalesLineItem) => { const g = i.unit_price * i.quantity; const d = g * (i.discount_percent || 0) / 100; const t = g - d; return Math.round(t + t * i.gst_rate / 100); };
   const formatAmount = (p: number) => `₹${(p / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
   const customerNameById = (id: string) => customers.find((c) => c.id === id)?.company_name || '-';
+
+  const handleDateFromChange = (value: string) => {
+    setDateFrom(value);
+    if (dateTo && value && value > dateTo) {
+      setDateTo(value);
+    }
+  };
+
+  const handleDateToChange = (value: string) => {
+    setDateTo(value);
+    if (dateFrom && value && value < dateFrom) {
+      setDateFrom(value);
+    }
+  };
 
   const filteredOrders = orders.filter((o) => {
     const q = searchQuery.trim().toLowerCase();
@@ -158,7 +175,8 @@ const SalesOrdersPage = () => {
                 type="date"
                 className="bg-transparent text-sm outline-none"
                 value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
+                max={dateTo || undefined}
+                onChange={(e) => handleDateFromChange(e.target.value)}
                 title="Order date from"
               />
             </div>
@@ -168,7 +186,8 @@ const SalesOrdersPage = () => {
                 type="date"
                 className="bg-transparent text-sm outline-none"
                 value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
+                min={dateFrom || undefined}
+                onChange={(e) => handleDateToChange(e.target.value)}
                 title="Order date to"
               />
             </div>
@@ -269,7 +288,7 @@ const SalesOrdersPage = () => {
                               min="0"
                               step="0.01"
                               className="w-full rounded border px-2 py-1.5 text-right text-sm"
-                              value={paiseToRupees(item.unit_price)}
+                              value={item.unit_price ? paiseToRupees(item.unit_price) : ''}
                               onChange={e => updateItem(idx, 'unit_price', rupeesToPaise(e.target.value))}
                             />
                           </td>
@@ -279,7 +298,7 @@ const SalesOrdersPage = () => {
                               min="0"
                               max="100"
                               className="w-full rounded border px-2 py-1.5 text-right text-sm"
-                              value={item.discount_percent || 0}
+                              value={emptyWhenZero(item.discount_percent)}
                               onChange={e => updateItem(idx, 'discount_percent', parseFloat(e.target.value) || 0)}
                             />
                           </td>

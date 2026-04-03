@@ -1,7 +1,7 @@
 """Authentication schemas."""
 from typing import Optional, List, Dict, Any
 from uuid import UUID
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 
 
 class UserLogin(BaseModel):
@@ -20,8 +20,7 @@ class UserResponse(BaseModel):
     effective_access: List[str]
     force_password_change: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TokenResponse(BaseModel):

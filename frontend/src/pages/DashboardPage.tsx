@@ -60,7 +60,10 @@ const DashboardPage = () => {
   const cashInFlowRows = stats?.cash_in_flow?.[cashInFlowView] || [];
   const cashInFlow = cashInFlowRows.map((item) => ({
     ...item,
-    customer_label: item.customer_name || item.customer_id.slice(0, 8),
+    customer_label: (item.customer_name || item.customer_id.slice(0, 8)).length > 14
+      ? `${(item.customer_name || item.customer_id.slice(0, 8)).slice(0, 14)}...`
+      : (item.customer_name || item.customer_id.slice(0, 8)),
+    customer_full_name: item.customer_name || item.customer_id.slice(0, 8),
   }));
   const recentInvoices = stats?.recent_invoices || [];
 
@@ -165,7 +168,7 @@ const DashboardPage = () => {
             )}
           </div>
 
-          <div className="hms-card p-6">
+          <div className="hms-card overflow-hidden p-6">
             <div className="mb-4 flex items-center justify-between gap-3">
               <h3 className="text-sm font-bold text-neutral-700">Cash In Flow Graph</h3>
               <div className="flex rounded-lg border border-neutral-200 bg-neutral-50 p-1">
@@ -187,23 +190,24 @@ const DashboardPage = () => {
             </div>
             {!loading && cashInFlow.length > 0 ? (
               <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={cashInFlow}>
+                <BarChart data={cashInFlow} margin={{ top: 6, right: 8, left: 6, bottom: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis
                     dataKey="customer_label"
                     tick={{ fontSize: 11 }}
-                    interval={0}
-                    angle={-20}
-                    textAnchor="end"
-                    height={55}
-                    label={{ value: 'Customers', position: 'insideBottom', offset: -6 }}
+                    interval="preserveStartEnd"
+                    height={44}
+                    tickMargin={8}
                   />
                   <YAxis
                     tick={{ fontSize: 11 }}
                     tickFormatter={(v) => formatAmountShort(v)}
-                    label={{ value: 'Receivables Amount', angle: -90, position: 'insideLeft' }}
                   />
-                  <Tooltip formatter={(v: number) => formatAmount(v)} labelStyle={{ fontWeight: 600 }} />
+                  <Tooltip
+                    formatter={(v: number) => formatAmount(v)}
+                    labelFormatter={(_, payload) => payload?.[0]?.payload?.customer_full_name || ''}
+                    labelStyle={{ fontWeight: 600 }}
+                  />
                   <Bar dataKey="receivables_amount" fill="#1E3A5F" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>

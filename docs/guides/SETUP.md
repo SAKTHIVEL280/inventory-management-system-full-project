@@ -102,7 +102,7 @@ cp .env.example .env
 **Key Values:**
 - `DATABASE_URL`: `postgresql://postgres:root@localhost:5432/ims_db`
 - `SECRET_KEY`: Generate one using `python -c "import secrets; print(secrets.token_hex(32))"`
-- `FRONTEND_URL`: `http://localhost:5173` (or `5174`)
+- `FRONTEND_URL`: `http://localhost:3001`
 
 ### 3.2 Frontend Environment (.env)
 
@@ -113,7 +113,7 @@ cd ../frontend
 cp .env.example .env
 ```
 
-Ensure `VITE_API_BASE_URL` matches your backend URL (default: `http://127.0.0.1:8000`).
+Ensure `VITE_API_BASE_URL` matches your backend URL (default: `http://127.0.0.1:8001`).
 
 ---
 
@@ -123,7 +123,7 @@ Ensure `VITE_API_BASE_URL` matches your backend URL (default: `http://127.0.0.1:
 ```bash
 cd backend
 .venv\Scripts\activate   # Windows
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8001
 ```
 
 ### 4.2 Frontend
@@ -133,8 +133,8 @@ npm install
 npm run dev
 ```
 
-API is available at: http://localhost:8000
-API documentation: http://localhost:8000/docs
+API is available at: http://localhost:8001
+API documentation: http://localhost:8001/docs
 
 If dashboard or sales pages fail after upgrading older databases, run:
 
@@ -147,7 +147,7 @@ python run_migration.py
 
 ## 5. First Login
 
-1. Open http://localhost:5173 (or current Vite port)
+1. Open http://localhost:3001 (or current Vite port)
 2. Login with: **admin@company.com** / **Admin@123**
 3. You will be prompted to change your password immediately.
 4. Go to Masters > Company and fill in your company details (name, GSTIN, state, bank details).
@@ -164,7 +164,7 @@ python run_migration.py
 
 ```bash
 pip install gunicorn
-gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8001
 ```
 
 Use a process manager like systemd or supervisor to keep it running.
@@ -191,7 +191,7 @@ server {
     }
 
     location /api/ {
-        proxy_pass http://127.0.0.1:8000;
+        proxy_pass http://127.0.0.1:8001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
     }
@@ -225,7 +225,8 @@ pytest
 
 # Frontend
 cd frontend
-npm run test
+npm run lint
+npm run build
 ```
 
 ---

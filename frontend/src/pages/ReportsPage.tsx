@@ -7,22 +7,67 @@ import { useState, useEffect } from 'react';
 import { AppLayout } from '../components/AppLayout';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { apiClient } from '../api/client';
+import { toLocalDateInputValue } from '../utils/date';
 
 interface PLData { net_sales: number; purchases: number; gross_profit: number; gross_profit_margin_percent: number; net_profit: number; }
 interface StockItem { product_code: string; product_name: string; closing_qty: number; min_stock: number; status: string; }
 interface SalesReportItem { invoice_number: string; invoice_date: string; total_amount: number; amount_paid: number; amount_due: number; status: string; }
 interface GSTData { summary: { total_taxable: number; total_cgst: number; total_sgst: number; total_igst: number }; count: number; }
 interface GSTR3BData { output_tax: number; itc: number; net_tax_payable: number; }
+interface ApiErrorShape {
+  response?: {
+    status?: number;
+    data?: {
+      detail?: unknown;
+    };
+  };
+  message?: string;
+}
 
 const formatAmount = (p: number) => `₹${(p / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 
+const getErrorMessage = (reason: unknown): string => {
+  const error = reason as ApiErrorShape;
+  const status = error?.response?.status;
+  const detail = error?.response?.data?.detail;
+
+  let msg = '';
+  if (typeof detail === 'string') {
+    msg = detail;
+  } else if (Array.isArray(detail)) {
+    msg = detail
+      .map((d) => {
+        if (d && typeof d === 'object' && 'msg' in d && typeof (d as { msg?: string }).msg === 'string') {
+          return (d as { msg: string }).msg;
+        }
+        return '';
+      })
+      .filter(Boolean)
+      .join(', ');
+  } else if (detail && typeof detail === 'object' && 'message' in detail && typeof (detail as { message?: string }).message === 'string') {
+    msg = (detail as { message: string }).message;
+  } else if (typeof error?.message === 'string') {
+    msg = error.message;
+  }
+
+  if (status && msg) {
+    return `${status}: ${msg}`;
+  }
+  if (status) {
+    return `${status}`;
+  }
+  return msg || 'request failed';
+};
+
 const ReportsPage = () => {
   const today = new Date();
-  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-  const [fromDate, setFromDate] = useState(monthStart.toISOString().split('T')[0]);
-  const [toDate, setToDate] = useState(today.toISOString().split('T')[0]);
+  const defaultFromDate = new Date(today);
+  defaultFromDate.setDate(defaultFromDate.getDate() - 90);
+  const [fromDate, setFromDate] = useState(toLocalDateInputValue(defaultFromDate));
+  const [toDate, setToDate] = useState(toLocalDateInputValue(today));
   const [activeTab, setActiveTab] = useState<'overview' | 'sales' | 'stock' | 'gst' | 'pl'>('overview');
   const [loading, setLoading] = useState(false);
+  const [fetchWarning, setFetchWarning] = useState('');
 
   // Data
   const [dashboard, setDashboard] = useState<Record<string, unknown> | null>(null);
@@ -33,28 +78,94 @@ const ReportsPage = () => {
   const [gstData, setGstData] = useState<GSTData | null>(null);
   const [gstr3bData, setGstr3bData] = useState<GSTR3BData | null>(null);
 
+  const handleFromDateChange = (value: string) => {
+    setFromDate(value);
+    if (toDate && value && value > toDate) {
+      setToDate(value);
+    }
+  };
+
+  const handleToDateChange = (value: string) => {
+    setToDate(value);
+    if (fromDate && value && value < fromDate) {
+      setFromDate(value);
+    }
+  };
+
   const fetchAll = async () => {
+    if (fromDate && toDate && fromDate > toDate) {
+      setFetchWarning('Invalid date range: From date cannot be after To date.');
+      return;
+    }
+
     setLoading(true);
+    setFetchWarning('');
+
+    const failedSections: string[] = [];
     try {
-      const [dashRes, plRes, stockRes, salesRes, gstRes, gstr3bRes] = await Promise.all([
-        apiClient.get('/api/v1/reports/dashboard').catch(() => ({ data: null })),
-        apiClient.get('/api/v1/reports/pl', { params: { from_date: fromDate, to_date: toDate } }).catch(() => ({ data: null })),
-        apiClient.get('/api/v1/reports/stock').catch(() => ({ data: { items: [] } })),
-        apiClient.get('/api/v1/reports/sales', { params: { from_date: fromDate, to_date: toDate } }).catch(() => ({ data: { items: [], total_amount: 0 } })),
-        apiClient.get('/api/v1/reports/gstr1', { params: { from_date: fromDate, to_date: toDate } }).catch(() => ({ data: null })),
-        apiClient.get('/api/v1/reports/gstr3b', { params: { from_date: fromDate, to_date: toDate } }).catch(() => ({ data: null })),
+      const [dashRes, plRes, stockRes, salesRes, gstRes, gstr3bRes] = await Promise.allSettled([
+        apiClient.get('/api/v1/reports/dashboard'),
+        apiClient.get('/api/v1/reports/pl', { params: { from_date: fromDate, to_date: toDate } }),
+        apiClient.get('/api/v1/reports/stock'),
+        apiClient.get('/api/v1/reports/sales', { params: { from_date: fromDate, to_date: toDate } }),
+        apiClient.get('/api/v1/reports/gstr1', { params: { from_date: fromDate, to_date: toDate } }),
+        apiClient.get('/api/v1/reports/gstr3b', { params: { from_date: fromDate, to_date: toDate } }),
       ]);
-      setDashboard(dashRes.data);
-      setPLData(plRes.data);
-      setStockItems(stockRes.data?.items || []);
-      setSalesItems(salesRes.data?.items || []);
-      setSalesTotal(salesRes.data?.total_amount || 0);
-      setGstData(gstRes.data);
-      setGstr3bData(gstr3bRes.data);
-    } catch { /* */ }
+
+      if (dashRes.status === 'fulfilled') {
+        setDashboard((dashRes.value.data as Record<string, unknown>) || null);
+      } else {
+        setDashboard(null);
+        failedSections.push(`Dashboard (${getErrorMessage(dashRes.reason)})`);
+      }
+
+      if (plRes.status === 'fulfilled') {
+        setPLData((plRes.value.data as PLData) || null);
+      } else {
+        setPLData(null);
+        failedSections.push(`P&L (${getErrorMessage(plRes.reason)})`);
+      }
+
+      if (stockRes.status === 'fulfilled') {
+        setStockItems((stockRes.value.data?.items as StockItem[]) || []);
+      } else {
+        setStockItems([]);
+        failedSections.push(`Stock (${getErrorMessage(stockRes.reason)})`);
+      }
+
+      if (salesRes.status === 'fulfilled') {
+        setSalesItems((salesRes.value.data?.items as SalesReportItem[]) || []);
+        setSalesTotal(Number(salesRes.value.data?.total_amount) || 0);
+      } else {
+        setSalesItems([]);
+        setSalesTotal(0);
+        failedSections.push(`Sales (${getErrorMessage(salesRes.reason)})`);
+      }
+
+      if (gstRes.status === 'fulfilled') {
+        setGstData((gstRes.value.data as GSTData) || null);
+      } else {
+        setGstData(null);
+        failedSections.push(`GSTR-1 (${getErrorMessage(gstRes.reason)})`);
+      }
+
+      if (gstr3bRes.status === 'fulfilled') {
+        setGstr3bData((gstr3bRes.value.data as GSTR3BData) || null);
+      } else {
+        setGstr3bData(null);
+        failedSections.push(`GSTR-3B (${getErrorMessage(gstr3bRes.reason)})`);
+      }
+
+      if (failedSections.length > 0) {
+        setFetchWarning(`Some sections failed to load: ${failedSections.join(', ')}`);
+      }
+    } catch {
+      setFetchWarning('Failed to load reports data.');
+    }
     setLoading(false);
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchAll should run when date range changes
   useEffect(() => { fetchAll(); }, [fromDate, toDate]);
 
   const salesTrend = (dashboard as Record<string, unknown>)?.sales_trend as { date: string; amount: number }[] || [];
@@ -88,11 +199,29 @@ const ReportsPage = () => {
             ))}
           </div>
           <div className="flex items-center gap-2">
-            <input type="date" className="rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={fromDate} onChange={e => setFromDate(e.target.value)} />
+            <input
+              type="date"
+              className="rounded-lg border border-neutral-200 px-3 py-2 text-sm"
+              value={fromDate}
+              max={toDate || undefined}
+              onChange={e => handleFromDateChange(e.target.value)}
+            />
             <span className="text-sm text-neutral-500">to</span>
-            <input type="date" className="rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={toDate} onChange={e => setToDate(e.target.value)} />
+            <input
+              type="date"
+              className="rounded-lg border border-neutral-200 px-3 py-2 text-sm"
+              value={toDate}
+              min={fromDate || undefined}
+              onChange={e => handleToDateChange(e.target.value)}
+            />
           </div>
         </div>
+
+        {fetchWarning && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+            {fetchWarning}
+          </div>
+        )}
 
         {loading && <div className="py-12 text-center text-neutral-500">Loading reports...</div>}
 
@@ -177,9 +306,18 @@ const ReportsPage = () => {
               <p className="mt-1 text-2xl font-bold text-primary">{formatAmount(salesTotal)}</p>
               <p className="text-xs text-neutral-500">{salesItems.length} invoice(s)</p>
             </div>
+            {salesItems.length === 0 && (
+              <div className="hms-card px-5 py-4 text-sm text-neutral-600">
+                No sales invoices found for selected date range. Expand the range to include older invoices.
+              </div>
+            )}
             <div className="hms-card overflow-hidden">
               <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-neutral-50"><th className="px-4 py-3 text-left font-semibold">Invoice #</th><th className="px-4 py-3 text-left font-semibold">Date</th><th className="px-4 py-3 text-right font-semibold">Amount</th><th className="px-4 py-3 text-right font-semibold">Paid</th><th className="px-4 py-3 text-right font-semibold">Due</th><th className="px-4 py-3 text-center font-semibold">Status</th></tr></thead>
-                <tbody>{salesItems.map((i, idx) => (<tr key={idx} className="border-b border-neutral-100"><td className="px-4 py-3">{i.invoice_number}</td><td className="px-4 py-3">{i.invoice_date}</td><td className="px-4 py-3 text-right">{formatAmount(i.total_amount)}</td><td className="px-4 py-3 text-right text-green-600">{formatAmount(i.amount_paid)}</td><td className="px-4 py-3 text-right text-red-600">{i.amount_due > 0 ? formatAmount(i.amount_due) : '-'}</td><td className="px-4 py-3 text-center"><span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">{i.status}</span></td></tr>))}</tbody>
+                <tbody>
+                  {salesItems.length === 0 ? (
+                    <tr><td colSpan={6} className="px-4 py-6 text-center text-neutral-500">No rows to display for selected range.</td></tr>
+                  ) : salesItems.map((i, idx) => (<tr key={idx} className="border-b border-neutral-100"><td className="px-4 py-3">{i.invoice_number}</td><td className="px-4 py-3">{i.invoice_date}</td><td className="px-4 py-3 text-right">{formatAmount(i.total_amount)}</td><td className="px-4 py-3 text-right text-green-600">{formatAmount(i.amount_paid)}</td><td className="px-4 py-3 text-right text-red-600">{i.amount_due > 0 ? formatAmount(i.amount_due) : '-'}</td><td className="px-4 py-3 text-center"><span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">{i.status}</span></td></tr>))}
+                </tbody>
               </table></div>
             </div>
           </div>
@@ -206,6 +344,11 @@ const ReportsPage = () => {
         {/* GST Report Tab */}
         {!loading && activeTab === 'gst' && (
           <div className="space-y-6">
+            {!gstData && !gstr3bData && (
+              <div className="hms-card px-5 py-4 text-sm text-neutral-600">
+                GST report data is unavailable for the selected range. If data exists in invoices/GRNs, expand the date range or check access permissions.
+              </div>
+            )}
             {gstData && (
               <div className="hms-card p-6">
                 <h3 className="mb-4 text-sm font-bold text-neutral-700">GSTR-1 Summary (Output Tax)</h3>
@@ -232,45 +375,53 @@ const ReportsPage = () => {
         )}
 
         {/* P&L Tab */}
-        {!loading && activeTab === 'pl' && plData && (
+        {!loading && activeTab === 'pl' && (
           <div className="space-y-6">
-            <div className="hms-card p-6">
-              <h3 className="mb-6 text-sm font-bold text-neutral-700">Profit & Loss Statement</h3>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between border-b pb-3">
-                  <span className="text-sm font-semibold text-neutral-600">Net Sales</span>
-                  <span className="text-lg font-bold text-green-600">{formatAmount(plData.net_sales)}</span>
-                </div>
-                <div className="flex items-center justify-between border-b pb-3">
-                  <span className="text-sm font-semibold text-neutral-600">Less: Purchases</span>
-                  <span className="text-lg font-bold text-red-600">({formatAmount(plData.purchases)})</span>
-                </div>
-                <div className="flex items-center justify-between border-b-2 border-primary/20 pb-3">
-                  <span className="text-sm font-bold text-primary">Gross Profit</span>
-                  <span className={`text-xl font-bold ${plData.gross_profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatAmount(plData.gross_profit)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-neutral-500">Gross Profit Margin</span>
-                  <span className="text-lg font-bold text-primary">{plData.gross_profit_margin_percent}%</span>
-                </div>
+            {!plData ? (
+              <div className="hms-card px-5 py-4 text-sm text-neutral-600">
+                Profit & Loss data is unavailable for the selected range. Expand the date range to include sales and purchases.
               </div>
-            </div>
+            ) : (
+              <>
+                <div className="hms-card p-6">
+                  <h3 className="mb-6 text-sm font-bold text-neutral-700">Profit & Loss Statement</h3>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between border-b pb-3">
+                      <span className="text-sm font-semibold text-neutral-600">Net Sales</span>
+                      <span className="text-lg font-bold text-green-600">{formatAmount(plData.net_sales)}</span>
+                    </div>
+                    <div className="flex items-center justify-between border-b pb-3">
+                      <span className="text-sm font-semibold text-neutral-600">Less: Purchases</span>
+                      <span className="text-lg font-bold text-red-600">({formatAmount(plData.purchases)})</span>
+                    </div>
+                    <div className="flex items-center justify-between border-b-2 border-primary/20 pb-3">
+                      <span className="text-sm font-bold text-primary">Gross Profit</span>
+                      <span className={`text-xl font-bold ${plData.gross_profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatAmount(plData.gross_profit)}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-neutral-500">Gross Profit Margin</span>
+                      <span className="text-lg font-bold text-primary">{plData.gross_profit_margin_percent}%</span>
+                    </div>
+                  </div>
+                </div>
 
-            {/* P&L Visual */}
-            <div className="hms-card p-6">
-              <h3 className="mb-4 text-sm font-bold text-neutral-700">Revenue vs Purchases</h3>
-              <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={[{ name: 'Sales', value: plData.net_sales }, { name: 'Purchases', value: plData.purchases }, { name: 'Profit', value: plData.gross_profit }]}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                  <YAxis tick={{ fontSize: 12 }} tickFormatter={v => `₹${(v/100/1000).toFixed(0)}K`} />
-                  <Tooltip formatter={(v: number) => formatAmount(v)} />
-                  <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                    {[0, 1, 2].map(idx => <Cell key={idx} fill={['#22c55e', '#ef4444', '#1E3A5F'][idx]} />)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+                {/* P&L Visual */}
+                <div className="hms-card p-6">
+                  <h3 className="mb-4 text-sm font-bold text-neutral-700">Revenue vs Purchases</h3>
+                  <ResponsiveContainer width="100%" height={250}>
+                    <BarChart data={[{ name: 'Sales', value: plData.net_sales }, { name: 'Purchases', value: plData.purchases }, { name: 'Profit', value: plData.gross_profit }]}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                      <YAxis tick={{ fontSize: 12 }} tickFormatter={v => `₹${(v/100/1000).toFixed(0)}K`} />
+                      <Tooltip formatter={(v: number) => formatAmount(v)} />
+                      <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                        {[0, 1, 2].map(idx => <Cell key={idx} fill={['#22c55e', '#ef4444', '#1E3A5F'][idx]} />)}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

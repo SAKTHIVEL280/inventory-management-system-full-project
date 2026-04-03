@@ -5,10 +5,12 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AppLayout } from '../components/AppLayout';
-import { salesApi, type SalesInvoice, type CreateInvoicePayload, type SalesLineItem, type SalesOrder, type SalesInvoiceItem } from '../api/sales';
+import { salesApi, type SalesInvoice, type CreateInvoicePayload, type SalesLineItem, type SalesInvoiceItem } from '../api/sales';
 import { apiClient } from '../api/client';
 import { toast } from 'sonner';
 import { confirmWithToast } from '../utils/toastHelper';
+import { addDaysToDateInputValue, todayLocalDateInputValue } from '../utils/date';
+import { emptyWhenZero } from '../utils/numberInput';
 
 interface ProductOption { id: string; name: string; product_code: string; selling_price: number; mrp: number; gst_rate: number; hsn_code: string; description?: string; }
 interface CustomerOption { id: string; company_name: string; customer_code: string; payment_terms_days?: number; }
@@ -29,18 +31,12 @@ const InvoicesPage = () => {
   const [selectedInvoice, setSelectedInvoice] = useState<SalesInvoice | null>(null);
   const [selectedInvoiceItems, setSelectedInvoiceItems] = useState<SalesInvoiceItem[]>([]);
   const [showInvoiceDetail, setShowInvoiceDetail] = useState(false);
-  const [salesOrders, setSalesOrders] = useState<SalesOrder[]>([]);
-  const [loadingSOs, setLoadingSOs] = useState(false);
-  const [showSoDropdown, setShowSoDropdown] = useState(false);
 
   const [customerId, setCustomerId] = useState('');
-  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split('T')[0]);
+  const [invoiceDate, setInvoiceDate] = useState(todayLocalDateInputValue());
   const [dueDate, setDueDate] = useState('');
   const [notes, setNotes] = useState('');
   const [items, setItems] = useState<SalesLineItem[]>([]);
-  const [soNumberSearch, setSoNumberSearch] = useState('');
-  const [isSearchingSO, setIsSearchingSO] = useState(false);
-  const [soId, setSoId] = useState<string | undefined>(undefined);
 
   const fetchInvoices = async () => {
     try { setLoading(true); const res = await salesApi.listInvoices(statusFilter || undefined); setInvoices(res.data.items || []); } catch { setError('Failed to load'); } finally { setLoading(false); }
@@ -49,27 +45,11 @@ const InvoicesPage = () => {
     try { const [c, p] = await Promise.all([apiClient.get('/api/v1/customers', { params: { page_size: 100 } }), apiClient.get('/api/v1/products', { params: { page_size: 100 } })]); setCustomers(c.data.items || []); setProducts(p.data.items || []); } catch { /* */ }
   };
 
-  const fetchSalesOrdersForInvoice = async () => {
-    try {
-      setLoadingSOs(true);
-      const res = await salesApi.listSalesOrders(undefined, 1, 500);
-      setSalesOrders(res.data.items || []);
-    } catch {
-      setSalesOrders([]);
-    } finally {
-      setLoadingSOs(false);
-    }
-  };
-
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchInvoices should run when statusFilter changes
   useEffect(() => { fetchInvoices(); }, [statusFilter]);
   useEffect(() => { fetchMasterData(); }, []);
-  useEffect(() => {
-    if (showForm && !editingId && salesOrders.length === 0) {
-      fetchSalesOrdersForInvoice();
-    }
-  }, [showForm, editingId, salesOrders.length]);
 
-  const resetForm = () => { setCustomerId(''); setInvoiceDate(new Date().toISOString().split('T')[0]); setDueDate(''); setNotes(''); setItems([]); setEditingId(null); setError(''); setSoNumberSearch(''); setSoId(undefined); };
+  const resetForm = () => { setCustomerId(''); setInvoiceDate(todayLocalDateInputValue()); setDueDate(''); setNotes(''); setItems([]); setEditingId(null); setError(''); };
   const addItem = () => {
     setItems([
       ...items,
@@ -99,9 +79,7 @@ const InvoicesPage = () => {
     if (newCustomerId) {
       const cust = customers.find(c => c.id === newCustomerId);
       if (cust?.payment_terms_days && invoiceDate) {
-        const baseDate = new Date(invoiceDate);
-        baseDate.setDate(baseDate.getDate() + cust.payment_terms_days);
-        setDueDate(baseDate.toISOString().split('T')[0]);
+        setDueDate(addDaysToDateInputValue(invoiceDate, cust.payment_terms_days));
       }
     }
   };
@@ -121,6 +99,20 @@ const InvoicesPage = () => {
     return s.charAt(0).toUpperCase() + s.slice(1);
   };
   const productById = (id: string) => products.find(p => p.id === id);
+
+  const handleDateFromChange = (value: string) => {
+    setDateFrom(value);
+    if (dateTo && value && value > dateTo) {
+      setDateTo(value);
+    }
+  };
+
+  const handleDateToChange = (value: string) => {
+    setDateTo(value);
+    if (dateFrom && value && value < dateFrom) {
+      setDateFrom(value);
+    }
+  };
 
   const handleSubmit = async () => {
     if (!customerId || items.length === 0) { setError('Select customer & add items'); return; }
@@ -190,34 +182,6 @@ const InvoicesPage = () => {
     }
   };
 
-  const handleSelectSO = async (so: SalesOrder) => {
-    setIsSearchingSO(true); setError('');
-    try {
-      const { data } = await salesApi.getSalesOrder(so.id);
-      const selectedSO = data.sales_order;
-      if (selectedSO.status !== 'confirmed' && selectedSO.status !== 'fulfilled' && selectedSO.status !== 'partial') {
-        setError(`Cannot invoice SO in '${selectedSO.status}' status. Only confirmed, partial, or fulfilled.`);
-        return;
-      }
-      setCustomerId(selectedSO.customer_id);
-      setSoId(selectedSO.id);
-      setSoNumberSearch(selectedSO.so_number);
-      setShowSoDropdown(false);
-      setItems(data.items.map((i: any) => ({
-        product_id: i.product_id,
-        quantity: i.quantity,
-        unit_price: i.unit_price,
-        discount_percent: i.discount_percent,
-        gst_rate: i.gst_rate,
-      })));
-      toast.success('Sales order fetched successfully');
-    } catch {
-      setError('Sales order not found or error fetching');
-    } finally {
-      setIsSearchingSO(false);
-    }
-  };
-
   const customerNameById = (customerId: string) => {
     return customers.find((c) => c.id === customerId)?.company_name || 'Unknown customer';
   };
@@ -239,26 +203,6 @@ const InvoicesPage = () => {
     const matchesTo = !dateTo || inv.invoice_date <= dateTo;
     return matchesSearch && matchesFrom && matchesTo;
   });
-
-  const soQuery = soNumberSearch.trim().toLowerCase();
-  const soSuggestions = soQuery
-    ? salesOrders
-        .filter((so) => so.status === 'confirmed' || so.status === 'partial' || so.status === 'fulfilled')
-        .filter((so) => {
-          const haystack = [
-            so.so_number,
-            customerNameById(so.customer_id),
-            so.order_date || '',
-            so.expected_delivery_date || '',
-            so.status,
-            String((so.total_amount / 100).toFixed(2)),
-          ]
-            .join(' ')
-            .toLowerCase();
-          return haystack.includes(soQuery);
-        })
-        .slice(0, 12)
-    : [];
 
   const sc: Record<string, string> = { draft: 'bg-gray-100 text-gray-700', issued: 'bg-blue-100 text-blue-700', partial_paid: 'bg-amber-100 text-amber-700', paid: 'bg-green-100 text-green-700', cancelled: 'bg-red-100 text-red-700' };
 
@@ -283,7 +227,8 @@ const InvoicesPage = () => {
                 type="date"
                 className="bg-transparent text-sm outline-none"
                 value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
+                max={dateTo || undefined}
+                onChange={(e) => handleDateFromChange(e.target.value)}
                 title="Invoice date from"
               />
             </div>
@@ -293,7 +238,8 @@ const InvoicesPage = () => {
                 type="date"
                 className="bg-transparent text-sm outline-none"
                 value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
+                min={dateFrom || undefined}
+                onChange={(e) => handleDateToChange(e.target.value)}
                 title="Invoice date to"
               />
             </div>
@@ -423,14 +369,14 @@ const InvoicesPage = () => {
                             <input type="number" min="0.01" step="0.01" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={item.quantity} onChange={e => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} />
                           </td>
                           <td className="px-3 py-2">
-                            <input type="number" min="0" step="0.01" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={item.free_quantity || 0} onChange={e => updateItem(idx, 'free_quantity', parseFloat(e.target.value) || 0)} />
+                            <input type="number" min="0" step="0.01" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={emptyWhenZero(item.free_quantity)} onChange={e => updateItem(idx, 'free_quantity', parseFloat(e.target.value) || 0)} />
                           </td>
                           {/* SAL-020: MRP auto-fills from Product Master */}
                           <td className="px-3 py-2">
-                            <input type="number" min="0" step="0.01" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={paiseToRupees(item.unit_price)} onChange={e => updateItem(idx, 'unit_price', rupeesToPaise(e.target.value))} />
+                            <input type="number" min="0" step="0.01" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={item.unit_price ? paiseToRupees(item.unit_price) : ''} onChange={e => updateItem(idx, 'unit_price', rupeesToPaise(e.target.value))} />
                           </td>
                           <td className="px-3 py-2">
-                            <input type="number" min="0" max="100" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={item.discount_percent || 0} onChange={e => updateItem(idx, 'discount_percent', parseFloat(e.target.value) || 0)} />
+                            <input type="number" min="0" max="100" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={emptyWhenZero(item.discount_percent)} onChange={e => updateItem(idx, 'discount_percent', parseFloat(e.target.value) || 0)} />
                           </td>
                           {/* SAL-022/023: GST auto-fills from Product Master */}
                           <td className="px-3 py-2">
@@ -497,12 +443,12 @@ const InvoicesPage = () => {
                         setNotes(selectedInvoice.notes || '');
                         setItems(selectedInvoiceItems.map(i => ({
                           product_id: i.product_id,
-                          order_unit: (i as any).order_unit || '',
-                          batch_no: (i as any).batch_no || '',
-                          manufacture_date: (i as any).manufacture_date || '',
-                          expiry_date: (i as any).expiry_date || '',
+                          order_unit: i.order_unit || '',
+                          batch_no: i.batch_no || '',
+                          manufacture_date: i.manufacture_date || '',
+                          expiry_date: i.expiry_date || '',
                           quantity: i.quantity,
-                          free_quantity: (i as any).free_quantity || 0,
+                          free_quantity: i.free_quantity || 0,
                           unit_price: i.unit_price,
                           discount_percent: i.discount_percent || 0,
                           gst_rate: i.gst_rate,

@@ -103,6 +103,7 @@ export interface GoodsReceiptNote {
   id: string;
   grn_number: string;
   purchase_order_id?: string;
+  po_number?: string;
   supplier_id: string;
   supplier_invoice_number?: string;
   supplier_invoice_date?: string;

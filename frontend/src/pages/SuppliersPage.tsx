@@ -6,6 +6,7 @@ import { suppliersApi } from '../api/suppliers';
 import { Supplier } from '../types';
 import { AppLayout } from '../components/AppLayout';
 import { PageEmpty, PageError, PageLoading } from '../components/PageState';
+import { getApiDetail, getApiDetailMessage } from '../utils/apiError';
 
 const GSTIN_REGEX = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/i;
 
@@ -98,6 +99,7 @@ const toSupplierCodePreview = (businessType: 'domestic' | 'international', state
 const SuppliersPage = () => {
   const queryClient = useQueryClient();
   const [formError, setFormError] = useState('');
+  const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Supplier | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
@@ -136,15 +138,8 @@ const SuppliersPage = () => {
       resetForm();
     },
     onError: (error: unknown) => {
-      const axiosErr = error as any;
-      const detail = axiosErr.response?.data?.detail;
-      if (typeof detail === 'string') {
-        setFormError(detail);
-      } else if (Array.isArray(detail)) {
-        setFormError(detail.map((d: any) => d.msg).join(', '));
-      } else {
-        setFormError('Failed to create supplier');
-      }
+      const detail = getApiDetail(error);
+      setFormError(getApiDetailMessage(detail, 'Failed to create supplier'));
     },
   });
 
@@ -155,15 +150,8 @@ const SuppliersPage = () => {
       resetForm();
     },
     onError: (error: unknown) => {
-      const axiosErr = error as any;
-      const detail = axiosErr.response?.data?.detail;
-      if (typeof detail === 'string') {
-        setFormError(detail);
-      } else if (Array.isArray(detail)) {
-        setFormError(detail.map((d: any) => d.msg).join(', '));
-      } else {
-        setFormError('Failed to update supplier');
-      }
+      const detail = getApiDetail(error);
+      setFormError(getApiDetailMessage(detail, 'Failed to update supplier'));
     },
   });
 
@@ -175,17 +163,21 @@ const SuppliersPage = () => {
       setFormError('');
     },
     onError: (error: unknown) => {
-      const axiosErr = error as any;
-      const detail = axiosErr.response?.data?.detail;
+      const detail = getApiDetail(error);
       if (typeof detail === 'string') {
         setFormError(detail);
-      } else if (detail?.message) {
+      } else if (detail && typeof detail === 'object' && !Array.isArray(detail) && typeof detail.message === 'string') {
         // Handle backend error objects (e.g., outstanding balance errors)
         setFormError(detail.message);
-      } else if (detail?.error_code === 'OUTSTANDING_EXISTS') {
+      } else if (detail && typeof detail === 'object' && !Array.isArray(detail) && detail.error_code === 'OUTSTANDING_EXISTS') {
         setFormError('Cannot delete supplier: There are outstanding payments. Please clear all dues before deleting.');
       } else if (Array.isArray(detail)) {
-        setFormError(detail.map((d: any) => d.msg).join(', '));
+        setFormError(
+          detail
+            .map((d) => d.msg || d.message)
+            .filter((m): m is string => Boolean(m && m.trim()))
+            .join(', ')
+        );
       } else {
         setFormError('Failed to delete supplier');
       }
@@ -195,6 +187,7 @@ const SuppliersPage = () => {
 
   const resetForm = () => {
     setEditingItem(null);
+    setIsFormOpen(false);
     setFormError('');
     reset({
       company_name: '',
@@ -220,6 +213,7 @@ const SuppliersPage = () => {
 
   const startEdit = (item: Supplier) => {
     setEditingItem(item);
+    setIsFormOpen(true);
     setFormError('');
     setValue('company_name', item.company_name);
     setValue('company_director_name', item.company_director_name ?? '');
@@ -301,139 +295,195 @@ const SuppliersPage = () => {
 
   return (
     <AppLayout title="Supplier Master">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="hms-card lg:col-span-1 p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-display text-lg font-bold text-neutral-900">
-              {editingItem ? 'Modify/Change Supplier' : 'New Supplier'}
-            </h2>
-            {editingItem && (
-              <button type="button" onClick={resetForm} className="text-sm text-neutral-500 hover:text-neutral-700">Cancel</button>
-            )}
+      <div className="space-y-6">
+        <div className="hms-card overflow-hidden">
+          <div className="border-b border-neutral-200 px-5 py-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="font-display text-lg font-bold text-neutral-900">
+                  {editingItem ? 'Modify/Change Supplier' : 'New Supplier'}
+                </h2>
+                <p className="text-xs text-neutral-500">Create or modify supplier master records in a collapsible form.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {!isFormOpen && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingItem(null);
+                      setFormError('');
+                      reset({
+                        company_name: '',
+                        company_director_name: '',
+                        company_director_contact: '',
+                        phone: '',
+                        contact_person: '',
+                        email: '',
+                        gstin_status: 'non-registered',
+                        gstin: '',
+                        business_type: 'domestic',
+                        address_line1: '',
+                        address_line2: '',
+                        city: '',
+                        state: '',
+                        state_code: '',
+                        billing_country: 'India',
+                        pincode: '',
+                        place_of_supply: '',
+                        payment_terms_days: 30,
+                      });
+                      setIsFormOpen(true);
+                    }}
+                    className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary/90"
+                  >
+                    + New Supplier
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsFormOpen((prev) => !prev)}
+                  className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-50"
+                >
+                  <span className="material-icons text-base" aria-hidden="true">{isFormOpen ? 'expand_less' : 'expand_more'}</span>
+                  {isFormOpen ? 'Hide Form' : 'Show Form'}
+                </button>
+              </div>
+            </div>
           </div>
-          <form className="space-y-3" onSubmit={handleSubmit(onSubmit)}>
-            <div>
-              <label htmlFor="supplier_company_name" className="hms-label">Company name</label>
-              <input id="supplier_company_name" className="hms-input" placeholder="Company name" {...register('company_name')} />
-            </div>
-            <div>
-              <label htmlFor="supplier_business_type" className="hms-label">Business Type</label>
-              <select id="supplier_business_type" className="hms-input" {...register('business_type')}>
-                <option value="domestic">Domestic</option>
-                <option value="international">International</option>
-              </select>
-            </div>
-            <div>
-              <label htmlFor="supplier_code_preview" className="hms-label">Supplier Code (Auto)</label>
-              <input id="supplier_code_preview" className="hms-input bg-neutral-100" value={supplierCodePreview} readOnly />
-              <p className="mt-1 text-xs text-neutral-500">Prefix auto-fills from selected State/Country; running number is assigned on save.</p>
-            </div>
-            <div>
-              <label htmlFor="supplier_director_name" className="hms-label">Company Director Name</label>
-              <input id="supplier_director_name" className="hms-input" placeholder="e.g. John Doe" {...register('company_director_name')} />
-            </div>
-            <div>
-              <label htmlFor="supplier_director_contact" className="hms-label">Company Director Contact</label>
-              <input id="supplier_director_contact" className="hms-input" placeholder="e.g. +91-9876543210" {...register('company_director_contact')} />
-            </div>
-            <div>
-              <label htmlFor="supplier_contact" className="hms-label">Contact person</label>
-              <input id="supplier_contact" className="hms-input" placeholder="Contact person" {...register('contact_person')} />
-            </div>
-            <div>
-              <label htmlFor="supplier_phone" className="hms-label">Phone</label>
-              <input id="supplier_phone" className="hms-input" placeholder="Phone" autoComplete="tel" {...register('phone')} />
-            </div>
-            <div>
-              <label htmlFor="supplier_email" className="hms-label">Email</label>
-              <input id="supplier_email" className="hms-input" placeholder="Email" autoComplete="email" {...register('email')} />
-            </div>
-            <div>
-              <label htmlFor="supplier_gstin_status" className="hms-label">GSTIN Status</label>
-              <div className="flex gap-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="radio" value="registered" {...register('gstin_status')} className="w-4 h-4" />
-                  <span className="text-sm">Registered</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="radio" value="non-registered" {...register('gstin_status')} className="w-4 h-4" />
-                  <span className="text-sm">Non-Registered</span>
-                </label>
-              </div>
-            </div>
-            <div>
-              <label htmlFor="supplier_gstin" className="hms-label">{gstinStatus === 'registered' ? 'GSTIN *' : 'GSTIN'}</label>
-              {gstinStatus === 'registered' ? (
-                <input id="supplier_gstin" className="hms-input" placeholder="GSTIN" {...register('gstin')} />
-              ) : (
-                <div className="hms-input bg-neutral-100 text-neutral-500 flex items-center">NA</div>
-              )}
-            </div>
 
-            <div className="pt-2 border-t border-neutral-100">
-              <p className="text-xs font-bold uppercase tracking-wider text-neutral-500 mb-2">Billing Address</p>
+          {isFormOpen && (
+            <div className="p-5">
+              {editingItem && (
+                <div className="mb-4 flex items-center justify-between border-b border-neutral-200 pb-4">
+                  <h3 className="text-sm font-semibold text-neutral-900">Modifying/Changing: {editingItem.company_name}</h3>
+                  <button type="button" onClick={resetForm} className="text-sm text-neutral-500 hover:text-neutral-700">Cancel</button>
+                </div>
+              )}
+              <form className="space-y-3" onSubmit={handleSubmit(onSubmit)}>
+                <div>
+                  <label htmlFor="supplier_company_name" className="hms-label">Company name</label>
+                  <input id="supplier_company_name" className="hms-input" placeholder="Company name" {...register('company_name')} />
+                </div>
+                <div>
+                  <label htmlFor="supplier_business_type" className="hms-label">Business Type</label>
+                  <select id="supplier_business_type" className="hms-input" {...register('business_type')}>
+                    <option value="domestic">Domestic</option>
+                    <option value="international">International</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="supplier_code_preview" className="hms-label">Supplier Code (Auto)</label>
+                  <input id="supplier_code_preview" className="hms-input bg-neutral-100" value={supplierCodePreview} readOnly />
+                  <p className="mt-1 text-xs text-neutral-500">Prefix auto-fills from selected State/Country; running number is assigned on save.</p>
+                </div>
+                <div>
+                  <label htmlFor="supplier_director_name" className="hms-label">Company Director Name</label>
+                  <input id="supplier_director_name" className="hms-input" placeholder="e.g. John Doe" {...register('company_director_name')} />
+                </div>
+                <div>
+                  <label htmlFor="supplier_director_contact" className="hms-label">Company Director Contact</label>
+                  <input id="supplier_director_contact" className="hms-input" placeholder="e.g. +91-9876543210" {...register('company_director_contact')} />
+                </div>
+                <div>
+                  <label htmlFor="supplier_contact" className="hms-label">Contact person</label>
+                  <input id="supplier_contact" className="hms-input" placeholder="Contact person" {...register('contact_person')} />
+                </div>
+                <div>
+                  <label htmlFor="supplier_phone" className="hms-label">Phone</label>
+                  <input id="supplier_phone" className="hms-input" placeholder="Phone" autoComplete="tel" {...register('phone')} />
+                </div>
+                <div>
+                  <label htmlFor="supplier_email" className="hms-label">Email</label>
+                  <input id="supplier_email" className="hms-input" placeholder="Email" autoComplete="email" {...register('email')} />
+                </div>
+                <div>
+                  <label htmlFor="supplier_gstin_status" className="hms-label">GSTIN Status</label>
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" value="registered" {...register('gstin_status')} className="w-4 h-4" />
+                      <span className="text-sm">Registered</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" value="non-registered" {...register('gstin_status')} className="w-4 h-4" />
+                      <span className="text-sm">Non-Registered</span>
+                    </label>
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="supplier_gstin" className="hms-label">{gstinStatus === 'registered' ? 'GSTIN *' : 'GSTIN'}</label>
+                  {gstinStatus === 'registered' ? (
+                    <input id="supplier_gstin" className="hms-input" placeholder="GSTIN" {...register('gstin')} />
+                  ) : (
+                    <div className="hms-input bg-neutral-100 text-neutral-500 flex items-center">NA</div>
+                  )}
+                </div>
+
+                <div className="pt-2 border-t border-neutral-100">
+                  <p className="text-xs font-bold uppercase tracking-wider text-neutral-500 mb-2">Billing Address</p>
+                </div>
+                <div>
+                  <label htmlFor="supplier_address_line1" className="hms-label">Address</label>
+                  <input id="supplier_address_line1" className="hms-input" placeholder="Address line 1" {...register('address_line1')} />
+                </div>
+                <div>
+                  <label htmlFor="supplier_address_line2" className="hms-label">Address line 2</label>
+                  <input id="supplier_address_line2" className="hms-input" placeholder="Address line 2" {...register('address_line2')} />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label htmlFor="supplier_city" className="hms-label">City</label>
+                    <input id="supplier_city" className="hms-input" placeholder="City" {...register('city')} />
+                  </div>
+                  <div>
+                    <label htmlFor="supplier_state" className="hms-label">State</label>
+                    <select id="supplier_state" className="hms-input" {...register('state')}>
+                      <option value="">Select state</option>
+                      {STATE_OPTIONS.map(({ state: stateValue, code }) => (
+                        <option key={stateValue} value={stateValue}>
+                          {stateValue.replace(/\b\w/g, (char) => char.toUpperCase())} ({code})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label htmlFor="supplier_state_code" className="hms-label">State Code</label>
+                    <input id="supplier_state_code" className="hms-input bg-neutral-100" placeholder="Auto" readOnly {...register('state_code')} />
+                  </div>
+                  <div>
+                    <label htmlFor="supplier_pincode" className="hms-label">Pincode</label>
+                    <input id="supplier_pincode" className="hms-input" placeholder="Pincode" {...register('pincode')} />
+                  </div>
+                </div>
+                <div>
+                  <label htmlFor="supplier_country" className="hms-label">Country</label>
+                  <select id="supplier_country" className="hms-input" {...register('billing_country')}>
+                    {COUNTRIES.map((countryValue) => (
+                      <option key={countryValue} value={countryValue}>{countryValue}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="supplier_pos" className="hms-label">Place of Supply</label>
+                  <input id="supplier_pos" className="hms-input" placeholder="e.g. Tamil Nadu" {...register('place_of_supply')} />
+                </div>
+                <div>
+                  <label htmlFor="supplier_payment_terms" className="hms-label">Payment Terms (Days)</label>
+                  <input id="supplier_payment_terms" type="number" min="0" className="hms-input" placeholder="e.g. 30" {...register('payment_terms_days')} />
+                </div>
+                {formError && <p className="text-sm text-danger" role="alert" aria-live="assertive">{formError}</p>}
+                {createMutation.isSuccess && <p className="text-sm text-success" role="status" aria-live="polite">Supplier created successfully</p>}
+                {updateMutation.isSuccess && <p className="text-sm text-success" role="status" aria-live="polite">Supplier updated successfully</p>}
+                <button type="submit" disabled={isSaving} className="w-full rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-primary/20 transition hover:bg-primary/90 disabled:opacity-60">
+                  {isSaving ? 'Saving...' : editingItem ? 'Update Supplier' : 'Create Supplier'}
+                </button>
+              </form>
             </div>
-            <div>
-              <label htmlFor="supplier_address_line1" className="hms-label">Address</label>
-              <input id="supplier_address_line1" className="hms-input" placeholder="Address line 1" {...register('address_line1')} />
-            </div>
-            <div>
-              <label htmlFor="supplier_address_line2" className="hms-label">Address line 2</label>
-              <input id="supplier_address_line2" className="hms-input" placeholder="Address line 2" {...register('address_line2')} />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label htmlFor="supplier_city" className="hms-label">City</label>
-                <input id="supplier_city" className="hms-input" placeholder="City" {...register('city')} />
-              </div>
-              <div>
-                <label htmlFor="supplier_state" className="hms-label">State</label>
-                <select id="supplier_state" className="hms-input" {...register('state')}>
-                  <option value="">Select state</option>
-                  {STATE_OPTIONS.map(({ state: stateValue, code }) => (
-                    <option key={stateValue} value={stateValue}>
-                      {stateValue.replace(/\b\w/g, (char) => char.toUpperCase())} ({code})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label htmlFor="supplier_state_code" className="hms-label">State Code</label>
-                <input id="supplier_state_code" className="hms-input bg-neutral-100" placeholder="Auto" readOnly {...register('state_code')} />
-              </div>
-              <div>
-                <label htmlFor="supplier_pincode" className="hms-label">Pincode</label>
-                <input id="supplier_pincode" className="hms-input" placeholder="Pincode" {...register('pincode')} />
-              </div>
-            </div>
-            <div>
-              <label htmlFor="supplier_country" className="hms-label">Country</label>
-              <select id="supplier_country" className="hms-input" {...register('billing_country')}>
-                {COUNTRIES.map((countryValue) => (
-                  <option key={countryValue} value={countryValue}>{countryValue}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="supplier_pos" className="hms-label">Place of Supply</label>
-              <input id="supplier_pos" className="hms-input" placeholder="e.g. Tamil Nadu" {...register('place_of_supply')} />
-            </div>
-            <div>
-              <label htmlFor="supplier_payment_terms" className="hms-label">Payment Terms (Days)</label>
-              <input id="supplier_payment_terms" type="number" min="0" className="hms-input" placeholder="e.g. 30" {...register('payment_terms_days')} />
-            </div>
-            {formError && <p className="text-sm text-danger" role="alert" aria-live="assertive">{formError}</p>}
-            {createMutation.isSuccess && <p className="text-sm text-success" role="status" aria-live="polite">Supplier created successfully</p>}
-            {updateMutation.isSuccess && <p className="text-sm text-success" role="status" aria-live="polite">Supplier updated successfully</p>}
-            <button type="submit" disabled={isSaving} className="w-full rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-primary/20 transition hover:bg-primary/90 disabled:opacity-60">
-              {isSaving ? 'Saving...' : editingItem ? 'Update Supplier' : 'Create Supplier'}
-            </button>
-          </form>
+          )}
         </div>
 
-        <div className="hms-card lg:col-span-2 overflow-hidden">
+        <div className="hms-card overflow-hidden">
           <div className="border-b border-neutral-200 px-5 py-4">
             <h2 className="font-display text-lg font-bold text-neutral-900">Suppliers</h2>
           </div>

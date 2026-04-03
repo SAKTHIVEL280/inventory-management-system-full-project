@@ -11,6 +11,8 @@ import { PageEmpty, PageError, PageLoading } from '../components/PageState';
 import type { AxiosError } from 'axios';
 import { toast } from 'sonner';
 import { confirmToast } from '../utils/toast';
+import { todayLocalDateInputValue } from '../utils/date';
+import { emptyWhenZero } from '../utils/numberInput';
 
 const poSchema = z.object({
   supplier_id: z.string().min(1, 'Supplier required'),
@@ -91,7 +93,7 @@ const PurchaseOrderPage = () => {
   const form = useForm<POForm>({
     defaultValues: {
       supplier_id: '',
-      order_date: new Date().toISOString().split('T')[0],
+      order_date: todayLocalDateInputValue(),
       expected_delivery_date: '',
       currency_code: 'INR',
       exchange_rate: 1.0,
@@ -354,6 +356,20 @@ const PurchaseOrderPage = () => {
     return supplier ? supplier.company_name : `Invalid supplier (${supplierId.slice(0, 8)}...)`;
   };
 
+  const handleDateFromChange = (value: string) => {
+    setDateFrom(value);
+    if (dateTo && value && value > dateTo) {
+      setDateTo(value);
+    }
+  };
+
+  const handleDateToChange = (value: string) => {
+    setDateTo(value);
+    if (dateFrom && value && value < dateFrom) {
+      setDateFrom(value);
+    }
+  };
+
   const filteredPOs = pos.filter((po) => {
     const term = searchQuery.trim().toLowerCase();
     const supplierName = supplierNameById(po.supplier_id).toLowerCase();
@@ -509,7 +525,7 @@ const PurchaseOrderPage = () => {
                     <input
                       type="number"
                       className="hms-input"
-                      value={newItem.discount_percent || 0}
+                      value={emptyWhenZero(newItem.discount_percent)}
                       onChange={(e) => setNewItem({ ...newItem, discount_percent: parseFloat(e.target.value) || 0 })}
                       min="0"
                       max="100"
@@ -684,7 +700,8 @@ const PurchaseOrderPage = () => {
                   type="date"
                   className="bg-transparent text-sm outline-none"
                   value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
+                  max={dateTo || undefined}
+                  onChange={(e) => handleDateFromChange(e.target.value)}
                   title="Order date from"
                 />
               </div>
@@ -694,7 +711,8 @@ const PurchaseOrderPage = () => {
                   type="date"
                   className="bg-transparent text-sm outline-none"
                   value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
+                  min={dateFrom || undefined}
+                  onChange={(e) => handleDateToChange(e.target.value)}
                   title="Order date to"
                 />
               </div>

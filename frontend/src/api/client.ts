@@ -1,11 +1,11 @@
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosError, AxiosInstance } from 'axios';
 import { useAuthStore } from '../store/auth';
 import { toast } from 'sonner';
 
 const defaultApiBaseUrl =
   typeof window !== 'undefined'
-    ? `${window.location.protocol}//${window.location.hostname}:8000`
-    : 'http://localhost:8000';
+    ? `${window.location.protocol}//${window.location.hostname}:8001`
+    : 'http://localhost:8001';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || defaultApiBaseUrl;
 
@@ -23,13 +23,19 @@ type ApiErrorDetail =
 
 const errorToastHistory = new Map<string, number>();
 
-const normalizeApiErrorMessage = (error: any): string => {
-  if (!error?.response) {
+interface ApiErrorResponse {
+  detail?: ApiErrorDetail;
+}
+
+const normalizeApiErrorMessage = (error: unknown): string => {
+  const axiosError = error as AxiosError<ApiErrorResponse>;
+
+  if (!axiosError?.response) {
     return 'Cannot reach server. Check internet/CORS/backend status and host (localhost vs 127.0.0.1).';
   }
 
-  const status = error.response.status as number;
-  const detail = error.response?.data?.detail as ApiErrorDetail;
+  const status = axiosError.response.status;
+  const detail = axiosError.response.data?.detail;
   const fallbackByStatus: Record<number, string> = {
     400: 'Invalid input. Please check the entered values.',
     401: 'Session expired. Please login again.',

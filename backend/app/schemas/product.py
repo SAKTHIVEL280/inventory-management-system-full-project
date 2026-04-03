@@ -2,7 +2,7 @@
 from typing import Optional, List
 from uuid import UUID
 from decimal import Decimal
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 
 class ProductCategoryCreateRequest(BaseModel):
@@ -16,8 +16,7 @@ class ProductCategoryResponse(BaseModel):
     description: Optional[str] = None
     is_active: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UnitOfMeasureResponse(BaseModel):
@@ -26,8 +25,7 @@ class UnitOfMeasureResponse(BaseModel):
     abbreviation: str
     is_active: bool
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ProductBase(BaseModel):
@@ -72,6 +70,7 @@ class ProductBase(BaseModel):
             raise ValueError("hsn_code must be a 6-8 digit numeric string")
         return value
 
+class ProductCreateRequest(ProductBase):
     @model_validator(mode="after")
     def validate_price_hierarchy(self):
         if self.purchase_price >= self.selling_price:
@@ -81,19 +80,20 @@ class ProductBase(BaseModel):
         return self
 
 
-class ProductCreateRequest(ProductBase):
-    pass
-
-
 class ProductUpdateRequest(ProductBase):
-    pass
+    @model_validator(mode="after")
+    def validate_price_hierarchy(self):
+        if self.purchase_price >= self.selling_price:
+            raise ValueError("Purchase price must be less than Selling Price")
+        if self.selling_price >= self.mrp:
+            raise ValueError("Selling Price must be less than MRP")
+        return self
 
 
 class ProductResponse(ProductBase):
     id: UUID
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ProductWithStockResponse(ProductResponse):
@@ -128,5 +128,4 @@ class StockLedgerResponse(BaseModel):
     transaction_date: str
     notes: Optional[str] = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

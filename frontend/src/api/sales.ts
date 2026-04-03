@@ -194,11 +194,28 @@ export interface SalesInvoiceItem {
   invoice_id: string;
   product_id: string;
   description?: string;
+  order_unit?: string;
+  batch_no?: string;
+  manufacture_date?: string;
+  expiry_date?: string;
+  free_quantity?: number;
+  quantity: number;
+  unit_price: number;
+  mrp?: number;
+  discount_percent?: number;
+  gst_rate: number;
+  total_amount: number;
+}
+
+export interface SalesOrderItemResponse {
+  id?: string;
+  product_id: string;
+  description?: string;
   quantity: number;
   unit_price: number;
   discount_percent?: number;
   gst_rate: number;
-  total_amount: number;
+  total_amount?: number;
 }
 
 export interface InvoiceDetailResponse {
@@ -290,11 +307,11 @@ class SalesApiClient {
   }
 
   async getSalesOrder(id: string) {
-    return apiClient.get<{ sales_order: SalesOrder; items: any[] }>(`/api/v1/sales-orders/${id}`);
+    return apiClient.get<{ sales_order: SalesOrder; items: SalesOrderItemResponse[] }>(`/api/v1/sales-orders/${id}`);
   }
 
   async searchSalesOrderByNumber(soNumber: string) {
-    return apiClient.get<{ sales_order: SalesOrder; items: any[] }>(`/api/v1/sales-orders/search/${soNumber}`);
+    return apiClient.get<{ sales_order: SalesOrder; items: SalesOrderItemResponse[] }>(`/api/v1/sales-orders/search/${soNumber}`);
   }
 
   async createSalesOrder(payload: CreateSalesOrderPayload) {

@@ -12,6 +12,7 @@ Production-ready with fixes for:
 from datetime import date, datetime
 from uuid import UUID
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -194,7 +195,10 @@ async def get_quotation(
     _auto_expire_quotation(q)
     db.commit()
     items = db.query(QuotationItem).filter(QuotationItem.quotation_id == quotation_id).all()
-    return {"quotation": q, "items": items}
+    return {
+        "quotation": QuotationResponse.model_validate(q).model_dump(mode="json"),
+        "items": [jsonable_encoder(item) for item in items],
+    }
 
 
 @router.put("/api/v1/quotations/{quotation_id}", response_model=QuotationResponse)

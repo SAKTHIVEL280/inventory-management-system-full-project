@@ -83,7 +83,7 @@ def _generate_supplier_code(db: Session, payload: SupplierCreateRequest | Suppli
     prefix = "SUPP-INT" if _is_international(payload) else f"SUPP-{_state_code_from_payload(payload)}"
     existing_codes = (
         db.query(Supplier.supplier_code)
-        .filter(Supplier.supplier_code.like(f"{prefix}-%"), Supplier.is_deleted == False)
+        .filter(Supplier.supplier_code.like(f"{prefix}-%"))
         .all()
     )
 

@@ -19,6 +19,8 @@ import { AppLayout } from '../components/AppLayout';
 import { salesApi, type Quotation, type CreateQuotationPayload, type SalesLineItem } from '../api/sales';
 import { apiClient } from '../api/client';
 import { toast } from 'sonner';
+import { dateInputValueAfterDays, todayLocalDateInputValue } from '../utils/date';
+import { emptyWhenZero } from '../utils/numberInput';
 
 interface ProductOption {
   id: string;
@@ -54,7 +56,7 @@ const QuotationsPage = () => {
 
   // Form state
   const [customerId, setCustomerId] = useState('');
-  const [quotationDate, setQuotationDate] = useState(new Date().toISOString().split('T')[0]);
+  const [quotationDate, setQuotationDate] = useState(todayLocalDateInputValue());
   const [validUntil, setValidUntil] = useState('');
   const [notes, setNotes] = useState('');
   const [items, setItems] = useState<SalesLineItem[]>([]);
@@ -86,12 +88,13 @@ const QuotationsPage = () => {
     }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchQuotations should run on status/archive filter changes
   useEffect(() => { fetchQuotations(); }, [statusFilter, archiveView]);
   useEffect(() => { fetchMasterData(); }, []);
 
   const resetForm = () => {
     setCustomerId('');
-    setQuotationDate(new Date().toISOString().split('T')[0]);
+    setQuotationDate(todayLocalDateInputValue());
     setValidUntil('');
     setNotes('');
     setItems([]);
@@ -159,7 +162,7 @@ const QuotationsPage = () => {
     }
     // SAL-006: Frontend validation for Valid Until
     if (validUntil) {
-      const today = new Date().toISOString().split('T')[0];
+      const today = todayLocalDateInputValue();
       if (validUntil <= today) {
         setError('Valid Until date must be a future date');
         return;
@@ -270,6 +273,20 @@ const QuotationsPage = () => {
   // Helper to get product info by ID
   const productById = (id: string) => products.find((p) => p.id === id);
 
+  const handleDateFromChange = (value: string) => {
+    setDateFrom(value);
+    if (dateTo && value && value > dateTo) {
+      setDateTo(value);
+    }
+  };
+
+  const handleDateToChange = (value: string) => {
+    setDateTo(value);
+    if (dateFrom && value && value < dateFrom) {
+      setDateFrom(value);
+    }
+  };
+
   const filteredQuotations = quotations.filter((q) => {
     const term = searchQuery.trim().toLowerCase();
     const customerName = customerNameById(q.customer_id).toLowerCase();
@@ -325,7 +342,8 @@ const QuotationsPage = () => {
                 type="date"
                 className="bg-transparent text-sm outline-none"
                 value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
+                max={dateTo || undefined}
+                onChange={(e) => handleDateFromChange(e.target.value)}
                 title="Quotation date from"
               />
             </div>
@@ -335,7 +353,8 @@ const QuotationsPage = () => {
                 type="date"
                 className="bg-transparent text-sm outline-none"
                 value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
+                min={dateFrom || undefined}
+                onChange={(e) => handleDateToChange(e.target.value)}
                 title="Quotation date to"
               />
             </div>
@@ -456,7 +475,7 @@ const QuotationsPage = () => {
                     type="date"
                     className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm"
                     value={validUntil}
-                    min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
+                    min={dateInputValueAfterDays(1)}
                     onChange={e => setValidUntil(e.target.value)}
                   />
                 </div>
@@ -500,8 +519,8 @@ const QuotationsPage = () => {
                             <td className="px-3 py-2 text-xs text-neutral-500">{prod?.description || prod?.name || '-'}</td>
                             <td className="px-3 py-2"><input type="number" min="0.01" step="0.01" className="w-full rounded border border-neutral-200 px-2 py-1.5 text-right text-sm" value={item.quantity} onChange={e => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} /></td>
                             {/* SAL-003: MRP column */}
-                            <td className="px-3 py-2"><input type="number" min="0" className="w-full rounded border border-neutral-200 px-2 py-1.5 text-right text-sm" value={item.unit_price} onChange={e => updateItem(idx, 'unit_price', parseInt(e.target.value) || 0)} /></td>
-                            <td className="px-3 py-2"><input type="number" min="0" max="100" className="w-full rounded border border-neutral-200 px-2 py-1.5 text-right text-sm" value={item.discount_percent || 0} onChange={e => updateItem(idx, 'discount_percent', parseFloat(e.target.value) || 0)} /></td>
+                            <td className="px-3 py-2"><input type="number" min="0" className="w-full rounded border border-neutral-200 px-2 py-1.5 text-right text-sm" value={item.unit_price || ''} onChange={e => updateItem(idx, 'unit_price', parseInt(e.target.value) || 0)} /></td>
+                            <td className="px-3 py-2"><input type="number" min="0" max="100" className="w-full rounded border border-neutral-200 px-2 py-1.5 text-right text-sm" value={emptyWhenZero(item.discount_percent)} onChange={e => updateItem(idx, 'discount_percent', parseFloat(e.target.value) || 0)} /></td>
                             <td className="px-3 py-2">
                               <select className="w-full rounded border border-neutral-200 px-2 py-1.5 text-sm" value={item.gst_rate} onChange={e => updateItem(idx, 'gst_rate', parseInt(e.target.value))}>
                                 <option value={0}>0%</option><option value={5}>5%</option><option value={12}>12%</option><option value={18}>18%</option><option value={28}>28%</option>

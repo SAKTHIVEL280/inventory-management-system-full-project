@@ -6,6 +6,7 @@ import { usersApi, deleteUser } from '../api/users';
 import { UserCreateRequest, UserUpdateRequest, UserManagement } from '../types';
 import { AppLayout } from '../components/AppLayout';
 import { PageEmpty, PageError, PageLoading } from '../components/PageState';
+import { getApiDetail, getApiDetailMessage } from '../utils/apiError';
 
 const schema = z.object({
   full_name: z.string().min(1, 'Name is required'),
@@ -50,15 +51,8 @@ const UsersPage = () => {
       resetForm();
     },
     onError: (error: unknown) => {
-      const axiosErr = error as any;
-      const detail = axiosErr.response?.data?.detail;
-      if (typeof detail === 'string') {
-        setFormError(detail);
-      } else if (Array.isArray(detail)) {
-        setFormError(detail.map((d: any) => d.msg).join(', '));
-      } else {
-        setFormError('Failed to create user');
-      }
+      const detail = getApiDetail(error);
+      setFormError(getApiDetailMessage(detail, 'Failed to create user'));
     },
   });
 
@@ -69,15 +63,8 @@ const UsersPage = () => {
       resetForm();
     },
     onError: (error: unknown) => {
-      const axiosErr = error as any;
-      const detail = axiosErr.response?.data?.detail;
-      if (typeof detail === 'string') {
-        setFormError(detail);
-      } else if (Array.isArray(detail)) {
-        setFormError(detail.map((d: any) => d.msg).join(', '));
-      } else {
-        setFormError('Failed to update user');
-      }
+      const detail = getApiDetail(error);
+      setFormError(getApiDetailMessage(detail, 'Failed to update user'));
     },
   });
 

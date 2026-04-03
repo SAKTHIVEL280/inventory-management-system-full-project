@@ -42,6 +42,10 @@ export interface PaymentAllocation {
   invoice_id?: string;
   purchase_grn_id?: string;
   allocated_amount: number;
+  invoice_number?: string;
+  grn_number?: string;
+  po_number?: string;
+  grn_total_amount?: number;
   created_at: string;
 }
 
@@ -61,7 +65,7 @@ export interface Payment {
   notes?: string;
   status: 'pending' | 'cleared' | 'bounced' | 'cancelled';
   created_at: string;
-  allocations?: any[];
+  allocations?: PaymentAllocation[];
 }
 
 export interface PaymentDetail {

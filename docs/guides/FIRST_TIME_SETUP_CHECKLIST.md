@@ -115,12 +115,12 @@ Open first PowerShell terminal:
 ```powershell
 cd backend
 .venv\Scripts\activate
-uvicorn app.main:app --reload
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8001
 ```
 
 **Wait for the message:**
 ```
-Uvicorn running on http://127.0.0.1:8000
+Uvicorn running on http://127.0.0.1:8001
 ```
 
 ## 7. Start Frontend Server
@@ -133,11 +133,11 @@ npm install
 npm run dev
 ```
 
-**Wait for the message showing a local URL** (usually http://localhost:5173)
+**Wait for the message showing a local URL** (usually http://localhost:3001)
 
 ## 8. Open in Browser and Login
 
-Go to the URL from step 7 (usually http://localhost:5173)
+Go to the URL from step 7 (usually http://localhost:3001)
 
 **Use these credentials:**
 - **Email:** admin@company.com
@@ -195,16 +195,16 @@ If you forgot your PostgreSQL password, you can reset it:
 - Look for POSTGRES_HOME or similar
 - Or reinstall PostgreSQL with a known password
 
-### [FAIL] Backend starts but says "Port 8000 already in use"
+### [FAIL] Backend starts but says "Port 8001 already in use"
 
-**Fix:** Kill whatever is using port 8000:
+**Fix:** Kill whatever is using port 8001:
 ```powershell
-netstat -ano | findstr :8000
+netstat -ano | findstr :8001
 # Then kill the process ID shown
 taskkill /PID XXXX /F
 ```
 
-Or just use a different port: `uvicorn app.main:app --reload --port 8001`
+Or just use a different port: `uvicorn app.main:app --reload --host 127.0.0.1 --port 8002`
 
 ### [FAIL] Frontend shows CORS errors or won't connect to backend
 
@@ -212,7 +212,7 @@ Or just use a different port: `uvicorn app.main:app --reload --port 8001`
 1. Backend terminal: still showing "Uvicorn running on..."
 2. Frontend terminal: still showing the local URL
 
-If backend crashed, restart it: `uvicorn app.main:app --reload`
+If backend crashed, restart it: `uvicorn app.main:app --reload --host 127.0.0.1 --port 8001`
 
 ### [FAIL] "npm: command not found"
 
@@ -251,7 +251,7 @@ python -m app.utils.seed
    - The full error message from the terminal
    - Which step (1-9) you're on
 
-- Stop stale process using port 8000, then restart backend.
+- Stop stale process using port 8001, then restart backend.
 
 4. Re-run setup safely
 

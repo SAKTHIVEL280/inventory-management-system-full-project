@@ -2,7 +2,7 @@
  * Utility for handling backend URLs.
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001';
 
 /**
  * Prefixes a relative static asset path with the backend URL.

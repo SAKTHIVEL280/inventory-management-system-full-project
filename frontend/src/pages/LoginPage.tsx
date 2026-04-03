@@ -80,7 +80,7 @@ const LoginPage = () => {
 
   if (showChangePassword) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background-light p-4">
+      <div className="flex min-h-screen items-center justify-center bg-neutral-50 p-4">
         <div className="hms-card w-full max-w-md p-8">
           <h1 className="font-display text-2xl font-bold text-neutral-900">Change Password</h1>
           <p className="mb-6 text-sm text-neutral-500">
@@ -168,7 +168,7 @@ const LoginPage = () => {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background-light p-4">
+    <div className="flex min-h-screen items-center justify-center bg-neutral-50 p-4">
       <div className="hms-card w-full max-w-xl p-8 sm:p-10">
 
         <h1 className="mt-4 font-display text-3xl font-bold leading-tight text-neutral-900"> Mecandria ERP</h1>

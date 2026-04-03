@@ -285,7 +285,7 @@ MAIL_PORT=587
 MAIL_SERVER=smtp.gmail.com
 MAIL_STARTTLS=true
 MAIL_SSL_TLS=false
-FRONTEND_URL=http://localhost:5173
+FRONTEND_URL=http://localhost:3001
 COMPANY_NAME=Your Company Name
 ```
 
@@ -294,7 +294,7 @@ Note: Alembic config in `project-root/database/alembic/` must read `DATABASE_URL
 
 ### Frontend (.env)
 ```
-VITE_API_BASE_URL=http://localhost:8000
+VITE_API_BASE_URL=http://localhost:8001
 ```
 
 ---

@@ -17,6 +17,7 @@ import { AppLayout } from '../components/AppLayout';
 import { paymentsApi, type Payment, type CreatePaymentPayload, type PaymentAllocationRequest } from '../api/payments';
 import { purchaseApi, type GoodsReceiptNote } from '../api/purchase';
 import { apiClient } from '../api/client';
+import { todayLocalDateInputValue } from '../utils/date';
 import { showError, showSuccess, confirmWithToast } from '../utils/toastHelper';
 
 interface SupplierOption { id: string; company_name: string; }
@@ -45,7 +46,7 @@ const PayablesPage = () => {
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
 
   const [supplierId, setSupplierId] = useState('');
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [paymentDate, setPaymentDate] = useState(todayLocalDateInputValue());
   const [amount, setAmount] = useState(0);
   const [paymentMode, setPaymentMode] = useState('bank_transfer');
   const [referenceNumber, setReferenceNumber] = useState('');
@@ -67,6 +68,7 @@ const PayablesPage = () => {
     try { const res = await apiClient.get('/api/v1/suppliers', { params: { page_size: 100 } }); setSuppliers(res.data.items || []); } catch { /* */ }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchPayments should run when archiveView changes
   useEffect(() => { fetchPayments(); }, [archiveView]);
   useEffect(() => { fetchSuppliers(); }, []);
 
@@ -81,7 +83,7 @@ const PayablesPage = () => {
     })();
   }, [supplierId]);
 
-  const resetForm = () => { setSupplierId(''); setPaymentDate(new Date().toISOString().split('T')[0]); setAmount(0); setPaymentMode('bank_transfer'); setReferenceNumber(''); setNotes(''); setAllocations({}); setError(''); setIsAdvancePayment(false); setEditingPayment(null); };
+  const resetForm = () => { setSupplierId(''); setPaymentDate(todayLocalDateInputValue()); setAmount(0); setPaymentMode('bank_transfer'); setReferenceNumber(''); setNotes(''); setAllocations({}); setError(''); setIsAdvancePayment(false); setEditingPayment(null); };
   const paiseToRupees = (paise: number) => (Number.isFinite(paise) ? paise / 100 : 0);
   const rupeesToPaise = (value: string | number) => {
     const num = typeof value === 'number' ? value : parseFloat(value);
@@ -90,9 +92,23 @@ const PayablesPage = () => {
   const formatAmount = (p: number) => `₹${(p / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
   const supplierNameById = (id?: string | null) => suppliers.find((s) => s.id === id)?.company_name || '-';
 
+  const handleDateFromChange = (value: string) => {
+    setDateFrom(value);
+    if (dateTo && value && value > dateTo) {
+      setDateTo(value);
+    }
+  };
+
+  const handleDateToChange = (value: string) => {
+    setDateTo(value);
+    if (dateFrom && value && value < dateFrom) {
+      setDateFrom(value);
+    }
+  };
+
   const filteredPayments = payments.filter((p) => {
     const term = searchQuery.trim().toLowerCase();
-    const allocationRefs = p.allocations?.map((a: any) => a.po_number || a.grn_number).filter(Boolean).join(' ') || '';
+    const allocationRefs = p.allocations?.map((a) => a.po_number || a.grn_number).filter(Boolean).join(' ') || '';
     const matchesSearch =
       !term ||
       supplierNameById(p.supplier_id).toLowerCase().includes(term) ||
@@ -227,11 +243,11 @@ const PayablesPage = () => {
             </select>
             <div className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm">
               <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">From</span>
-              <input type="date" className="bg-transparent text-sm outline-none" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} title="Payment date from" />
+              <input type="date" className="bg-transparent text-sm outline-none" value={dateFrom} max={dateTo || undefined} onChange={(e) => handleDateFromChange(e.target.value)} title="Payment date from" />
             </div>
             <div className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm">
               <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">To</span>
-              <input type="date" className="bg-transparent text-sm outline-none" value={dateTo} onChange={(e) => setDateTo(e.target.value)} title="Payment date to" />
+              <input type="date" className="bg-transparent text-sm outline-none" value={dateTo} min={dateFrom || undefined} onChange={(e) => handleDateToChange(e.target.value)} title="Payment date to" />
             </div>
           </div>
           {/* PAY-005: Advance Payment → Record Payment → Cancel order */}
@@ -264,11 +280,11 @@ const PayablesPage = () => {
                   <tr key={p.id} className="border-b border-neutral-100 hover:bg-neutral-50">
                     {/* PAY-001: GRN Number */}
                     <td className="px-4 py-3 font-medium text-xs">
-                      {p.allocations?.map((a: any) => a.grn_number).filter(Boolean).join(', ') || (p.notes?.includes('[ADVANCE PAYMENT]') ? <span className="text-amber-600 font-semibold">Advance</span> : '—')}
+                      {p.allocations?.map((a) => a.grn_number).filter(Boolean).join(', ') || (p.notes?.includes('[ADVANCE PAYMENT]') ? <span className="text-amber-600 font-semibold">Advance</span> : '—')}
                     </td>
                     {/* PAY-003: PO Number */}
                     <td className="px-4 py-3 text-xs">
-                      {p.allocations?.map((a: any) => a.po_number).filter(Boolean).join(', ') || '—'}
+                      {p.allocations?.map((a) => a.po_number).filter(Boolean).join(', ') || '—'}
                     </td>
                     <td className="px-4 py-3">{supplierNameById(p.supplier_id)}</td>
                     <td className="px-4 py-3">{p.payment_date}</td>
@@ -276,7 +292,7 @@ const PayablesPage = () => {
                     {/* PAY-002: GRN Value */}
                     <td className="px-4 py-3 text-right text-neutral-500">
                       {p.allocations?.length && p.allocations.length > 0
-                        ? p.allocations.map((a: any) => a.grn_total_amount ? formatAmount(a.grn_total_amount) : '').filter(Boolean).join(', ') || '—'
+                        ? p.allocations.map((a) => a.grn_total_amount ? formatAmount(a.grn_total_amount) : '').filter(Boolean).join(', ') || '—'
                         : '—'}
                     </td>
                     <td className="px-4 py-3 text-right font-medium">{formatAmount(p.amount)}</td>
@@ -317,7 +333,7 @@ const PayablesPage = () => {
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Supplier *</label><select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={supplierId} onChange={e => setSupplierId(e.target.value)}><option value="">Select</option>{suppliers.map(s => <option key={s.id} value={s.id}>{s.company_name}</option>)}</select></div>
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Date *</label><input type="date" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} /></div>
-                <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Amount (₹) *</label><input type="number" step="0.01" min="0.01" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={paiseToRupees(amount)} onChange={e => setAmount(rupeesToPaise(e.target.value))} /></div>
+                <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Amount (₹) *</label><input type="number" step="0.01" min="0.01" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={amount > 0 ? paiseToRupees(amount) : ''} onChange={e => setAmount(rupeesToPaise(e.target.value))} /></div>
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Mode</label><select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={paymentMode} onChange={e => setPaymentMode(e.target.value)}><option value="cash">Cash</option><option value="bank_transfer">Bank Transfer</option><option value="cheque">Cheque</option><option value="upi">UPI</option><option value="card">Card</option></select></div>
                 <div className="md:col-span-2"><label className="mb-1 block text-sm font-semibold text-neutral-700">Reference #</label><input type="text" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={referenceNumber} onChange={e => setReferenceNumber(e.target.value)} /></div>
               </div>
@@ -338,9 +354,9 @@ const PayablesPage = () => {
                         {outstandingGRNs.map(grn => (
                           <tr key={grn.id} className="border-t border-neutral-100">
                             <td className="px-3 py-2 font-medium">{grn.grn_number}</td>
-                            <td className="px-3 py-2 text-xs">{(grn as any).po_number || '—'}</td>
+                            <td className="px-3 py-2 text-xs">{grn.po_number || '—'}</td>
                             <td className="px-3 py-2 text-right">{formatAmount(grn.total_amount)}</td>
-                            <td className="px-3 py-2"><input type="number" step="0.01" min="0" max={paiseToRupees(grn.total_amount)} className="w-full rounded border px-2 py-1.5 text-right text-sm" value={paiseToRupees(allocations[grn.id] || 0)} onChange={e => {
+                            <td className="px-3 py-2"><input type="number" step="0.01" min="0" max={paiseToRupees(grn.total_amount)} className="w-full rounded border px-2 py-1.5 text-right text-sm" value={allocations[grn.id] ? paiseToRupees(allocations[grn.id]) : ''} onChange={e => {
                               const newVal = rupeesToPaise(e.target.value);
                               // PAY-006: Clamp allocation to GRN value
                               const clamped = Math.min(newVal, grn.total_amount);

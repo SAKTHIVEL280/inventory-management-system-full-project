@@ -7,6 +7,7 @@ import { stockApi } from '../api/stock';
 import { Product } from '../types';
 import { AppLayout } from '../components/AppLayout';
 import { PageEmpty, PageError, PageLoading } from '../components/PageState';
+import { getApiDetail, getApiDetailMessage, type ApiFieldError } from '../utils/apiError';
 import { showError, showSuccess } from '../utils/toastHelper';
 
 const productSchema = z.object({
@@ -100,19 +101,21 @@ const ProductsPage = () => {
       resetProductForm();
     },
     onError: (error: unknown) => {
-      const axiosErr = error as any;
-      const detail = axiosErr.response?.data?.detail;
+      const detail = getApiDetail(error);
       if (typeof detail === 'string') {
         setFormError(detail);
         showError(detail);
       } else if (Array.isArray(detail)) {
-        const msg = detail.map((d: any) => d.msg).join(', ');
+        const msg = detail
+          .map((d) => d.msg || d.message)
+          .filter((m): m is string => Boolean(m && m.trim()))
+          .join(', ');
         let mappedFieldError = false;
-        detail.forEach((d: any) => {
+        detail.forEach((d: ApiFieldError) => {
           const rawField = Array.isArray(d.loc) ? d.loc[d.loc.length - 1] : null;
           const field = rawField === 'alt_uom_conversion' ? 'base_unit_qty' : rawField;
           if (typeof field === 'string' && field in defaultProductValues) {
-            productForm.setError(field as keyof ProductForm, { type: 'server', message: d.msg });
+            productForm.setError(field as keyof ProductForm, { type: 'server', message: d.msg || d.message || 'Invalid value' });
             mappedFieldError = true;
           }
         });
@@ -121,8 +124,9 @@ const ProductsPage = () => {
         }
         showError(msg);
       } else {
-        setFormError('Failed to create product');
-        showError('Failed to create product');
+        const fallback = getApiDetailMessage(detail, 'Failed to create product');
+        setFormError(fallback);
+        showError(fallback);
       }
     },
   });
@@ -136,19 +140,21 @@ const ProductsPage = () => {
       setFormError('');
     },
     onError: (error: unknown) => {
-      const axiosErr = error as any;
-      const detail = axiosErr.response?.data?.detail;
+      const detail = getApiDetail(error);
       if (typeof detail === 'string') {
         setFormError(detail);
         showError(detail);
       } else if (Array.isArray(detail)) {
-        const msg = detail.map((d: any) => d.msg).join(', ');
+        const msg = detail
+          .map((d) => d.msg || d.message)
+          .filter((m): m is string => Boolean(m && m.trim()))
+          .join(', ');
         let mappedFieldError = false;
-        detail.forEach((d: any) => {
+        detail.forEach((d: ApiFieldError) => {
           const rawField = Array.isArray(d.loc) ? d.loc[d.loc.length - 1] : null;
           const field = rawField === 'alt_uom_conversion' ? 'base_unit_qty' : rawField;
           if (typeof field === 'string' && field in defaultProductValues) {
-            productForm.setError(field as keyof ProductForm, { type: 'server', message: d.msg });
+            productForm.setError(field as keyof ProductForm, { type: 'server', message: d.msg || d.message || 'Invalid value' });
             mappedFieldError = true;
           }
         });
@@ -157,8 +163,9 @@ const ProductsPage = () => {
         }
         showError(msg);
       } else {
-        setFormError('Failed to update product');
-        showError('Failed to update product');
+        const fallback = getApiDetailMessage(detail, 'Failed to update product');
+        setFormError(fallback);
+        showError(fallback);
       }
     },
   });
@@ -171,15 +178,19 @@ const ProductsPage = () => {
       setFormError('');
     },
     onError: (error: unknown) => {
-      const axiosErr = error as any;
-      const detail = axiosErr.response?.data?.detail;
+      const detail = getApiDetail(error);
       if (typeof detail === 'string') {
         setFormError(detail);
-      } else if (detail?.message) {
+      } else if (detail && typeof detail === 'object' && !Array.isArray(detail) && typeof detail.message === 'string') {
         // Handle backend error objects (e.g., stock check errors)
         setFormError(detail.message);
       } else if (Array.isArray(detail)) {
-        setFormError(detail.map((d: any) => d.msg).join(', '));
+        setFormError(
+          detail
+            .map((d) => d.msg || d.message)
+            .filter((m): m is string => Boolean(m && m.trim()))
+            .join(', ')
+        );
       } else {
         setFormError('Failed to delete product');
       }
@@ -194,14 +205,18 @@ const ProductsPage = () => {
       setFormError('');
     },
     onError: (error: unknown) => {
-      const axiosErr = error as any;
-      const detail = axiosErr.response?.data?.detail;
+      const detail = getApiDetail(error);
       if (typeof detail === 'string') {
         setFormError(detail);
       } else if (Array.isArray(detail)) {
-        setFormError(detail.map((d: any) => d.msg).join(', '));
+        setFormError(
+          detail
+            .map((d) => d.msg || d.message)
+            .filter((m): m is string => Boolean(m && m.trim()))
+            .join(', ')
+        );
       } else {
-        setFormError('Failed to adjust stock');
+        setFormError(getApiDetailMessage(detail, 'Failed to adjust stock'));
       }
     },
   });

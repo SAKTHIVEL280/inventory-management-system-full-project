@@ -33,15 +33,20 @@ def refresh_materialized_view(db: Session) -> None:
     Falls back to normal refresh if concurrent refresh fails
     (e.g., if the view doesn't have a unique index yet).
     """
-    try:
-        db.execute(text("REFRESH MATERIALIZED VIEW CONCURRENTLY current_stock"))
-    except SQLAlchemyError:
+    def _try_refresh(sql: str) -> bool:
         try:
-            # Fallback: non-concurrent refresh (locks reads briefly)
-            db.execute(text("REFRESH MATERIALIZED VIEW current_stock"))
+            # Use a savepoint so a failed refresh does not poison the outer transaction.
+            with db.begin_nested():
+                db.execute(text(sql))
+            return True
         except SQLAlchemyError:
-            # View might not exist yet — log but don't crash the transaction
-            pass
+            return False
+
+    if _try_refresh("REFRESH MATERIALIZED VIEW CONCURRENTLY current_stock"):
+        return
+
+    # Fallback: non-concurrent refresh (locks reads briefly).
+    _try_refresh("REFRESH MATERIALIZED VIEW current_stock")
 
 
 def add_stock_entry(
