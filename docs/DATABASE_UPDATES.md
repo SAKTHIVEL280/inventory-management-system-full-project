@@ -118,3 +118,55 @@ FROM company;
 
 ### Operational Note
 - Cash In Flow is implemented as query aggregation in backend reports API.
+
+---
+
+## Customer Module - Schema Updates (Section Updated)
+
+### Columns Added to `customers`
+- `company_director_name` VARCHAR(255)
+- `company_director_contact` VARCHAR(255)
+- `gstin_status` VARCHAR(20) NOT NULL DEFAULT `non-registered`
+- `business_type` VARCHAR(20) NOT NULL DEFAULT `domestic`
+- `billing_country` VARCHAR(100)
+- `shipping_country` VARCHAR(100)
+
+### Migration File
+- Added in common idempotent script: `database/ALL_UPDATES.sql`
+
+### Data Safety
+- Existing rows are preserved.
+- Existing rows get defaults where needed (`gstin_status`, `business_type`).
+- No delete/drop/truncate in feature migration flow.
+
+---
+
+## Products Master - Schema Impact (Section Updated)
+
+### Schema/Migration Impact
+- No new DB columns were required for PRO-001 to PRO-013.
+- Existing product columns were reused (`sku`, `uom_id`, `alt_uom_id`, `alt_uom_conversion`, `purchase_price`, `selling_price`, `mrp`, `safety_stock`).
+
+### Data Safety
+- Non-destructive update path maintained.
+- No delete/drop/truncate statements introduced.
+
+---
+
+## Supplier Module - Schema Updates (Section Updated)
+
+### Columns Added to `suppliers`
+- `company_director_name` VARCHAR(255)
+- `company_director_contact` VARCHAR(255)
+- `gstin_status` VARCHAR(20) NOT NULL DEFAULT `non-registered`
+- `business_type` VARCHAR(20) NOT NULL DEFAULT `domestic`
+- `billing_country` VARCHAR(100)
+
+### Migration Files
+- Common idempotent script: `database/ALL_UPDATES.sql`
+- Compatibility migration: `backend/run_migration.py`
+
+### Data Safety
+- Existing rows are preserved.
+- Existing rows get defaults where needed (`gstin_status`, `business_type`).
+- No delete/drop/truncate in feature migration flow.

@@ -792,6 +792,7 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
         customer.billing_address_line2 if customer else None,
         customer.billing_city if customer else None,
         customer.billing_state if customer else None,
+      customer.billing_country if customer else None,
         customer.billing_pincode if customer else None,
     ]
     shipping_parts = [
@@ -799,6 +800,7 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
         customer.shipping_address_line2 if customer else None,
         customer.shipping_city if customer else None,
         customer.shipping_state if customer else None,
+      customer.shipping_country if customer else None,
         customer.shipping_pincode if customer else None,
     ]
 

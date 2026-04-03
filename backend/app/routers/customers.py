@@ -1,4 +1,5 @@
 """Customer master router."""
+import re
 from datetime import datetime
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -8,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_permissions
+from app.models.company import Company
 from app.models.customer import Customer
 from app.models.user import User
 from app.schemas.customer import (
@@ -21,9 +23,99 @@ from app.schemas.customer import (
 router = APIRouter(prefix="/api/v1/customers", tags=["customers"])
 
 
-def _generate_customer_code(db: Session) -> str:
-    count = db.query(Customer).count()
-    return f"CUST-{str(count + 1).zfill(5)}"
+STATE_ABBREVIATIONS = {
+    "andhra pradesh": "AP",
+    "arunachal pradesh": "AR",
+    "assam": "AS",
+    "bihar": "BR",
+    "chhattisgarh": "CG",
+    "goa": "GA",
+    "gujarat": "GJ",
+    "haryana": "HR",
+    "himachal pradesh": "HP",
+    "jharkhand": "JH",
+    "karnataka": "KA",
+    "kerala": "KL",
+    "madhya pradesh": "MP",
+    "maharashtra": "MH",
+    "manipur": "MN",
+    "meghalaya": "ML",
+    "mizoram": "MZ",
+    "nagaland": "NL",
+    "odisha": "OD",
+    "punjab": "PB",
+    "rajasthan": "RJ",
+    "sikkim": "SK",
+    "tamil nadu": "TN",
+    "telangana": "TS",
+    "tripura": "TR",
+    "uttar pradesh": "UP",
+    "uttarakhand": "UK",
+    "west bengal": "WB",
+    "delhi": "DL",
+}
+
+
+def _state_code_from_payload(payload: CustomerCreateRequest | CustomerUpdateRequest) -> str:
+    state = (payload.billing_state or "").strip().lower()
+    if state and state in STATE_ABBREVIATIONS:
+        return STATE_ABBREVIATIONS[state]
+
+    raw_state_code = (payload.billing_state_code or "").strip().upper()
+    alpha_state_code = "".join(ch for ch in raw_state_code if ch.isalpha())
+    if len(alpha_state_code) >= 2:
+        return alpha_state_code[:2]
+
+    if state:
+        cleaned = "".join(ch for ch in state if ch.isalpha())
+        if len(cleaned) >= 2:
+            return cleaned[:2].upper()
+    return "NA"
+
+
+def _is_international(payload: CustomerCreateRequest | CustomerUpdateRequest) -> bool:
+    if payload.business_type == "international":
+        return True
+    country = (payload.billing_country or "").strip().lower()
+    return bool(country and country not in {"india", "in"})
+
+
+def _generate_customer_code(db: Session, payload: CustomerCreateRequest | CustomerUpdateRequest) -> str:
+    prefix = "CUST-INT" if _is_international(payload) else f"CUST-{_state_code_from_payload(payload)}"
+    existing_codes = (
+        db.query(Customer.customer_code)
+        .filter(Customer.customer_code.like(f"{prefix}-%"), Customer.is_deleted == False)
+        .all()
+    )
+
+    max_seq = 0
+    for (code,) in existing_codes:
+        if not code:
+            continue
+        match = re.search(r"-(\d{5})$", code)
+        if match:
+            max_seq = max(max_seq, int(match.group(1)))
+
+    return f"{prefix}-{str(max_seq + 1).zfill(5)}"
+
+
+def _apply_company_billing_defaults(db: Session, payload: CustomerCreateRequest | CustomerUpdateRequest) -> None:
+    company = db.query(Company).first()
+    if not company:
+        return
+
+    payload.billing_address_line1 = payload.billing_address_line1 or company.address_line1
+    payload.billing_address_line2 = payload.billing_address_line2 or company.address_line2
+    payload.billing_city = payload.billing_city or company.city
+    payload.billing_state = payload.billing_state or company.state
+    payload.billing_state_code = payload.billing_state_code or company.state_code
+    payload.billing_pincode = payload.billing_pincode or company.pincode
+    payload.billing_country = payload.billing_country or "India"
+
+
+def _apply_gstin_policy(payload: CustomerCreateRequest | CustomerUpdateRequest) -> None:
+    if payload.gstin_status == "non-registered":
+        payload.gstin = None
 
 
 def _apply_gstin_state_code(payload: CustomerCreateRequest | CustomerUpdateRequest) -> None:
@@ -40,6 +132,7 @@ def _normalize_shipping(payload: CustomerCreateRequest | CustomerUpdateRequest) 
         payload.shipping_city = payload.billing_city
         payload.shipping_state = payload.billing_state
         payload.shipping_state_code = payload.billing_state_code
+        payload.shipping_country = payload.billing_country
         payload.shipping_pincode = payload.billing_pincode
 
 
@@ -125,6 +218,9 @@ async def create_customer(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("customers_write")),
 ):
+    _apply_company_billing_defaults(db, payload)
+    _apply_gstin_policy(payload)
+
     if payload.gstin:
         duplicate = db.query(Customer).filter(Customer.gstin == payload.gstin, Customer.is_deleted == False).first()
         if duplicate:
@@ -138,7 +234,7 @@ async def create_customer(
 
     customer = Customer(
         **payload.model_dump(exclude={"customer_code"}),
-        customer_code=payload.customer_code or _generate_customer_code(db),
+        customer_code=payload.customer_code or _generate_customer_code(db, payload),
         created_by=current_user.id,
     )
     db.add(customer)
@@ -169,6 +265,8 @@ async def update_customer(
     customer = db.query(Customer).filter(Customer.id == customer_id, Customer.is_deleted == False).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
+
+    _apply_gstin_policy(payload)
 
     if payload.gstin:
         duplicate = (

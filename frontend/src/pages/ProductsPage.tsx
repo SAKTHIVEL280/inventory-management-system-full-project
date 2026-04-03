@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { FocusEvent, useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
@@ -7,31 +7,47 @@ import { stockApi } from '../api/stock';
 import { Product } from '../types';
 import { AppLayout } from '../components/AppLayout';
 import { PageEmpty, PageError, PageLoading } from '../components/PageState';
+import { showError, showSuccess } from '../utils/toastHelper';
 
 const productSchema = z.object({
   name: z.string().min(1, 'Product name required'),
   description: z.string().optional(),
-  sku: z.string().optional(),
+  sku: z.string().min(1, 'Base Unit is required'),
   hsn_code: z.string().min(6, 'HSN must be 6-8 digits').max(8, 'HSN must be 6-8 digits'),
   gst_rate: z.enum(['0', '5', '12', '18', '28']),
-  purchase_price: z.coerce.number().min(0),
+  unit_price: z.coerce.number().positive('Price must be greater than 0'),
+  base_unit_qty: z.coerce.number().positive('Base Unit Qty must be greater than 0'),
+  alt_uom_id: z.string().optional(),
+  alt_uom_conversion: z.coerce.number().optional(),
   selling_price: z.coerce.number().min(0),
   mrp: z.coerce.number().min(0),
-  minimum_stock: z.coerce.number().min(0),
   safety_stock: z.coerce.number().min(0),
   opening_stock: z.coerce.number().min(0),
   category_id: z.string().min(1, 'Category required'),
-  uom_id: z.string().min(1, 'UoM required'),
+  uom_id: z.string().optional(),
   is_active: z.boolean(),
   status: z.enum(['active', 'inactive', 'flagged_for_deletion']).default('active'),
+}).superRefine((value, ctx) => {
+  const purchase = value.unit_price * value.base_unit_qty;
+  if (purchase >= value.selling_price) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['selling_price'], message: 'Purchase Price must be less than Selling Price' });
+  }
+  if (value.selling_price >= value.mrp) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['mrp'], message: 'Selling Price must be less than MRP' });
+  }
+  if (value.alt_uom_id && (!value.alt_uom_conversion || value.alt_uom_conversion <= 0)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['base_unit_qty'], message: 'Base Unit Qty must be greater than 0 when Order Unit/Packing is selected' });
+  }
 });
 
 type ProductForm = z.infer<typeof productSchema>;
+type NumericProductField = 'unit_price' | 'base_unit_qty' | 'selling_price' | 'mrp' | 'safety_stock' | 'opening_stock';
 
 const defaultProductValues: ProductForm = {
   name: '', description: '', sku: '', hsn_code: '', gst_rate: '18',
-  purchase_price: 0, selling_price: 0, mrp: 0,
-  minimum_stock: 0, safety_stock: 0, opening_stock: 0, category_id: '', uom_id: '',
+  unit_price: 0, base_unit_qty: 1, alt_uom_id: '', alt_uom_conversion: undefined,
+  selling_price: 0, mrp: 0,
+  safety_stock: 0, opening_stock: 0, category_id: '', uom_id: '',
   is_active: true, status: 'active',
 };
 
@@ -48,11 +64,39 @@ const ProductsPage = () => {
   const uomQuery = useQuery({ queryKey: ['uom'], queryFn: productsApi.listUom });
 
   const productForm = useForm<ProductForm>({ defaultValues: defaultProductValues });
+  const registerNumericField = (field: NumericProductField, fallbackValue = 0) => {
+    const registered = productForm.register(field, {
+      setValueAs: (value) => {
+        if (value === '' || value === null || value === undefined) {
+          return fallbackValue;
+        }
+        return Number(value);
+      },
+      onBlur: (event) => {
+        if (event.target.value === '') {
+          productForm.setValue(field, fallbackValue, { shouldValidate: true });
+        }
+      },
+    });
+    return {
+      ...registered,
+      onFocus: (event: FocusEvent<HTMLInputElement>) => {
+        if (event.currentTarget.value === '0') {
+          event.currentTarget.value = '';
+        }
+      },
+    };
+  };
+  const getFieldError = (field: keyof ProductForm): string | null => {
+    const message = productForm.formState.errors[field]?.message;
+    return message ? String(message) : null;
+  };
 
   const productMutation = useMutation({
     mutationFn: (payload: Parameters<typeof productsApi.create>[0]) => productsApi.create(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
+      showSuccess('Product created successfully');
       resetProductForm();
     },
     onError: (error: unknown) => {
@@ -60,10 +104,25 @@ const ProductsPage = () => {
       const detail = axiosErr.response?.data?.detail;
       if (typeof detail === 'string') {
         setFormError(detail);
+        showError(detail);
       } else if (Array.isArray(detail)) {
-        setFormError(detail.map((d: any) => d.msg).join(', '));
+        const msg = detail.map((d: any) => d.msg).join(', ');
+        let mappedFieldError = false;
+        detail.forEach((d: any) => {
+          const rawField = Array.isArray(d.loc) ? d.loc[d.loc.length - 1] : null;
+          const field = rawField === 'alt_uom_conversion' ? 'base_unit_qty' : rawField;
+          if (typeof field === 'string' && field in defaultProductValues) {
+            productForm.setError(field as keyof ProductForm, { type: 'server', message: d.msg });
+            mappedFieldError = true;
+          }
+        });
+        if (!mappedFieldError) {
+          setFormError(msg);
+        }
+        showError(msg);
       } else {
         setFormError('Failed to create product');
+        showError('Failed to create product');
       }
     },
   });
@@ -72,6 +131,7 @@ const ProductsPage = () => {
     mutationFn: ({ id, payload }: { id: string; payload: Parameters<typeof productsApi.update>[1] }) => productsApi.update(id, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
+      showSuccess('Product modified successfully');
       resetProductForm();
       setFormError('');
     },
@@ -80,10 +140,25 @@ const ProductsPage = () => {
       const detail = axiosErr.response?.data?.detail;
       if (typeof detail === 'string') {
         setFormError(detail);
+        showError(detail);
       } else if (Array.isArray(detail)) {
-        setFormError(detail.map((d: any) => d.msg).join(', '));
+        const msg = detail.map((d: any) => d.msg).join(', ');
+        let mappedFieldError = false;
+        detail.forEach((d: any) => {
+          const rawField = Array.isArray(d.loc) ? d.loc[d.loc.length - 1] : null;
+          const field = rawField === 'alt_uom_conversion' ? 'base_unit_qty' : rawField;
+          if (typeof field === 'string' && field in defaultProductValues) {
+            productForm.setError(field as keyof ProductForm, { type: 'server', message: d.msg });
+            mappedFieldError = true;
+          }
+        });
+        if (!mappedFieldError) {
+          setFormError(msg);
+        }
+        showError(msg);
       } else {
         setFormError('Failed to update product');
+        showError('Failed to update product');
       }
     },
   });
@@ -134,6 +209,7 @@ const ProductsPage = () => {
   const resetProductForm = () => {
     setEditingProduct(null);
     setFormError('');
+    productForm.clearErrors();
     productForm.reset(defaultProductValues);
     setIsFormOpen(false);
   };
@@ -143,16 +219,23 @@ const ProductsPage = () => {
     setIsFormOpen(true);
     setFormError('');
     // Set ALL form fields from the product data
+    const editBaseUnitQty = item.alt_uom_conversion ? Number(item.alt_uom_conversion) : 1;
+    const editUnitPrice = editBaseUnitQty > 0
+      ? (item.purchase_price / 100) / editBaseUnitQty
+      : item.purchase_price / 100;
+
     productForm.reset({
       name: item.name,
       description: item.description ?? '',
       sku: item.sku ?? '',
       hsn_code: item.hsn_code,
       gst_rate: String(item.gst_rate) as '0' | '5' | '12' | '18' | '28',
-      purchase_price: item.purchase_price / 100,
+      unit_price: editUnitPrice,
+      base_unit_qty: editBaseUnitQty,
+      alt_uom_id: item.alt_uom_id ?? '',
+      alt_uom_conversion: item.alt_uom_conversion ?? undefined,
       selling_price: item.selling_price / 100,
       mrp: item.mrp / 100,
-      minimum_stock: item.minimum_stock,
       safety_stock: item.safety_stock ?? 0,
       opening_stock: item.opening_stock,
       category_id: item.category_id,
@@ -177,9 +260,25 @@ const ProductsPage = () => {
   };
 
   const onCreateProduct = (values: ProductForm): void => {
-    const parsed = productSchema.safeParse(values);
+    productForm.clearErrors();
+    setFormError('');
+    const normalizedValues: ProductForm = {
+      ...values,
+      alt_uom_conversion: values.alt_uom_id?.trim() ? Number(values.base_unit_qty) : undefined,
+    };
+    const parsed = productSchema.safeParse(normalizedValues);
     if (!parsed.success) {
-      setFormError(parsed.error.issues[0]?.message ?? 'Validation failed');
+      parsed.error.issues.forEach((issue) => {
+        const field = issue.path[0];
+        if (typeof field === 'string' && field in defaultProductValues) {
+          productForm.setError(field as keyof ProductForm, {
+            type: 'manual',
+            message: issue.message,
+          });
+        }
+      });
+      setFormError('Please fix the highlighted fields.');
+      showError('Please fix the highlighted fields.');
       return;
     }
 
@@ -189,15 +288,15 @@ const ProductsPage = () => {
       description: parsed.data.description?.trim() || null,
       sku: parsed.data.sku?.trim() || null,
       category_id: parsed.data.category_id,
-      uom_id: parsed.data.uom_id,
-      alt_uom_id: null as string | null,
-      alt_uom_conversion: null as number | null,
+      uom_id: parsed.data.uom_id?.trim() || null,
+      alt_uom_id: parsed.data.alt_uom_id?.trim() || null,
+      alt_uom_conversion: parsed.data.alt_uom_id?.trim() ? Number(parsed.data.base_unit_qty) : null,
       hsn_code: parsed.data.hsn_code,
       gst_rate: Number(parsed.data.gst_rate) as Product['gst_rate'],
-      purchase_price: Math.round(parsed.data.purchase_price * 100),
+      purchase_price: Math.round(parsed.data.unit_price * parsed.data.base_unit_qty * 100),
       selling_price: Math.round(parsed.data.selling_price * 100),
       mrp: Math.round(parsed.data.mrp * 100),
-      minimum_stock: Math.round(parsed.data.minimum_stock),
+      minimum_stock: Math.round(parsed.data.safety_stock),
       safety_stock: Math.round(parsed.data.safety_stock),
       opening_stock: editingProduct
         ? editingProduct.opening_stock  // Preserve original on edit
@@ -218,6 +317,15 @@ const ProductsPage = () => {
   const categories = categoriesQuery.data ?? [];
   const uoms = uomQuery.data ?? [];
   const isSaving = productMutation.isPending || updateMutation.isPending;
+  const unitPrice = productForm.watch('unit_price');
+  const baseUnitQty = productForm.watch('base_unit_qty');
+  const computedPurchase = (Number(unitPrice || 0) * Number(baseUnitQty || 0)).toFixed(2);
+
+  useEffect(() => {
+    if (!editingProduct) {
+      productForm.setValue('alt_uom_conversion', Number(baseUnitQty || 0));
+    }
+  }, [baseUnitQty, editingProduct, productForm]);
 
   const categoryNameById = (id: string) => categories.find((c) => c.id === id)?.name ?? '—';
 
@@ -272,14 +380,17 @@ const ProductsPage = () => {
                 <div className="xl:col-span-2">
                   <label htmlFor="product_name" className="hms-label">Product name *</label>
                   <input id="product_name" className="hms-input" placeholder="Product name" {...productForm.register('name')} />
+                  {getFieldError('name') && <p className="mt-1 text-xs text-danger">{getFieldError('name')}</p>}
                 </div>
                 <div>
-                  <label htmlFor="product_sku" className="hms-label">SKU</label>
-                  <input id="product_sku" className="hms-input" placeholder="SKU code (optional)" {...productForm.register('sku')} />
+                  <label htmlFor="product_sku" className="hms-label">Base Unit *</label>
+                  <input id="product_sku" className="hms-input" placeholder="e.g. Bottle, Piece, Kg" {...productForm.register('sku')} />
+                  {getFieldError('sku') && <p className="mt-1 text-xs text-danger">{getFieldError('sku')}</p>}
                 </div>
                 <div>
                   <label htmlFor="hsn_code" className="hms-label">HSN code *</label>
                   <input id="hsn_code" className="hms-input" placeholder="e.g. 84713010" {...productForm.register('hsn_code')} />
+                  {getFieldError('hsn_code') && <p className="mt-1 text-xs text-danger">{getFieldError('hsn_code')}</p>}
                 </div>
                 <div className="xl:col-span-2">
                   <label htmlFor="product_description" className="hms-label">Description</label>
@@ -291,39 +402,52 @@ const ProductsPage = () => {
                     <option value="">Select category</option>
                     {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
+                  {getFieldError('category_id') && <p className="mt-1 text-xs text-danger">{getFieldError('category_id')}</p>}
                 </div>
                 <div>
-                  <label htmlFor="uom_id" className="hms-label">Unit of measure *</label>
-                  <select id="uom_id" className="hms-input" {...productForm.register('uom_id')}>
-                    <option value="">Select UoM</option>
+                  <label htmlFor="alt_uom_id" className="hms-label">Order Unit/Packing</label>
+                  <select id="alt_uom_id" className="hms-input" {...productForm.register('alt_uom_id')}>
+                    <option value="">Select Order Unit/Packing (optional)</option>
                     {uoms.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.abbreviation})</option>)}
                   </select>
+                  {getFieldError('alt_uom_id') && <p className="mt-1 text-xs text-danger">{getFieldError('alt_uom_id')}</p>}
+                </div>
+                <div>
+                  <label htmlFor="base_unit_qty" className="hms-label">Base Unit Qty</label>
+                  <input id="base_unit_qty" type="number" min="1" step="1" className="hms-input" placeholder="e.g. 10" {...registerNumericField('base_unit_qty', 1)} />
+                  <p className="mt-1 text-xs text-neutral-500">Used for conversion when Order Unit/Packing is selected (example: 1 Box = 10 Pieces).</p>
+                  {getFieldError('base_unit_qty') && <p className="mt-1 text-xs text-danger">{getFieldError('base_unit_qty')}</p>}
+                </div>
+                <div>
+                  <label htmlFor="unit_price" className="hms-label">Price</label>
+                  <input id="unit_price" type="number" step="0.01" className="hms-input" placeholder="0.00" {...registerNumericField('unit_price')} />
+                  {getFieldError('unit_price') && <p className="mt-1 text-xs text-danger">{getFieldError('unit_price')}</p>}
+                </div>
+                <div>
+                  <label htmlFor="purchase_price" className="hms-label">Purchase Price (Auto)</label>
+                  <input id="purchase_price" type="text" className="hms-input bg-neutral-100" value={computedPurchase} readOnly />
                 </div>
                 <div>
                   <label htmlFor="gst_rate" className="hms-label">GST rate *</label>
                   <select id="gst_rate" className="hms-input" {...productForm.register('gst_rate')}>
                     <option value="0">0%</option><option value="5">5%</option><option value="12">12%</option><option value="18">18%</option><option value="28">28%</option>
                   </select>
-                </div>
-                <div>
-                  <label htmlFor="purchase_price" className="hms-label">Purchase ₹</label>
-                  <input id="purchase_price" type="number" step="0.01" className="hms-input" placeholder="0.00" {...productForm.register('purchase_price')} />
+                  {getFieldError('gst_rate') && <p className="mt-1 text-xs text-danger">{getFieldError('gst_rate')}</p>}
                 </div>
                 <div>
                   <label htmlFor="selling_price" className="hms-label">Selling ₹</label>
-                  <input id="selling_price" type="number" step="0.01" className="hms-input" placeholder="0.00" {...productForm.register('selling_price')} />
+                  <input id="selling_price" type="number" step="0.01" className="hms-input" placeholder="0.00" {...registerNumericField('selling_price')} />
+                  {getFieldError('selling_price') && <p className="mt-1 text-xs text-danger">{getFieldError('selling_price')}</p>}
                 </div>
                 <div>
                   <label htmlFor="mrp" className="hms-label">MRP ₹</label>
-                  <input id="mrp" type="number" step="0.01" className="hms-input" placeholder="0.00" {...productForm.register('mrp')} />
+                  <input id="mrp" type="number" step="0.01" className="hms-input" placeholder="0.00" {...registerNumericField('mrp')} />
+                  {getFieldError('mrp') && <p className="mt-1 text-xs text-danger">{getFieldError('mrp')}</p>}
                 </div>
                 <div>
-                  <label htmlFor="minimum_stock" className="hms-label">Min. stock</label>
-                  <input id="minimum_stock" type="number" className="hms-input" placeholder="0" {...productForm.register('minimum_stock')} />
-                </div>
-                <div>
-                  <label htmlFor="safety_stock" className="hms-label">Safety stock</label>
-                  <input id="safety_stock" type="number" className="hms-input" placeholder="0" {...productForm.register('safety_stock')} />
+                  <label htmlFor="safety_stock" className="hms-label">Min Safety Stock</label>
+                  <input id="safety_stock" type="number" className="hms-input" placeholder="0" {...registerNumericField('safety_stock')} />
+                  {getFieldError('safety_stock') && <p className="mt-1 text-xs text-danger">{getFieldError('safety_stock')}</p>}
                 </div>
                 <div>
                   <label htmlFor="opening_stock" className="hms-label">
@@ -335,8 +459,9 @@ const ProductsPage = () => {
                     className="hms-input"
                     placeholder="0"
                     disabled={!!editingProduct}
-                    {...productForm.register('opening_stock')}
+                    {...registerNumericField('opening_stock')}
                   />
+                  {getFieldError('opening_stock') && <p className="mt-1 text-xs text-danger">{getFieldError('opening_stock')}</p>}
                 </div>
                 <div>
                   <label htmlFor="status" className="hms-label">Status</label>
@@ -345,12 +470,11 @@ const ProductsPage = () => {
                     <option value="inactive">Inactive</option>
                     <option value="flagged_for_deletion">Flagged for deletion</option>
                   </select>
+                  {getFieldError('status') && <p className="mt-1 text-xs text-danger">{getFieldError('status')}</p>}
                 </div>
 
                 <div className="md:col-span-2 xl:col-span-4">
                   {formError && <p className="text-sm text-danger">{formError}</p>}
-                  {productMutation.isSuccess && !editingProduct && <p className="text-sm text-success">Product created successfully</p>}
-                  {updateMutation.isSuccess && <p className="text-sm text-success">Product updated successfully</p>}
                 </div>
                 <div className="md:col-span-2 xl:col-span-4">
                   <button type="submit" disabled={isSaving} className="rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-primary/20 transition hover:bg-primary/90 disabled:opacity-60">
@@ -394,7 +518,7 @@ const ProductsPage = () => {
                     <td className="px-4 py-3 font-mono text-xs">{item.product_code}</td>
                     <td className="px-4 py-3">
                       <div className="font-medium">{item.name}</div>
-                      {item.sku && <div className="text-xs text-neutral-400">SKU: {item.sku}</div>}
+                      {item.sku && <div className="text-xs text-neutral-400">Base Unit: {item.sku}</div>}
                     </td>
                     <td className="px-4 py-3 text-xs">{categoryNameById(item.category_id)}</td>
                     <td className="px-4 py-3">{item.gst_rate}%</td>
@@ -409,10 +533,8 @@ const ProductsPage = () => {
                         <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-bold text-neutral-500">Inactive</span>
                       ) : item.low_stock ? (
                         <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-bold text-red-700">Low Stock</span>
-                      ) : item.below_safety_stock ? (
-                        <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-700">Below Safety</span>
                       ) : (
-                        <span className="rounded-full bg-green-100 px-2.5 py-1 text-xs font-bold text-green-700">OK</span>
+                        <span className="rounded-full bg-green-100 px-2.5 py-1 text-xs font-bold text-green-700">In Stock</span>
                       )}
                     </td>
                     <td className="px-4 py-3">

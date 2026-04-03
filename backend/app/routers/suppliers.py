@@ -1,4 +1,5 @@
 """Supplier master router."""
+import re
 from datetime import datetime
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -21,9 +22,85 @@ from app.schemas.supplier import (
 router = APIRouter(prefix="/api/v1/suppliers", tags=["suppliers"])
 
 
-def _generate_supplier_code(db: Session) -> str:
-    count = db.query(Supplier).count()
-    return f"SUPP-{str(count + 1).zfill(5)}"
+STATE_ABBREVIATIONS = {
+    "andhra pradesh": "AP",
+    "arunachal pradesh": "AR",
+    "assam": "AS",
+    "bihar": "BR",
+    "chhattisgarh": "CG",
+    "goa": "GA",
+    "gujarat": "GJ",
+    "haryana": "HR",
+    "himachal pradesh": "HP",
+    "jharkhand": "JH",
+    "karnataka": "KA",
+    "kerala": "KL",
+    "madhya pradesh": "MP",
+    "maharashtra": "MH",
+    "manipur": "MN",
+    "meghalaya": "ML",
+    "mizoram": "MZ",
+    "nagaland": "NL",
+    "odisha": "OD",
+    "punjab": "PB",
+    "rajasthan": "RJ",
+    "sikkim": "SK",
+    "tamil nadu": "TN",
+    "telangana": "TS",
+    "tripura": "TR",
+    "uttar pradesh": "UP",
+    "uttarakhand": "UK",
+    "west bengal": "WB",
+    "delhi": "DL",
+}
+
+
+def _state_code_from_payload(payload: SupplierCreateRequest | SupplierUpdateRequest) -> str:
+    state = (payload.state or "").strip().lower()
+    if state and state in STATE_ABBREVIATIONS:
+        return STATE_ABBREVIATIONS[state]
+
+    raw_state_code = (payload.state_code or "").strip().upper()
+    alpha_state_code = "".join(ch for ch in raw_state_code if ch.isalpha())
+    if len(alpha_state_code) >= 2:
+        return alpha_state_code[:2]
+
+    if state:
+        cleaned = "".join(ch for ch in state if ch.isalpha())
+        if len(cleaned) >= 2:
+            return cleaned[:2].upper()
+    return "NA"
+
+
+def _is_international(payload: SupplierCreateRequest | SupplierUpdateRequest) -> bool:
+    if payload.business_type == "international":
+        return True
+    country = (payload.billing_country or "").strip().lower()
+    return bool(country and country not in {"india", "in"})
+
+
+def _generate_supplier_code(db: Session, payload: SupplierCreateRequest | SupplierUpdateRequest) -> str:
+    prefix = "SUPP-INT" if _is_international(payload) else f"SUPP-{_state_code_from_payload(payload)}"
+    existing_codes = (
+        db.query(Supplier.supplier_code)
+        .filter(Supplier.supplier_code.like(f"{prefix}-%"), Supplier.is_deleted == False)
+        .all()
+    )
+
+    max_seq = 0
+    for (code,) in existing_codes:
+        if not code:
+            continue
+        match = re.search(r"-(\d{5})$", code)
+        if match:
+            max_seq = max(max_seq, int(match.group(1)))
+
+    return f"{prefix}-{str(max_seq + 1).zfill(5)}"
+
+
+def _apply_gstin_policy(payload: SupplierCreateRequest | SupplierUpdateRequest) -> None:
+    if payload.gstin_status == "non-registered":
+        payload.gstin = None
 
 
 def _apply_gstin_state_code(payload: SupplierCreateRequest | SupplierUpdateRequest) -> None:
@@ -108,6 +185,8 @@ async def create_supplier(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("suppliers_write")),
 ):
+    _apply_gstin_policy(payload)
+
     if payload.gstin:
         duplicate = db.query(Supplier).filter(Supplier.gstin == payload.gstin, Supplier.is_deleted == False).first()
         if duplicate:
@@ -120,7 +199,7 @@ async def create_supplier(
 
     supplier = Supplier(
         **payload.model_dump(exclude={"supplier_code"}),
-        supplier_code=payload.supplier_code or _generate_supplier_code(db),
+        supplier_code=payload.supplier_code or _generate_supplier_code(db, payload),
         created_by=current_user.id,
     )
     db.add(supplier)
@@ -151,6 +230,8 @@ async def update_supplier(
     supplier = db.query(Supplier).filter(Supplier.id == supplier_id, Supplier.is_deleted == False).first()
     if not supplier:
         raise HTTPException(status_code=404, detail="Supplier not found")
+
+    _apply_gstin_policy(payload)
 
     if payload.gstin:
         duplicate = (

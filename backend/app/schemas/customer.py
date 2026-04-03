@@ -1,7 +1,7 @@
 """Customer schemas."""
 from typing import Optional, List
 from uuid import UUID
-from pydantic import BaseModel, field_validator, EmailStr
+from pydantic import BaseModel, field_validator, model_validator
 
 GSTIN_REGEX = r"^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$"
 PAN_REGEX = r"^[A-Z]{5}\d{4}[A-Z]$"
@@ -21,8 +21,12 @@ class CustomerBase(BaseModel):
     email: Optional[str] = None  # Optional: Must be valid email format if provided
 
     # === Tax Identifiers ===
+    gstin_status: str = "non-registered"  # registered | non-registered
     gstin: Optional[str] = None  # Optional: 15-char GST format (29ABCDE1234F1Z5). Auto-uppercased.
     pan: Optional[str] = None  # Optional: 10-char PAN format (ABCDE1234F). Auto-uppercased.
+    company_director_name: Optional[str] = None
+    company_director_contact: Optional[str] = None
+    business_type: str = "domestic"  # domestic | international
 
     # === Billing Address ===
     billing_address_line1: Optional[str] = None  # Street/building address
@@ -30,6 +34,7 @@ class CustomerBase(BaseModel):
     billing_city: Optional[str] = None  # City name
     billing_state: Optional[str] = None  # Full state name (e.g., "Karnataka")
     billing_state_code: Optional[str] = None  # Auto-filled from GSTIN first 2 digits if not provided
+    billing_country: Optional[str] = None
     billing_pincode: Optional[str] = None  # 6-digit PIN code
 
     # === Shipping Address ===
@@ -38,6 +43,7 @@ class CustomerBase(BaseModel):
     shipping_city: Optional[str] = None
     shipping_state: Optional[str] = None
     shipping_state_code: Optional[str] = None
+    shipping_country: Optional[str] = None
     shipping_pincode: Optional[str] = None
     same_as_billing: bool = True  # If true, shipping address copied from billing
 
@@ -86,6 +92,22 @@ class CustomerBase(BaseModel):
             )
         return upper_value
 
+    @field_validator("gstin_status")
+    @classmethod
+    def validate_gstin_status(cls, value: str) -> str:
+        normalized = (value or "").strip().lower()
+        if normalized not in {"registered", "non-registered"}:
+            raise ValueError("gstin_status must be 'registered' or 'non-registered'")
+        return normalized
+
+    @field_validator("business_type")
+    @classmethod
+    def validate_business_type(cls, value: str) -> str:
+        normalized = (value or "").strip().lower()
+        if normalized not in {"domestic", "international"}:
+            raise ValueError("business_type must be 'domestic' or 'international'")
+        return normalized
+
     @field_validator("pan")
     @classmethod
     def validate_pan(cls, value: Optional[str]) -> Optional[str]:
@@ -118,6 +140,12 @@ class CustomerBase(BaseModel):
                 "opening_balance_type must be 'dr' (debit) or 'cr' (credit)"
             )
         return value
+
+    @model_validator(mode="after")
+    def validate_gstin_toggle(self):
+        if self.gstin_status == "registered" and not self.gstin:
+            raise ValueError("GSTIN is required when gstin_status is 'registered'")
+        return self
 
 
 class CustomerCreateRequest(CustomerBase):

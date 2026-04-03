@@ -120,3 +120,90 @@ gstin_status: str = 'non-registered'
 **Backward Compatibility**:
 - Existing dashboard keys are unchanged
 - `top_products` still returned
+
+---
+
+## Customer Module - Director, GSTIN Toggle, Country, and Customer Code (Section Updated)
+
+### Files Updated
+- `backend/app/models/customer.py`
+- `backend/app/schemas/customer.py`
+- `backend/app/routers/customers.py`
+- `backend/app/services/pdf_service.py`
+- `backend/run_migration.py`
+
+### Model/Schema Additions
+- `company_director_name` (optional)
+- `company_director_contact` (optional)
+- `gstin_status` (`registered` / `non-registered`)
+- `business_type` (`domestic` / `international`)
+- `billing_country`
+- `shipping_country`
+
+### Business Rules Added
+- GSTIN toggle:
+  - `registered`: GSTIN required
+  - `non-registered`: GSTIN stored as `NULL`
+- Customer code generation:
+  - Domestic: `CUST-[STATE CODE]-[5-DIGIT]`
+  - International: `CUST-INT-[5-DIGIT]`
+- Prefix derived from state/country/business type, sequence auto-increments per prefix.
+
+### Billing Address Defaulting
+- On customer creation, if billing fields are empty, values are auto-copied from Company Profile.
+
+### Tax Invoice Country Flow
+- Billing/shipping country is now included in invoice PDF billing/shipping address composition.
+
+---
+
+## Supplier Module - Director, GSTIN Toggle, Billing Address, and Supplier Code (Section Updated)
+
+### Files Updated
+- `backend/app/models/supplier.py`
+- `backend/app/schemas/supplier.py`
+- `backend/app/routers/suppliers.py`
+- `backend/run_migration.py`
+
+### Model/Schema Additions
+- `company_director_name` (optional)
+- `company_director_contact` (optional)
+- `gstin_status` (`registered` / `non-registered`)
+- `business_type` (`domestic` / `international`)
+- `billing_country`
+
+### Business Rules Added
+- GSTIN toggle:
+  - `registered`: GSTIN required
+  - `non-registered`: GSTIN stored as `NULL`
+- Supplier code generation:
+  - Domestic: `SUPP-[STATE CODE]-[5-DIGIT]`
+  - International: `SUPP-INT-[5-DIGIT]`
+- Prefix derived from state/country/business type; sequence auto-increments per prefix.
+
+### Address Structure Support
+- Supplier address payload continues existing address fields and now includes `billing_country` for country-based code logic.
+
+---
+
+## Products Master - UI/Validation and Status Corrections (Section Updated)
+
+### Files Updated
+- `backend/app/schemas/product.py`
+- `backend/app/routers/products.py`
+- `backend/app/routers/reports.py`
+
+### Backend Validations Added
+- Price hierarchy validation in product schema:
+  - Purchase Price must be less than Selling Price
+  - Selling Price must be less than MRP
+
+### Order Unit Optional Handling
+- Product API now accepts empty `uom_id` from form flow and resolves it to the first active UOM.
+
+### Stock Status Alignment
+- Product stock flag for low stock now uses `safety_stock` as Min Safety Stock threshold.
+- Stock report status labels aligned to:
+  - `In Stock`
+  - `Low Stock`
+  - `Out of Stock`
