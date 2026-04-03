@@ -18,6 +18,7 @@ export interface PurchaseLineItem {
   manufacture_date?: string;
   expiry_date?: string;
   quantity: number;
+  free_quantity?: number;
   unit_price: number;
   discount_percent?: number;
   gst_rate: number;
@@ -106,6 +107,7 @@ export interface GoodsReceiptNote {
   supplier_invoice_number?: string;
   supplier_invoice_date?: string;
   receipt_date: string;
+  payment_due_date?: string;
   status: string;
   subtotal: number;
   total_discount: number;
@@ -133,6 +135,7 @@ export interface GRNItemResponse {
   manufacture_date?: string;
   expiry_date?: string;
   quantity: number;
+  free_quantity: number;
   unit_price: number;
   discount_percent: number;
   discount_amount: number;
