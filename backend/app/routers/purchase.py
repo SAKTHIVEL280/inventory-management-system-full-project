@@ -319,7 +319,32 @@ async def list_grn(
         query = query.filter(GoodsReceiptNote.supplier_id == supplier_id)
     total = query.count()
     rows = query.order_by(GoodsReceiptNote.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    return {"items": rows, "total": total, "page": page, "page_size": page_size, "has_more": (page * page_size) < total}
+
+    # GRN-003: Resolve PO numbers for linked GRNs
+    po_ids = {str(g.purchase_order_id) for g in rows if g.purchase_order_id}
+    po_number_map: dict[str, str] = {}
+    if po_ids:
+        po_rows = db.query(PurchaseOrder.id, PurchaseOrder.po_number).filter(
+            PurchaseOrder.id.in_([g.purchase_order_id for g in rows if g.purchase_order_id])
+        ).all()
+        po_number_map = {str(po.id): po.po_number for po in po_rows}
+
+    items_out = []
+    for g in rows:
+        g_dict = {
+            c.name: getattr(g, c.name)
+            for c in g.__table__.columns
+        }
+        # Convert UUID/date fields for JSON serialization
+        for k, v in g_dict.items():
+            if hasattr(v, 'hex'):
+                g_dict[k] = str(v)
+            elif hasattr(v, 'isoformat'):
+                g_dict[k] = v.isoformat()
+        g_dict["po_number"] = po_number_map.get(str(g.purchase_order_id)) if g.purchase_order_id else None
+        items_out.append(g_dict)
+
+    return {"items": items_out, "total": total, "page": page, "page_size": page_size, "has_more": (page * page_size) < total}
 
 
 @router.post("/api/v1/grn")
@@ -331,6 +356,17 @@ async def create_grn(
     supplier = db.query(Supplier).filter(Supplier.id == payload.supplier_id, Supplier.is_deleted == False).first()
     if not supplier:
         raise HTTPException(status_code=400, detail="Invalid supplier")
+
+    # Validate receipt date is not in the future
+    from datetime import date
+    if payload.receipt_date > date.today():
+        raise HTTPException(status_code=400, detail="Receipt date cannot be a future date. Please select today or a past date.")
+
+    # Calculate payment due date: receipt_date + supplier payment_terms_days
+    payment_due_date = None
+    if payload.receipt_date and supplier.payment_terms_days:
+        from datetime import timedelta
+        payment_due_date = payload.receipt_date + timedelta(days=supplier.payment_terms_days)
 
     po = None
     po_product_ids = set()
@@ -357,6 +393,7 @@ async def create_grn(
         supplier_invoice_number=payload.supplier_invoice_number,
         supplier_invoice_date=payload.supplier_invoice_date,
         receipt_date=payload.receipt_date,
+        payment_due_date=payment_due_date,
         status="draft",
         notes=payload.notes,
         created_by=current_user.id,
@@ -370,6 +407,21 @@ async def create_grn(
         product = db.query(Product).filter(Product.id == item.product_id, Product.is_deleted == False).first()
         if not product:
             raise HTTPException(status_code=400, detail=f"Invalid product: {item.product_id}")
+
+        # Validate manufacture date is not today or in the future
+        from datetime import date
+        if item.manufacture_date and item.manufacture_date >= date.today():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Line item {idx}: manufacturing date must be a past date only (not today or future)",
+            )
+
+        # Validate expiry date is not today or in the past (must be future only)
+        if item.expiry_date and item.expiry_date <= date.today():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Line item {idx}: expiry date must be a future date only (not today or past)",
+            )
 
         if item.manufacture_date and item.expiry_date and item.expiry_date < item.manufacture_date:
             raise HTTPException(
@@ -393,6 +445,7 @@ async def create_grn(
             manufacture_date=item.manufacture_date,
             expiry_date=item.expiry_date,
             quantity=item.quantity,
+            free_quantity=item.free_quantity,
             unit_price=item.unit_price,
             discount_percent=item.discount_percent,
             discount_amount=calc["discount"],
@@ -454,6 +507,16 @@ async def update_grn(
     if not supplier:
         raise HTTPException(status_code=400, detail="Invalid supplier")
 
+    # Validate receipt date is not in the future
+    from datetime import date
+    if payload.receipt_date > date.today():
+        raise HTTPException(status_code=400, detail="Receipt date cannot be a future date. Please select today or a past date.")
+
+    # Recalculate payment due date: receipt_date + supplier payment_terms_days
+    if payload.receipt_date and supplier.payment_terms_days:
+        from datetime import timedelta
+        grn.payment_due_date = payload.receipt_date + timedelta(days=supplier.payment_terms_days)
+
     if payload.purchase_order_id:
         po = db.query(PurchaseOrder).filter(PurchaseOrder.id == payload.purchase_order_id, PurchaseOrder.is_deleted == False).first()
         if not po:
@@ -478,6 +541,21 @@ async def update_grn(
 
     subtotal = total_discount = total_taxable = total_cgst = total_sgst = total_igst = 0
     for idx, item in enumerate(payload.items, start=1):
+        # Validate manufacture date is not today or in the future
+        from datetime import date
+        if item.manufacture_date and item.manufacture_date >= date.today():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Line item {idx}: manufacturing date must be a past date only (not today or future)",
+            )
+        
+        # Validate expiry date is not today or in the past (must be future only)
+        if item.expiry_date and item.expiry_date <= date.today():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Line item {idx}: expiry date must be a future date only (not today or past)",
+            )
+        
         if item.manufacture_date and item.expiry_date and item.expiry_date < item.manufacture_date:
             raise HTTPException(
                 status_code=400,
@@ -492,6 +570,7 @@ async def update_grn(
             manufacture_date=item.manufacture_date,
             expiry_date=item.expiry_date,
             quantity=item.quantity,
+            free_quantity=item.free_quantity,
             unit_price=item.unit_price,
             discount_percent=item.discount_percent,
             discount_amount=calc["discount"],
@@ -546,6 +625,7 @@ async def confirm_grn(
 
     # BUG-01: Use stock service for entries + materialized view refresh
     for item in items:
+        # Add received quantity to stock
         add_stock_entry(
             db=db,
             product_id=item.product_id,
@@ -558,6 +638,20 @@ async def confirm_grn(
             transaction_date=grn.receipt_date,
             created_by=current_user.id,
         )
+        # Add free quantity to stock (at zero rate)
+        if item.free_quantity and float(item.free_quantity) > 0:
+            add_stock_entry(
+                db=db,
+                product_id=item.product_id,
+                transaction_type="purchase",
+                reference_type="grn",
+                reference_id=grn.id,
+                reference_number=f"{grn.grn_number}-FREE",
+                quantity=float(item.free_quantity),
+                rate=0,
+                transaction_date=grn.receipt_date,
+                created_by=current_user.id,
+            )
         # Update PO item received_quantity
         if item.purchase_order_item_id:
             po_item = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.id == item.purchase_order_item_id).first()

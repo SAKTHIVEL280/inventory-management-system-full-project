@@ -51,7 +51,8 @@ const StockPage = () => {
 
   const sc: Record<string, string> = {
     'In Stock': 'bg-green-100 text-green-700',
-    'Low Stock': 'bg-orange-100 text-orange-700',
+    'Below Safety Stock': 'bg-amber-100 text-amber-700',
+    'Low Stock': 'bg-orange-100 text-orange-700 animate-pulse',
     'Out of Stock': 'bg-red-100 text-red-700',
   };
 
@@ -125,6 +126,7 @@ const StockPage = () => {
           >
             <option value="">All Statuses</option>
             <option value="In Stock">In Stock</option>
+            <option value="Below Safety Stock">Below Safety Stock</option>
             <option value="Low Stock">Low Stock</option>
             <option value="Out of Stock">Out of Stock</option>
           </select>

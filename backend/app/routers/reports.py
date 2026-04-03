@@ -81,9 +81,9 @@ async def dashboard_report(
         SalesInvoice.is_deleted == False,
     ).scalar() or 0
 
-    # Outstanding receivables
+    # Outstanding receivables – include ALL unpaid/partially-paid invoices
     outstanding_receivables = db.query(func.coalesce(func.sum(SalesInvoice.amount_due), 0)).filter(
-        SalesInvoice.status.in_(["issued", "partial_paid"]),
+        SalesInvoice.amount_due > 0,
         SalesInvoice.is_deleted == False,
     ).scalar() or 0
 

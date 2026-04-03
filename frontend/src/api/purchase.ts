@@ -18,6 +18,7 @@ export interface PurchaseLineItem {
   manufacture_date?: string;
   expiry_date?: string;
   quantity: number;
+  free_quantity?: number;
   unit_price: number;
   discount_percent?: number;
   gst_rate: number;
@@ -106,6 +107,7 @@ export interface GoodsReceiptNote {
   supplier_invoice_number?: string;
   supplier_invoice_date?: string;
   receipt_date: string;
+  payment_due_date?: string;
   status: string;
   subtotal: number;
   total_discount: number;
@@ -133,6 +135,7 @@ export interface GRNItemResponse {
   manufacture_date?: string;
   expiry_date?: string;
   quantity: number;
+  free_quantity: number;
   unit_price: number;
   discount_percent: number;
   discount_amount: number;
@@ -204,12 +207,13 @@ class PurchaseApiClient {
     status?: string,
     page = 1,
     page_size = 20,
-    options?: { archived_only?: boolean; include_archived?: boolean }
+    options?: { archived_only?: boolean; include_archived?: boolean; supplier_id?: string }
   ) {
     const params: Record<string, string | number | boolean> = { page, page_size };
     if (status) params.status = status;
     if (options?.archived_only) params.archived_only = true;
     if (options?.include_archived) params.include_archived = true;
+    if (options?.supplier_id) params.supplier_id = options.supplier_id;
     return apiClient.get<{ items: GoodsReceiptNote[]; total: number }>('/api/v1/grn', { params });
   }
 

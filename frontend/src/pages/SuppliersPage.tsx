@@ -235,6 +235,7 @@ const SuppliersPage = () => {
     setValue('billing_country', item.billing_country ?? 'India');
     setValue('pincode', item.pincode ?? '');
     setValue('place_of_supply', item.place_of_supply ?? '');
+    setValue('payment_terms_days', item.payment_terms_days ?? 30);
   };
 
   const onSubmit = (values: SupplierForm): void => {
@@ -267,7 +268,7 @@ const SuppliersPage = () => {
       bank_account_no: null,
       bank_ifsc: null,
       place_of_supply: normalizeOptional(parsed.data.place_of_supply),
-      payment_terms_days: editingItem?.payment_terms_days ?? 30,
+      payment_terms_days: parsed.data.payment_terms_days,
       opening_balance: editingItem?.opening_balance ?? 0,
       opening_balance_type: editingItem?.opening_balance_type ?? 'cr' as const,
       is_active: editingItem?.is_active ?? true,
@@ -415,6 +416,10 @@ const SuppliersPage = () => {
             <div>
               <label htmlFor="supplier_pos" className="hms-label">Place of Supply</label>
               <input id="supplier_pos" className="hms-input" placeholder="e.g. Tamil Nadu" {...register('place_of_supply')} />
+            </div>
+            <div>
+              <label htmlFor="supplier_payment_terms" className="hms-label">Payment Terms (Days)</label>
+              <input id="supplier_payment_terms" type="number" min="0" className="hms-input" placeholder="e.g. 30" {...register('payment_terms_days')} />
             </div>
             {formError && <p className="text-sm text-danger" role="alert" aria-live="assertive">{formError}</p>}
             {createMutation.isSuccess && <p className="text-sm text-success" role="status" aria-live="polite">Supplier created successfully</p>}

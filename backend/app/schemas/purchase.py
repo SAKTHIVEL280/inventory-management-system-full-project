@@ -12,6 +12,7 @@ class PurchaseLineItemRequest(BaseModel):
     manufacture_date: Optional[date] = None
     expiry_date: Optional[date] = None
     quantity: float
+    free_quantity: float = 0
     unit_price: int
     discount_percent: float = 0
     gst_rate: int
