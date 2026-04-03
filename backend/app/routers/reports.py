@@ -81,9 +81,9 @@ async def dashboard_report(
         SalesInvoice.is_deleted == False,
     ).scalar() or 0
 
-    # Outstanding receivables
+    # Outstanding receivables – include ALL unpaid/partially-paid invoices
     outstanding_receivables = db.query(func.coalesce(func.sum(SalesInvoice.amount_due), 0)).filter(
-        SalesInvoice.status.in_(["issued", "partial_paid"]),
+        SalesInvoice.amount_due > 0,
         SalesInvoice.is_deleted == False,
     ).scalar() or 0
 
@@ -229,14 +229,14 @@ async def stock_report(
         minimum = float(product.minimum_stock or 0)
         safety = float(product.safety_stock or 0)
         
-        status = "Normal"
+        status = "In Stock"
         if qty == 0:
             status = "Out of Stock"
         elif qty <= safety:
             status = "Below Safety Stock"
         elif qty <= minimum:
             status = "Low Stock"
-        if low_stock_only and status == "Normal":
+        if low_stock_only and status == "In Stock":
             continue
         rows.append({
             "product_code": product.product_code,

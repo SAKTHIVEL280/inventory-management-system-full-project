@@ -138,8 +138,7 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
       icon: 'receipt_long',
       items: [
         { to: '/sales/quotations', label: 'Quotations', visible: can('quotations_read'), icon: 'request_quote' },
-        { to: '/sales/orders', label: 'Sales Orders', visible: can('sales_orders_read'), icon: 'receipt_long' },
-        { to: '/sales/invoices', label: 'Invoices', visible: can('sales_invoices_read'), icon: 'receipt' },
+        { to: '/sales/invoices', label: 'Sales Invoice', visible: can('sales_invoices_read'), icon: 'receipt' },
       ],
     },
     {

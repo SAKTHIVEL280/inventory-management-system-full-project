@@ -1,4 +1,4 @@
-﻿/**
+/**
  * GRN (Goods Receipt Notes) Page
  * List, create, confirm GRNs. Confirms add stock to ledger.
  * 
@@ -434,9 +434,9 @@ const GRNPage = () => {
                     <td className="px-4 py-3">{supplierNameById(g.supplier_id)}</td>
                     <td className="px-4 py-3 text-xs">
                       {g.purchase_order_id ? (
-                        <span className="inline-flex items-center gap-1 text-green-700">
+                        <span className="inline-flex items-center gap-1 text-green-700 font-medium">
                           <span className="material-icons text-sm" aria-hidden="true">check_circle</span>
-                          Linked
+                          {(g as any).po_number || 'Linked'}
                         </span>
                       ) : '—'}
                     </td>

@@ -319,7 +319,32 @@ async def list_grn(
         query = query.filter(GoodsReceiptNote.supplier_id == supplier_id)
     total = query.count()
     rows = query.order_by(GoodsReceiptNote.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
-    return {"items": rows, "total": total, "page": page, "page_size": page_size, "has_more": (page * page_size) < total}
+
+    # GRN-003: Resolve PO numbers for linked GRNs
+    po_ids = {str(g.purchase_order_id) for g in rows if g.purchase_order_id}
+    po_number_map: dict[str, str] = {}
+    if po_ids:
+        po_rows = db.query(PurchaseOrder.id, PurchaseOrder.po_number).filter(
+            PurchaseOrder.id.in_([g.purchase_order_id for g in rows if g.purchase_order_id])
+        ).all()
+        po_number_map = {str(po.id): po.po_number for po in po_rows}
+
+    items_out = []
+    for g in rows:
+        g_dict = {
+            c.name: getattr(g, c.name)
+            for c in g.__table__.columns
+        }
+        # Convert UUID/date fields for JSON serialization
+        for k, v in g_dict.items():
+            if hasattr(v, 'hex'):
+                g_dict[k] = str(v)
+            elif hasattr(v, 'isoformat'):
+                g_dict[k] = v.isoformat()
+        g_dict["po_number"] = po_number_map.get(str(g.purchase_order_id)) if g.purchase_order_id else None
+        items_out.append(g_dict)
+
+    return {"items": items_out, "total": total, "page": page, "page_size": page_size, "has_more": (page * page_size) < total}
 
 
 @router.post("/api/v1/grn")

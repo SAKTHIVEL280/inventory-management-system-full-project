@@ -43,9 +43,10 @@ class Settings(BaseSettings):
     # Company
     company_name: str = "Your Company Name"
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+    model_config = {
+        "env_file": ".env",
+        "case_sensitive": False
+    }
 
 
 settings = Settings()
