@@ -2,7 +2,7 @@
 from typing import Optional, List
 from uuid import UUID
 from decimal import Decimal
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 
 class ProductCategoryCreateRequest(BaseModel):
@@ -36,7 +36,7 @@ class ProductBase(BaseModel):
     name: str
     description: Optional[str] = None
     category_id: UUID
-    uom_id: UUID
+    uom_id: Optional[UUID] = None
     alt_uom_id: Optional[UUID] = None
     alt_uom_conversion: Optional[Decimal] = None
     hsn_code: str
@@ -71,6 +71,14 @@ class ProductBase(BaseModel):
         if not value.isdigit() or len(value) not in {6, 7, 8}:
             raise ValueError("hsn_code must be a 6-8 digit numeric string")
         return value
+
+    @model_validator(mode="after")
+    def validate_price_hierarchy(self):
+        if self.purchase_price >= self.selling_price:
+            raise ValueError("Purchase price must be less than Selling Price")
+        if self.selling_price >= self.mrp:
+            raise ValueError("Selling Price must be less than MRP")
+        return self
 
 
 class ProductCreateRequest(ProductBase):

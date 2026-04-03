@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
@@ -7,19 +7,92 @@ import { Supplier } from '../types';
 import { AppLayout } from '../components/AppLayout';
 import { PageEmpty, PageError, PageLoading } from '../components/PageState';
 
+const GSTIN_REGEX = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/i;
+
+const STATE_ABBREVIATIONS: Record<string, string> = {
+  'andhra pradesh': 'AP',
+  'arunachal pradesh': 'AR',
+  assam: 'AS',
+  bihar: 'BR',
+  chhattisgarh: 'CG',
+  goa: 'GA',
+  gujarat: 'GJ',
+  haryana: 'HR',
+  'himachal pradesh': 'HP',
+  jharkhand: 'JH',
+  karnataka: 'KA',
+  kerala: 'KL',
+  'madhya pradesh': 'MP',
+  maharashtra: 'MH',
+  manipur: 'MN',
+  meghalaya: 'ML',
+  mizoram: 'MZ',
+  nagaland: 'NL',
+  odisha: 'OD',
+  punjab: 'PB',
+  rajasthan: 'RJ',
+  sikkim: 'SK',
+  'tamil nadu': 'TN',
+  telangana: 'TS',
+  tripura: 'TR',
+  'uttar pradesh': 'UP',
+  uttarakhand: 'UK',
+  'west bengal': 'WB',
+  delhi: 'DL',
+};
+
+const STATE_OPTIONS = Object.entries(STATE_ABBREVIATIONS)
+  .map(([state, code]) => ({ state, code }))
+  .sort((left, right) => left.state.localeCompare(right.state));
+
+const COUNTRIES = ['India', 'United States', 'United Arab Emirates', 'United Kingdom', 'Singapore', 'Australia'];
+
 const schema = z.object({
   company_name: z.string().min(1, 'Company name required'),
   phone: z.string().regex(/^[6-9]\d{9}$/, 'Must be a valid 10-digit Indian mobile number'),
+  company_director_name: z.string().optional(),
+  company_director_contact: z.string().optional(),
   contact_person: z.string().optional(),
   email: z.string().email('Invalid email format').optional().or(z.literal('')),
-  gstin: z.string().regex(/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/i, 'Invalid GSTIN format').optional().or(z.literal('')),
+  gstin_status: z.enum(['registered', 'non-registered']).default('non-registered'),
+  gstin: z.string().optional().or(z.literal('')),
+  business_type: z.enum(['domestic', 'international']).default('domestic'),
+  address_line1: z.string().optional(),
+  address_line2: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  state_code: z.string().optional(),
+  billing_country: z.string().optional(),
+  pincode: z.string().optional(),
   place_of_supply: z.string().optional(),
-  payment_terms_days: z.coerce.number().min(0, 'Cannot be negative').default(30),
+}).superRefine((value, ctx) => {
+  if (value.gstin_status === 'registered') {
+    if (!value.gstin || !value.gstin.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['gstin'], message: 'GSTIN is required for registered suppliers' });
+      return;
+    }
+    if (!GSTIN_REGEX.test(value.gstin.trim())) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['gstin'], message: 'Invalid GSTIN format' });
+    }
+  }
 });
 
 type SupplierForm = z.infer<typeof schema>;
 
 const normalizeOptional = (value?: string): string | null => value?.trim() || null;
+
+const toSupplierCodePreview = (businessType: 'domestic' | 'international', state?: string, stateCode?: string, country?: string): string => {
+  const isInternational = businessType === 'international' || !!(country && country.trim().toLowerCase() !== 'india');
+  if (isInternational) {
+    return 'SUPP-INT-XXXXX';
+  }
+
+  const normalizedState = (state || '').trim().toLowerCase();
+  const codeFromState = STATE_ABBREVIATIONS[normalizedState];
+  const codeFromInput = (stateCode || '').trim().replace(/[^a-zA-Z]/g, '').toUpperCase();
+  const finalCode = codeFromState || (codeFromInput.length >= 2 ? codeFromInput.slice(0, 2) : 'NA');
+  return `SUPP-${finalCode}-XXXXX`;
+};
 
 const SuppliersPage = () => {
   const queryClient = useQueryClient();
@@ -32,8 +105,26 @@ const SuppliersPage = () => {
     queryFn: suppliersApi.list,
   });
 
-  const { register, handleSubmit, reset, setValue } = useForm<SupplierForm>({
-    defaultValues: { company_name: '', phone: '', contact_person: '', email: '', gstin: '', place_of_supply: '', payment_terms_days: 30 },
+  const { register, handleSubmit, reset, setValue, watch } = useForm<SupplierForm>({
+    defaultValues: {
+      company_name: '',
+      company_director_name: '',
+      company_director_contact: '',
+      phone: '',
+      contact_person: '',
+      email: '',
+      gstin_status: 'non-registered',
+      gstin: '',
+      business_type: 'domestic',
+      address_line1: '',
+      address_line2: '',
+      city: '',
+      state: '',
+      state_code: '',
+      billing_country: 'India',
+      pincode: '',
+      place_of_supply: '',
+    },
   });
 
   const createMutation = useMutation({
@@ -103,17 +194,46 @@ const SuppliersPage = () => {
   const resetForm = () => {
     setEditingItem(null);
     setFormError('');
-    reset({ company_name: '', phone: '', contact_person: '', email: '', gstin: '', place_of_supply: '', payment_terms_days: 30 });
+    reset({
+      company_name: '',
+      company_director_name: '',
+      company_director_contact: '',
+      phone: '',
+      contact_person: '',
+      email: '',
+      gstin_status: 'non-registered',
+      gstin: '',
+      business_type: 'domestic',
+      address_line1: '',
+      address_line2: '',
+      city: '',
+      state: '',
+      state_code: '',
+      billing_country: 'India',
+      pincode: '',
+      place_of_supply: '',
+    });
   };
 
   const startEdit = (item: Supplier) => {
     setEditingItem(item);
     setFormError('');
     setValue('company_name', item.company_name);
+    setValue('company_director_name', item.company_director_name ?? '');
+    setValue('company_director_contact', item.company_director_contact ?? '');
     setValue('phone', item.phone);
     setValue('contact_person', item.contact_person ?? '');
     setValue('email', item.email ?? '');
+    setValue('gstin_status', item.gstin_status ?? 'non-registered');
     setValue('gstin', item.gstin ?? '');
+    setValue('business_type', item.business_type ?? 'domestic');
+    setValue('address_line1', item.address_line1 ?? '');
+    setValue('address_line2', item.address_line2 ?? '');
+    setValue('city', item.city ?? '');
+    setValue('state', item.state ?? '');
+    setValue('state_code', item.state_code ?? '');
+    setValue('billing_country', item.billing_country ?? 'India');
+    setValue('pincode', item.pincode ?? '');
     setValue('place_of_supply', item.place_of_supply ?? '');
     setValue('payment_terms_days', item.payment_terms_days ?? 30);
   };
@@ -127,18 +247,23 @@ const SuppliersPage = () => {
 
     const payload = {
       company_name: parsed.data.company_name.trim(),
+      company_director_name: normalizeOptional(parsed.data.company_director_name),
+      company_director_contact: normalizeOptional(parsed.data.company_director_contact),
       contact_person: normalizeOptional(parsed.data.contact_person),
       email: normalizeOptional(parsed.data.email),
       phone: parsed.data.phone.trim(),
       alternate_phone: null,
-      gstin: normalizeOptional(parsed.data.gstin)?.toUpperCase() ?? null,
+      gstin_status: parsed.data.gstin_status,
+      gstin: parsed.data.gstin_status === 'registered' ? (normalizeOptional(parsed.data.gstin)?.toUpperCase() ?? null) : null,
       pan: null,
-      address_line1: null,
-      address_line2: null,
-      city: null,
-      state: null,
-      state_code: null,
-      pincode: null,
+      business_type: parsed.data.business_type,
+      address_line1: normalizeOptional(parsed.data.address_line1),
+      address_line2: normalizeOptional(parsed.data.address_line2),
+      city: normalizeOptional(parsed.data.city),
+      state: normalizeOptional(parsed.data.state),
+      state_code: normalizeOptional(parsed.data.state_code),
+      billing_country: normalizeOptional(parsed.data.billing_country),
+      pincode: normalizeOptional(parsed.data.pincode),
       bank_name: null,
       bank_account_no: null,
       bank_ifsc: null,
@@ -158,6 +283,18 @@ const SuppliersPage = () => {
 
   const items = data?.items ?? [];
   const isSaving = createMutation.isPending || updateMutation.isPending;
+  const businessType = watch('business_type');
+  const gstinStatus = watch('gstin_status');
+  const state = watch('state');
+  const stateCode = watch('state_code');
+  const country = watch('billing_country');
+  const supplierCodePreview = toSupplierCodePreview(businessType, state, stateCode, country);
+
+  useEffect(() => {
+    const normalizedState = (state || '').trim().toLowerCase();
+    const derivedStateCode = STATE_ABBREVIATIONS[normalizedState] ?? '';
+    setValue('state_code', derivedStateCode);
+  }, [state, setValue]);
 
   return (
     <AppLayout title="Supplier Master">
@@ -177,6 +314,26 @@ const SuppliersPage = () => {
               <input id="supplier_company_name" className="hms-input" placeholder="Company name" {...register('company_name')} />
             </div>
             <div>
+              <label htmlFor="supplier_business_type" className="hms-label">Business Type</label>
+              <select id="supplier_business_type" className="hms-input" {...register('business_type')}>
+                <option value="domestic">Domestic</option>
+                <option value="international">International</option>
+              </select>
+            </div>
+            <div>
+              <label htmlFor="supplier_code_preview" className="hms-label">Supplier Code (Auto)</label>
+              <input id="supplier_code_preview" className="hms-input bg-neutral-100" value={supplierCodePreview} readOnly />
+              <p className="mt-1 text-xs text-neutral-500">Prefix auto-fills from selected State/Country; running number is assigned on save.</p>
+            </div>
+            <div>
+              <label htmlFor="supplier_director_name" className="hms-label">Company Director Name</label>
+              <input id="supplier_director_name" className="hms-input" placeholder="e.g. John Doe" {...register('company_director_name')} />
+            </div>
+            <div>
+              <label htmlFor="supplier_director_contact" className="hms-label">Company Director Contact</label>
+              <input id="supplier_director_contact" className="hms-input" placeholder="e.g. +91-9876543210" {...register('company_director_contact')} />
+            </div>
+            <div>
               <label htmlFor="supplier_contact" className="hms-label">Contact person</label>
               <input id="supplier_contact" className="hms-input" placeholder="Contact person" {...register('contact_person')} />
             </div>
@@ -189,8 +346,72 @@ const SuppliersPage = () => {
               <input id="supplier_email" className="hms-input" placeholder="Email" autoComplete="email" {...register('email')} />
             </div>
             <div>
-              <label htmlFor="supplier_gstin" className="hms-label">GSTIN</label>
-              <input id="supplier_gstin" className="hms-input" placeholder="GSTIN" {...register('gstin')} />
+              <label htmlFor="supplier_gstin_status" className="hms-label">GSTIN Status</label>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" value="registered" {...register('gstin_status')} className="w-4 h-4" />
+                  <span className="text-sm">Registered</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" value="non-registered" {...register('gstin_status')} className="w-4 h-4" />
+                  <span className="text-sm">Non-Registered</span>
+                </label>
+              </div>
+            </div>
+            <div>
+              <label htmlFor="supplier_gstin" className="hms-label">{gstinStatus === 'registered' ? 'GSTIN *' : 'GSTIN'}</label>
+              {gstinStatus === 'registered' ? (
+                <input id="supplier_gstin" className="hms-input" placeholder="GSTIN" {...register('gstin')} />
+              ) : (
+                <div className="hms-input bg-neutral-100 text-neutral-500 flex items-center">NA</div>
+              )}
+            </div>
+
+            <div className="pt-2 border-t border-neutral-100">
+              <p className="text-xs font-bold uppercase tracking-wider text-neutral-500 mb-2">Billing Address</p>
+            </div>
+            <div>
+              <label htmlFor="supplier_address_line1" className="hms-label">Address</label>
+              <input id="supplier_address_line1" className="hms-input" placeholder="Address line 1" {...register('address_line1')} />
+            </div>
+            <div>
+              <label htmlFor="supplier_address_line2" className="hms-label">Address line 2</label>
+              <input id="supplier_address_line2" className="hms-input" placeholder="Address line 2" {...register('address_line2')} />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label htmlFor="supplier_city" className="hms-label">City</label>
+                <input id="supplier_city" className="hms-input" placeholder="City" {...register('city')} />
+              </div>
+              <div>
+                <label htmlFor="supplier_state" className="hms-label">State</label>
+                <select id="supplier_state" className="hms-input" {...register('state')}>
+                  <option value="">Select state</option>
+                  {STATE_OPTIONS.map(({ state: stateValue, code }) => (
+                    <option key={stateValue} value={stateValue}>
+                      {stateValue.replace(/\b\w/g, (char) => char.toUpperCase())} ({code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label htmlFor="supplier_state_code" className="hms-label">State Code</label>
+                <input id="supplier_state_code" className="hms-input bg-neutral-100" placeholder="Auto" readOnly {...register('state_code')} />
+              </div>
+              <div>
+                <label htmlFor="supplier_pincode" className="hms-label">Pincode</label>
+                <input id="supplier_pincode" className="hms-input" placeholder="Pincode" {...register('pincode')} />
+              </div>
+            </div>
+            <div>
+              <label htmlFor="supplier_country" className="hms-label">Country</label>
+              <select id="supplier_country" className="hms-input" {...register('billing_country')}>
+                {COUNTRIES.map((countryValue) => (
+                  <option key={countryValue} value={countryValue}>{countryValue}</option>
+                ))}
+              </select>
             </div>
             <div>
               <label htmlFor="supplier_pos" className="hms-label">Place of Supply</label>

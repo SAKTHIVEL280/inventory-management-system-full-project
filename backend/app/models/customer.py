@@ -18,14 +18,19 @@ class Customer(Base):
     phone = Column(String(15), nullable=False)
     alternate_phone = Column(String(15), nullable=True)
     gstin = Column(String(15), nullable=True, index=True)
+    gstin_status = Column(String(20), nullable=False, default="non-registered")
     pan = Column(String(10), nullable=True)
     customer_type = Column(String(20), nullable=False, default="regular")
+    business_type = Column(String(20), nullable=False, default="domestic")
+    company_director_name = Column(String(255), nullable=True)
+    company_director_contact = Column(String(255), nullable=True)
 
     billing_address_line1 = Column(String(255), nullable=True)
     billing_address_line2 = Column(String(255), nullable=True)
     billing_city = Column(String(100), nullable=True)
     billing_state = Column(String(100), nullable=True)
     billing_state_code = Column(String(5), nullable=True)
+    billing_country = Column(String(100), nullable=True)
     billing_pincode = Column(String(10), nullable=True)
 
     shipping_address_line1 = Column(String(255), nullable=True)
@@ -33,6 +38,7 @@ class Customer(Base):
     shipping_city = Column(String(100), nullable=True)
     shipping_state = Column(String(100), nullable=True)
     shipping_state_code = Column(String(5), nullable=True)
+    shipping_country = Column(String(100), nullable=True)
     shipping_pincode = Column(String(10), nullable=True)
     same_as_billing = Column(Boolean, nullable=False, default=True)
 

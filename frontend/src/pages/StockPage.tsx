@@ -57,7 +57,7 @@ const StockPage = () => {
   };
 
   const lowCount = items.filter(i => i.status === 'Low Stock').length;
-  const safetyCount = items.filter(i => i.status === 'Below Safety Stock').length;
+  const safetyCount = 0;
   const outCount = items.filter(i => i.status === 'Out of Stock').length;
   const normalCount = items.filter(i => i.status === 'In Stock').length;
 

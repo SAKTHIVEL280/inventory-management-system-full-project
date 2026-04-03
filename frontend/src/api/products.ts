@@ -7,7 +7,7 @@ export type CreateProductPayload = {
   name: string;
   description?: string | null;
   category_id: string;
-  uom_id: string;
+  uom_id?: string | null;
   alt_uom_id?: string | null;
   alt_uom_conversion?: number | null;
   hsn_code: string;

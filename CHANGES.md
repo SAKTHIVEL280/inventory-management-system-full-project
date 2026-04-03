@@ -176,3 +176,150 @@ See [DATABASE_UPDATES.md](./docs/DATABASE_UPDATES.md) - section: Dashboard Modul
 - `docs/FRONTEND_UPDATES.md` - Added Dashboard section: Cash In Flow Graph
 - `docs/DATABASE_UPDATES.md` - Added Dashboard section: Cash In Flow Graph
 
+---
+
+## Customer Module - Director, GSTIN Toggle, Country, and Customer Code
+**Date**: April 3, 2026
+**Status**: ✅ Completed
+
+### Overview
+Implemented customer feature updates from test cases:
+1. ✅ Optional Company Director Name
+2. ✅ Optional Company Director Contact
+3. ✅ GSTIN Toggle (Registered collects GSTIN)
+4. ✅ GSTIN Toggle (Non-Registered shows NA)
+5. ✅ Country field on customer billing address
+6. ✅ Country appears in tax invoice billing/shipping address
+7. ✅ Domestic customer code format: `CUST-[STATE CODE]-[5-DIGIT]`
+8. ✅ International customer code format: `CUST-INT-[5-DIGIT]`
+9. ✅ Customer code prefix auto-fill preview based on state/country
+10. ✅ Billing address auto-copy from Company Profile on new customer
+11. ✅ Business Type dropdown: Domestic / International
+
+### Backend Changes
+See `docs/BACKEND_UPDATES.md` - section: Customer Module - Director, GSTIN Toggle, Country, and Customer Code
+
+### Frontend Changes
+See `docs/FRONTEND_UPDATES.md` - section: Customer Module - Requested Features
+
+### Database Changes
+See `docs/DATABASE_UPDATES.md` - section: Customer Module - Schema Updates
+
+### Files Modified for Customer Feature
+
+#### Backend
+- `backend/app/models/customer.py`
+- `backend/app/schemas/customer.py`
+- `backend/app/routers/customers.py`
+- `backend/app/services/pdf_service.py`
+- `backend/run_migration.py`
+
+#### Frontend
+- `frontend/src/pages/CustomersPage.tsx`
+- `frontend/src/types/index.ts`
+- `frontend/src/api/customers.ts`
+
+#### Database
+- `database/ALL_UPDATES.sql`
+
+#### Documentation
+- `docs/BACKEND_UPDATES.md`
+- `docs/FRONTEND_UPDATES.md`
+- `docs/DATABASE_UPDATES.md`
+
+---
+
+## Products Master - UI, Validation, Status, and Popup Fixes
+**Date**: April 3, 2026
+**Status**: ✅ Completed
+
+### Overview
+Implemented Products Master updates from PRO-001 to PRO-013:
+1. ✅ Removed `Minimum Stock` field from product form
+2. ✅ Renamed `Safety Stock` to `Min Safety Stock`
+3. ✅ Renamed `SKU` to `Base Unit` (mandatory)
+4. ✅ Renamed `Unit of Measure` to `Order Unit/Packing` (optional)
+5. ✅ Added order-unit/base-unit conversion mapping capture
+6. ✅ Purchase Price auto-calculation: `Price × Base Unit Qty`
+7. ✅ Validation: Purchase Price < Selling Price
+8. ✅ Validation: Selling Price < MRP
+9. ✅ Product status label now shows `In Stock` instead of `OK`
+10. ✅ Product status `Low Stock` at/below Min Safety Stock
+11. ✅ Create success popup shown once
+12. ✅ Modify success popup shown correctly
+13. ✅ Duplicate create success popup issue fixed
+
+### Backend Changes
+See `docs/BACKEND_UPDATES.md` - section: Products Master - UI/Validation and Status Corrections
+
+### Frontend Changes
+See `docs/FRONTEND_UPDATES.md` - section: Products Master - Requested Features
+
+### Database Changes
+See `docs/DATABASE_UPDATES.md` - section: Products Master - Schema Impact
+
+### Files Modified for Products Master
+
+#### Backend
+- `backend/app/schemas/product.py`
+- `backend/app/routers/products.py`
+- `backend/app/routers/reports.py`
+
+#### Frontend
+- `frontend/src/pages/ProductsPage.tsx`
+- `frontend/src/api/products.ts`
+- `frontend/src/pages/StockPage.tsx`
+
+#### Documentation
+- `docs/BACKEND_UPDATES.md`
+- `docs/FRONTEND_UPDATES.md`
+- `docs/DATABASE_UPDATES.md`
+
+---
+
+## Supplier Module - Director, GSTIN Toggle, Billing Address, and Supplier Code
+**Date**: April 3, 2026
+**Status**: ✅ Completed
+
+### Overview
+Implemented supplier feature updates from test cases:
+1. ✅ Optional Company Director Name
+2. ✅ Optional Company Director Contact
+3. ✅ GSTIN Toggle (Registered collects GSTIN)
+4. ✅ GSTIN Toggle (Non-Registered shows NA)
+5. ✅ Billing Address section with customer-like structure
+6. ✅ Domestic supplier code format: `SUPP-[STATE CODE]-[5-DIGIT]`
+7. ✅ International supplier code format: `SUPP-INT-[5-DIGIT]`
+8. ✅ Supplier code prefix auto-fill preview based on state/country
+9. ✅ Business Type dropdown: Domestic / International
+
+### Backend Changes
+See `docs/BACKEND_UPDATES.md` - section: Supplier Module - Director, GSTIN Toggle, Billing Address, and Supplier Code
+
+### Frontend Changes
+See `docs/FRONTEND_UPDATES.md` - section: Supplier Module - Requested Features
+
+### Database Changes
+See `docs/DATABASE_UPDATES.md` - section: Supplier Module - Schema Updates
+
+### Files Modified for Supplier Feature
+
+#### Backend
+- `backend/app/models/supplier.py`
+- `backend/app/schemas/supplier.py`
+- `backend/app/routers/suppliers.py`
+- `backend/run_migration.py`
+
+#### Frontend
+- `frontend/src/pages/SuppliersPage.tsx`
+- `frontend/src/types/index.ts`
+- `frontend/src/api/suppliers.ts`
+
+#### Database
+- `database/ALL_UPDATES.sql`
+
+#### Documentation
+- `docs/BACKEND_UPDATES.md`
+- `docs/FRONTEND_UPDATES.md`
+- `docs/DATABASE_UPDATES.md`
+

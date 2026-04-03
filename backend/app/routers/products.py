@@ -64,10 +64,12 @@ def _to_product_with_stock(product: Product, stock: Decimal) -> ProductWithStock
         selling_price=product.selling_price,
         mrp=product.mrp,
         minimum_stock=product.minimum_stock,
+        safety_stock=product.safety_stock,
         opening_stock=product.opening_stock,
         is_active=product.is_active,
         current_stock=float(stock),
-        low_stock=float(stock) <= float(product.minimum_stock),
+        low_stock=float(stock) <= float(product.safety_stock),
+        below_safety_stock=False,
     )
 
 
@@ -132,9 +134,13 @@ async def create_product(
     if not category:
         raise HTTPException(status_code=400, detail="Invalid category_id")
 
-    primary_uom = db.query(UnitOfMeasure).filter(UnitOfMeasure.id == payload.uom_id, UnitOfMeasure.is_active == True).first()
+    primary_uom = None
+    if payload.uom_id:
+        primary_uom = db.query(UnitOfMeasure).filter(UnitOfMeasure.id == payload.uom_id, UnitOfMeasure.is_active == True).first()
+    else:
+        primary_uom = db.query(UnitOfMeasure).filter(UnitOfMeasure.is_active == True).order_by(UnitOfMeasure.name.asc()).first()
     if not primary_uom:
-        raise HTTPException(status_code=400, detail="Invalid uom_id")
+        raise HTTPException(status_code=400, detail="No active Unit of Measure available")
 
     if payload.alt_uom_id:
         alternate_uom = db.query(UnitOfMeasure).filter(UnitOfMeasure.id == payload.alt_uom_id, UnitOfMeasure.is_active == True).first()
@@ -147,7 +153,8 @@ async def create_product(
             raise HTTPException(status_code=400, detail="SKU already exists. Please use a unique SKU.")
 
     product = Product(
-        **payload.model_dump(exclude={"product_code"}),
+        **payload.model_dump(exclude={"product_code", "uom_id"}),
+        uom_id=primary_uom.id,
         product_code=payload.product_code or _generate_product_code(db),
         created_by=current_user.id,
     )
@@ -328,9 +335,13 @@ async def update_product(
     if not category:
         raise HTTPException(status_code=400, detail="Invalid category_id")
 
-    primary_uom = db.query(UnitOfMeasure).filter(UnitOfMeasure.id == payload.uom_id, UnitOfMeasure.is_active == True).first()
+    primary_uom = None
+    if payload.uom_id:
+        primary_uom = db.query(UnitOfMeasure).filter(UnitOfMeasure.id == payload.uom_id, UnitOfMeasure.is_active == True).first()
+    else:
+        primary_uom = db.query(UnitOfMeasure).filter(UnitOfMeasure.is_active == True).order_by(UnitOfMeasure.name.asc()).first()
     if not primary_uom:
-        raise HTTPException(status_code=400, detail="Invalid uom_id")
+        raise HTTPException(status_code=400, detail="No active Unit of Measure available")
 
     if payload.alt_uom_id:
         alternate_uom = db.query(UnitOfMeasure).filter(UnitOfMeasure.id == payload.alt_uom_id, UnitOfMeasure.is_active == True).first()
@@ -346,7 +357,8 @@ async def update_product(
         if duplicate_sku:
             raise HTTPException(status_code=400, detail="SKU already exists. Please use a unique SKU.")
 
-    update_data = payload.model_dump(exclude={"product_code"})
+    update_data = payload.model_dump(exclude={"product_code", "uom_id"})
+    update_data["uom_id"] = primary_uom.id
     for field, value in update_data.items():
         setattr(product, field, value)
 

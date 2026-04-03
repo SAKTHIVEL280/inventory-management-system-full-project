@@ -24,15 +24,57 @@ ADD COLUMN IF NOT EXISTS company_director_name VARCHAR(255),
 ADD COLUMN IF NOT EXISTS company_director_contact VARCHAR(255),
 ADD COLUMN IF NOT EXISTS gstin_status VARCHAR(20) NOT NULL DEFAULT 'non-registered';
 
+ALTER TABLE customers
+ADD COLUMN IF NOT EXISTS company_director_name VARCHAR(255),
+ADD COLUMN IF NOT EXISTS company_director_contact VARCHAR(255),
+ADD COLUMN IF NOT EXISTS gstin_status VARCHAR(20) NOT NULL DEFAULT 'non-registered',
+ADD COLUMN IF NOT EXISTS business_type VARCHAR(20) NOT NULL DEFAULT 'domestic',
+ADD COLUMN IF NOT EXISTS billing_country VARCHAR(100),
+ADD COLUMN IF NOT EXISTS shipping_country VARCHAR(100);
+
+ALTER TABLE suppliers
+ADD COLUMN IF NOT EXISTS company_director_name VARCHAR(255),
+ADD COLUMN IF NOT EXISTS company_director_contact VARCHAR(255),
+ADD COLUMN IF NOT EXISTS gstin_status VARCHAR(20) NOT NULL DEFAULT 'non-registered',
+ADD COLUMN IF NOT EXISTS business_type VARCHAR(20) NOT NULL DEFAULT 'domestic',
+ADD COLUMN IF NOT EXISTS billing_country VARCHAR(100);
+
 -- Safe data backfill (non-destructive): only fills NULL values.
 UPDATE company
 SET gstin_status = 'non-registered'
 WHERE gstin_status IS NULL;
 
+UPDATE customers
+SET gstin_status = 'non-registered'
+WHERE gstin_status IS NULL;
+
+UPDATE customers
+SET business_type = 'domestic'
+WHERE business_type IS NULL;
+
+UPDATE suppliers
+SET gstin_status = 'non-registered'
+WHERE gstin_status IS NULL;
+
+UPDATE suppliers
+SET business_type = 'domestic'
+WHERE business_type IS NULL;
+
 -- Add column comments (PostgreSQL)
 COMMENT ON COLUMN company.company_director_name IS 'Optional: Name of company director';
 COMMENT ON COLUMN company.company_director_contact IS 'Optional: Contact info of company director';
 COMMENT ON COLUMN company.gstin_status IS 'GSTIN registration status: registered or non-registered';
+COMMENT ON COLUMN customers.company_director_name IS 'Optional: Name of customer company director';
+COMMENT ON COLUMN customers.company_director_contact IS 'Optional: Contact of customer company director';
+COMMENT ON COLUMN customers.gstin_status IS 'GSTIN registration status: registered or non-registered';
+COMMENT ON COLUMN customers.business_type IS 'Business type: domestic or international';
+COMMENT ON COLUMN customers.billing_country IS 'Billing address country';
+COMMENT ON COLUMN customers.shipping_country IS 'Shipping address country';
+COMMENT ON COLUMN suppliers.company_director_name IS 'Optional: Name of supplier company director';
+COMMENT ON COLUMN suppliers.company_director_contact IS 'Optional: Contact of supplier company director';
+COMMENT ON COLUMN suppliers.gstin_status IS 'GSTIN registration status: registered or non-registered';
+COMMENT ON COLUMN suppliers.business_type IS 'Business type: domestic or international';
+COMMENT ON COLUMN suppliers.billing_country IS 'Billing address country';
 
 -- Safe row insert pattern for future updates (kept as reference).
 -- Use this style when adding reference/master rows in this file.

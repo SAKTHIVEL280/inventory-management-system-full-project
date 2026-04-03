@@ -47,7 +47,7 @@ async def dashboard_report(
         qty_scalar = db.query(func.coalesce(func.sum(StockLedger.quantity), 0)).filter(StockLedger.product_id == product.id).scalar() or 0
         qty = float(qty_scalar)
         safety = float(product.safety_stock or 0)
-        minimum = float(product.minimum_stock or 0)
+        minimum = float(product.safety_stock or 0)
         
         if qty <= safety and qty > 0:
             safety_stock_count += 1
@@ -226,15 +226,12 @@ async def stock_report(
     for product in products:
         qty_scalar = db.query(func.coalesce(func.sum(StockLedger.quantity), 0)).filter(StockLedger.product_id == product.id).scalar() or 0
         qty = float(qty_scalar)
-        minimum = float(product.minimum_stock or 0)
         safety = float(product.safety_stock or 0)
         
         status = "In Stock"
         if qty == 0:
             status = "Out of Stock"
         elif qty <= safety:
-            status = "Below Safety Stock"
-        elif qty <= minimum:
             status = "Low Stock"
         if low_stock_only and status == "In Stock":
             continue
@@ -243,7 +240,7 @@ async def stock_report(
             "product_name": product.name,
             "hsn": product.hsn_code,
             "closing_qty": float(qty),
-            "min_stock": product.minimum_stock,
+            "min_stock": product.safety_stock,
             "safety_stock": product.safety_stock,
             "status": status,
         })
