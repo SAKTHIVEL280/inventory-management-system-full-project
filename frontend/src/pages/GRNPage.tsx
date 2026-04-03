@@ -503,7 +503,7 @@ const GRNPage = () => {
                     <td className="px-4 py-3 font-medium text-neutral-700">{g.payment_due_date || '-'}</td>
                     <td className="px-4 py-3">{g.supplier_invoice_number || '-'}</td>
                     <td className="px-4 py-3 text-right font-medium">{formatPaise(g.total_amount)}</td>
-                    <td className="px-4 py-3 text-center"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${sc[g.status] || 'bg-gray-100'}`}>{g.status}</span></td>
+                    <td className="px-4 py-3 text-center"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${sc[g.status] || 'bg-gray-100'}`}>{g.status.charAt(0).toUpperCase() + g.status.slice(1)}</span></td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1">
                         {archiveView === 'active' && g.status === 'draft' && (
@@ -539,7 +539,7 @@ const GRNPage = () => {
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4 bg-neutral-50 p-4 rounded-lg">
                 <div><p className="text-xs text-neutral-600">Receipt Date</p><p className="font-medium">{detailGRN.receipt_date}</p></div>
                 <div><p className="text-xs text-neutral-600">Payment Due Date</p><p className="font-medium">{detailGRN.payment_due_date || '-'}</p></div>
-                <div><p className="text-xs text-neutral-600">Status</p><span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${sc[detailGRN.status] || 'bg-gray-100'}`}>{detailGRN.status}</span></div>
+                <div><p className="text-xs text-neutral-600">Status</p><span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${sc[detailGRN.status] || 'bg-gray-100'}`}>{detailGRN.status.charAt(0).toUpperCase() + detailGRN.status.slice(1)}</span></div>
                 <div><p className="text-xs text-neutral-600">Total Amount</p><p className="font-medium">{formatPaise(detailGRN.total_amount)}</p></div>
                 <div><p className="text-xs text-neutral-600">Supplier Invoice</p><p className="font-medium">{detailGRN.supplier_invoice_number || '—'}</p></div>
               </div>
@@ -683,7 +683,7 @@ const GRNPage = () => {
                   >
                     <option value="">Standalone GRN</option>
                     {purchaseOrders.filter(po => !supplierId || po.supplier_id === supplierId).map(po =>
-                      <option key={po.id} value={po.id}>{po.po_number} ({po.status})</option>
+                      <option key={po.id} value={po.id}>{po.po_number} ({po.status.charAt(0).toUpperCase() + po.status.slice(1)})</option>
                     )}
                   </select>
                 </div>
