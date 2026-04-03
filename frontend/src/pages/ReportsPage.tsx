@@ -61,7 +61,7 @@ const ReportsPage = () => {
   const topProducts = (dashboard as Record<string, unknown>)?.top_products as { product_name: string; quantity_sold: number; amount: number }[] || [];
 
   const stockSummary = [
-    { name: 'Normal', value: stockItems.filter(i => i.status === 'Normal').length },
+    { name: 'In Stock', value: stockItems.filter(i => i.status === 'In Stock').length },
     { name: 'Below Safety Stock', value: stockItems.filter(i => i.status === 'Below Safety Stock').length },
     { name: 'Low Stock', value: stockItems.filter(i => i.status === 'Low Stock').length },
     { name: 'Out of Stock', value: stockItems.filter(i => i.status === 'Out of Stock').length },

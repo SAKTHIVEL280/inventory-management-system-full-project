@@ -1,4 +1,4 @@
-﻿import { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -658,7 +658,7 @@ const PurchaseOrderPage = () => {
                   onClick={() => setStatusFilter(s)}
                   className={`px-3 py-1 text-sm rounded ${statusFilter === s ? 'bg-primary text-white' : 'bg-neutral-100 text-neutral-700'}`}
                 >
-                  {s.charAt(0).toUpperCase() + s.slice(1)}
+                  {s === 'sent' ? 'Sent / Approved' : s.charAt(0).toUpperCase() + s.slice(1)}
                 </button>
               ))}
             </div>
@@ -746,7 +746,7 @@ const PurchaseOrderPage = () => {
                             po.status === 'received' ? 'bg-green-100 text-green-700' :
                             'bg-gray-100 text-gray-700'
                           }`}>
-                            {po.status}
+                            {po.status === 'sent' ? 'Sent / Approved' : po.status}
                           </span>
                         </td>
                         <td className="px-4 py-3">
@@ -822,7 +822,7 @@ const PurchaseOrderPage = () => {
                     selectedPO.status === 'received' ? 'bg-green-100 text-green-700' :
                     'bg-gray-100 text-gray-700'
                   }`}>
-                    {selectedPO.status}
+                    {selectedPO.status === 'sent' ? 'Sent / Approved' : selectedPO.status}
                   </span>
                 </div>
                 <div>
@@ -889,7 +889,7 @@ const PurchaseOrderPage = () => {
                       disabled={sendMutation.isPending}
                       className="bg-primary text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-primary/90 disabled:opacity-50"
                     >
-                      {sendMutation.isPending ? 'Sending...' : 'Send PO'}
+                      {sendMutation.isPending ? 'Sending...' : 'Approve / Send'}
                     </button>
                     <button
                       onClick={handleCancelPO}

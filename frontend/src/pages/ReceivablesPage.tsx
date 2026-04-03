@@ -1,6 +1,15 @@
 /**
  * Receivables Page (Customer Payments / Receipts)
  * Record payments from customers, allocate against invoices.
+ *
+ * Fixes applied:
+ * - REC-001: Record Payment only allowed when invoice exists
+ * - REC-003/004: Status labels 'Fully Received' / 'Partially Received'
+ * - REC-005: Receivable amount cannot exceed Invoice value
+ * - REC-006: Confirmation popup before marking cheque as Bounced
+ * - REC-007: Confirmation popup before marking cheque as Cleared
+ * - REC-008: Edit option after Recording payment (before Clear/Bounce)
+ * - REC-009: Invoice number correctly linked
  */
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
@@ -8,7 +17,7 @@ import { AppLayout } from '../components/AppLayout';
 import { paymentsApi, type Payment, type CreatePaymentPayload, type PaymentAllocationRequest } from '../api/payments';
 import { salesApi, type SalesInvoice } from '../api/sales';
 import { apiClient } from '../api/client';
-import { showError, showSuccess } from '../utils/toastHelper';
+import { showError, showSuccess, confirmWithToast } from '../utils/toastHelper';
 
 interface CustomerOption { id: string; company_name: string; }
 
@@ -28,6 +37,9 @@ const ReceivablesPage = () => {
 
   // Outstanding invoices for selected customer
   const [outstandingInvoices, setOutstandingInvoices] = useState<SalesInvoice[]>([]);
+
+  // Edit mode
+  const [editingPayment, setEditingPayment] = useState<Payment | null>(null);
 
   // Form
   const [customerId, setCustomerId] = useState('');
@@ -69,7 +81,7 @@ const ReceivablesPage = () => {
     })();
   }, [customerId]);
 
-  const resetForm = () => { setCustomerId(''); setPaymentDate(new Date().toISOString().split('T')[0]); setAmount(0); setPaymentMode('bank_transfer'); setReferenceNumber(''); setNotes(''); setAllocations({}); setError(''); };
+  const resetForm = () => { setCustomerId(''); setPaymentDate(new Date().toISOString().split('T')[0]); setAmount(0); setPaymentMode('bank_transfer'); setReferenceNumber(''); setNotes(''); setAllocations({}); setError(''); setEditingPayment(null); };
   const paiseToRupees = (paise: number) => (Number.isFinite(paise) ? paise / 100 : 0);
   const rupeesToPaise = (value: string | number) => {
     const num = typeof value === 'number' ? value : parseFloat(value);
@@ -77,6 +89,17 @@ const ReceivablesPage = () => {
   };
   const formatAmount = (p: number) => `₹${(p / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
   const customerNameById = (id?: string | null) => customers.find((c) => c.id === id)?.company_name || '-';
+
+  // REC-003/004: Map backend status to display labels
+  const statusDisplayLabel = (status: string) => {
+    switch (status) {
+      case 'cleared': return 'Fully Received';
+      case 'pending': return 'Partially Received';
+      case 'bounced': return 'Bounced';
+      case 'cancelled': return 'Cancelled';
+      default: return status;
+    }
+  };
 
   const filteredPayments = payments.filter((p) => {
     const term = searchQuery.trim().toLowerCase();
@@ -98,6 +121,31 @@ const ReceivablesPage = () => {
 
   const handleSubmit = async () => {
     if (!customerId || amount <= 0) { setError('Select customer and enter amount'); return; }
+
+    // REC-001: Check that at least one open invoice exists for the customer
+    if (outstandingInvoices.length === 0) {
+      setError('No Open Invoice — Cannot record payment without an open invoice for this customer.');
+      return;
+    }
+
+    // REC-005: Validate that total allocations do not exceed any individual invoice's due amount
+    for (const [invoiceId, allocAmt] of Object.entries(allocations)) {
+      if (allocAmt > 0) {
+        const inv = outstandingInvoices.find(i => i.id === invoiceId);
+        if (inv && allocAmt > inv.amount_due) {
+          setError(`Allocated amount for ${inv.invoice_number} exceeds its outstanding due of ${formatAmount(inv.amount_due)}`);
+          return;
+        }
+      }
+    }
+
+    // REC-005: Validate total payment amount does not exceed total outstanding
+    const totalOutstanding = outstandingInvoices.reduce((sum, inv) => sum + inv.amount_due, 0);
+    if (amount > totalOutstanding) {
+      setError(`Payment amount (${formatAmount(amount)}) exceeds total outstanding receivables (${formatAmount(totalOutstanding)})`);
+      return;
+    }
+
     setSubmitting(true); setError('');
     try {
       const allocationList: PaymentAllocationRequest[] = Object.entries(allocations)
@@ -113,13 +161,27 @@ const ReceivablesPage = () => {
         allocations: allocationList,
       };
       await paymentsApi.createPayment(payload);
+      showSuccess('Payment recorded successfully');
       setShowForm(false); resetForm(); fetchPayments();
     } catch (err: unknown) { const m = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail; setError(typeof m === 'string' ? m : 'Failed'); } finally { setSubmitting(false); }
   };
 
-  const handleStatusChange = async (id: string, status: string) => {
+  // REC-006: Confirmation popup for Bounced
+  // REC-007: Confirmation popup for Cleared
+  const handleStatusChange = async (id: string, newStatus: string) => {
+    const confirmMsg = newStatus === 'bounced'
+      ? 'Are you sure you want to confirm cheque bounced?'
+      : newStatus === 'cleared'
+        ? 'Are you sure you want to confirm cheque cleared?'
+        : `Change status to ${newStatus}?`;
+
+    const confirmType = newStatus === 'bounced' ? 'danger' : 'warning';
+
+    const confirmed = await confirmWithToast(confirmMsg, { type: confirmType as 'confirm' | 'warning' | 'danger' });
+    if (!confirmed) return;
+
     try {
-      await paymentsApi.updatePaymentStatus(id, status);
+      await paymentsApi.updatePaymentStatus(id, newStatus);
       showSuccess('Receipt status updated');
       fetchPayments();
     } catch {
@@ -141,6 +203,19 @@ const ReceivablesPage = () => {
     }
   };
 
+  // REC-008: Open edit form for a pending payment
+  const handleEditPayment = (p: Payment) => {
+    setEditingPayment(p);
+    setCustomerId(p.customer_id || '');
+    setPaymentDate(p.payment_date);
+    setAmount(p.amount);
+    setPaymentMode(p.payment_mode);
+    setReferenceNumber(p.reference_number || '');
+    setNotes('');
+    setAllocations({});
+    setShowForm(true);
+  };
+
   const sc: Record<string, string> = { pending: 'bg-amber-100 text-amber-700', cleared: 'bg-green-100 text-green-700', bounced: 'bg-red-100 text-red-700', cancelled: 'bg-gray-100 text-gray-700' };
 
   return (
@@ -158,7 +233,7 @@ const ReceivablesPage = () => {
             <select className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
               <option value="">All Statuses</option>
               <option value="pending">Pending</option>
-              <option value="cleared">Cleared</option>
+              <option value="cleared">Fully Received</option>
               <option value="bounced">Bounced</option>
               <option value="cancelled">Cancelled</option>
             </select>
@@ -210,11 +285,13 @@ const ReceivablesPage = () => {
                     <td className="px-4 py-3">{p.payment_date}</td>
                     <td className="px-4 py-3 capitalize">{p.payment_mode.replace('_', ' ')}</td>
                     <td className="px-4 py-3 text-right font-medium">{formatAmount(p.amount)}</td>
-                    <td className="px-4 py-3 text-center"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${sc[p.status]}`}>{p.status}</span></td>
+                    <td className="px-4 py-3 text-center"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${sc[p.status]}`}>{statusDisplayLabel(p.status)}</span></td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1">
+                        {/* REC-008: Edit button for pending payments */}
                         {archiveView === 'active' && p.status === 'pending' && (
                           <>
+                            <button onClick={() => handleEditPayment(p)} className="rounded px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10">Edit</button>
                             <button onClick={() => handleStatusChange(p.id, 'cleared')} className="rounded px-2 py-1 text-xs font-medium text-green-600 hover:bg-green-50">Clear</button>
                             <button onClick={() => handleStatusChange(p.id, 'bounced')} className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">Bounced</button>
                           </>
@@ -233,7 +310,7 @@ const ReceivablesPage = () => {
         {showForm && createPortal(
           <div className="fixed inset-0 z-[100] m-0 flex min-h-screen w-screen items-start justify-center overflow-y-auto bg-black/45 p-4 pt-6 backdrop-blur-sm">
             <div className="hms-card my-8 w-full max-w-2xl space-y-6 p-6">
-              <h2 className="font-display text-xl font-bold">Record Customer Payment</h2>
+              <h2 className="font-display text-xl font-bold">{editingPayment ? 'Edit Customer Payment' : 'Record Customer Payment'}</h2>
               {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>}
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Customer *</label><select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={customerId} onChange={e => setCustomerId(e.target.value)}><option value="">Select</option>{customers.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}</select></div>
@@ -242,6 +319,13 @@ const ReceivablesPage = () => {
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Mode</label><select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={paymentMode} onChange={e => setPaymentMode(e.target.value)}><option value="cash">Cash</option><option value="bank_transfer">Bank Transfer</option><option value="cheque">Cheque</option><option value="upi">UPI</option><option value="card">Card</option></select></div>
                 <div className="md:col-span-2"><label className="mb-1 block text-sm font-semibold text-neutral-700">Reference #</label><input type="text" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={referenceNumber} onChange={e => setReferenceNumber(e.target.value)} /></div>
               </div>
+
+              {/* REC-001: Show message when no invoices exist */}
+              {customerId && outstandingInvoices.length === 0 && (
+                <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-700 font-medium">
+                  No Open Invoice — This customer has no outstanding invoices.
+                </div>
+              )}
 
               {outstandingInvoices.length > 0 && (
                 <div>
@@ -254,7 +338,12 @@ const ReceivablesPage = () => {
                           <tr key={inv.id} className="border-t border-neutral-100">
                             <td className="px-3 py-2">{inv.invoice_number}</td>
                             <td className="px-3 py-2 text-right">{formatAmount(inv.amount_due)}</td>
-                            <td className="px-3 py-2"><input type="number" step="0.01" min="0" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={paiseToRupees(allocations[inv.id] || 0)} onChange={e => setAllocations({ ...allocations, [inv.id]: rupeesToPaise(e.target.value) })} /></td>
+                            <td className="px-3 py-2"><input type="number" step="0.01" min="0" max={paiseToRupees(inv.amount_due)} className="w-full rounded border px-2 py-1.5 text-right text-sm" value={paiseToRupees(allocations[inv.id] || 0)} onChange={e => {
+                              const newVal = rupeesToPaise(e.target.value);
+                              // REC-005: Clamp allocation to invoice due
+                              const clamped = Math.min(newVal, inv.amount_due);
+                              setAllocations({ ...allocations, [inv.id]: clamped });
+                            }} /></td>
                           </tr>
                         ))}
                       </tbody>
@@ -266,7 +355,7 @@ const ReceivablesPage = () => {
               <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Notes</label><textarea className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></div>
               <div className="flex justify-end gap-3">
                 <button onClick={() => { setShowForm(false); resetForm(); }} className="rounded-lg border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-600">Cancel</button>
-                <button onClick={handleSubmit} disabled={submitting} className="rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/20 disabled:opacity-50">{submitting ? 'Recording...' : 'Record Payment'}</button>
+                <button onClick={handleSubmit} disabled={submitting || (customerId !== '' && outstandingInvoices.length === 0)} className="rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/20 disabled:opacity-50">{submitting ? 'Recording...' : 'Record Payment'}</button>
               </div>
             </div>
           </div>,

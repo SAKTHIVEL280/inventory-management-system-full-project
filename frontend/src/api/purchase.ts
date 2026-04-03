@@ -204,12 +204,13 @@ class PurchaseApiClient {
     status?: string,
     page = 1,
     page_size = 20,
-    options?: { archived_only?: boolean; include_archived?: boolean }
+    options?: { archived_only?: boolean; include_archived?: boolean; supplier_id?: string }
   ) {
     const params: Record<string, string | number | boolean> = { page, page_size };
     if (status) params.status = status;
     if (options?.archived_only) params.archived_only = true;
     if (options?.include_archived) params.include_archived = true;
+    if (options?.supplier_id) params.supplier_id = options.supplier_id;
     return apiClient.get<{ items: GoodsReceiptNote[]; total: number }>('/api/v1/grn', { params });
   }
 
