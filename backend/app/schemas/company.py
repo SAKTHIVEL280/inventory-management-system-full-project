@@ -10,7 +10,10 @@ class CompanyBase(BaseModel):
     name: str
     legal_name: Optional[str] = None
     gstin: Optional[str] = None
+    gstin_status: str = 'non-registered'
     pan: Optional[str] = None
+    company_director_name: Optional[str] = None
+    company_director_contact: Optional[str] = None
 
     address_line1: Optional[str] = None
     address_line2: Optional[str] = None

@@ -21,6 +21,11 @@ export interface DashboardStats {
   overdue_invoices_count: number;
   sales_trend: { date: string; amount: number }[];
   top_products: { product_name: string; quantity_sold: number; amount: number }[];
+  cash_in_flow: {
+    daily: { customer_id: string; customer_name: string; receivables_amount: number }[];
+    weekly: { customer_id: string; customer_name: string; receivables_amount: number }[];
+    monthly: { customer_id: string; customer_name: string; receivables_amount: number }[];
+  };
   recent_invoices: { invoice_number: string; customer_name: string; amount: number; status: string; date: string }[];
 }
 

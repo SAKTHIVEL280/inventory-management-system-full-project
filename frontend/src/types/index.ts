@@ -42,7 +42,10 @@ export interface Company {
   name: string;
   legal_name?: string | null;
   gstin?: string | null;
+  gstin_status?: string;
   pan?: string | null;
+  company_director_name?: string | null;
+  company_director_contact?: string | null;
   address_line1?: string | null;
   address_line2?: string | null;
   city?: string | null;
