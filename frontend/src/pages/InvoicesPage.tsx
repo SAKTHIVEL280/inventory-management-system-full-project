@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Sales Invoices Page
  * List, create, edit, issue invoices. GST-aware line items.
  */
@@ -70,7 +70,7 @@ const InvoicesPage = () => {
   }, [showForm, editingId, salesOrders.length]);
 
   const resetForm = () => { setCustomerId(''); setInvoiceDate(new Date().toISOString().split('T')[0]); setDueDate(''); setNotes(''); setItems([]); setEditingId(null); setError(''); setSoNumberSearch(''); setSoId(undefined); };
-  const addItem = () => { setItems([...items, { product_id: '', quantity: 1, unit_price: 0, discount_percent: 0, gst_rate: 18 }]); };
+  const addItem = () => { setItems([...items, { product_id: '', quantity: 1, free_quantity: 0, unit_price: 0, discount_percent: 0, gst_rate: 18 }]); };
   const paiseToRupees = (paise: number) => (Number.isFinite(paise) ? paise / 100 : 0);
   const rupeesToPaise = (value: string | number) => {
     const num = typeof value === 'number' ? value : parseFloat(value);
@@ -93,7 +93,7 @@ const InvoicesPage = () => {
       const payload: CreateInvoicePayload = {
         customer_id: customerId, sales_order_id: soId, invoice_date: invoiceDate, due_date: dueDate || undefined,
         bill_to_customer_id: customerId, notes: notes || undefined,
-        items: items.map(i => ({ product_id: i.product_id, quantity: Number(i.quantity), unit_price: Number(i.unit_price), discount_percent: Number(i.discount_percent || 0), gst_rate: Number(i.gst_rate) })),
+        items: items.map(i => ({ product_id: i.product_id, quantity: Number(i.quantity), free_quantity: Number(i.free_quantity || 0), unit_price: Number(i.unit_price), discount_percent: Number(i.discount_percent || 0), gst_rate: Number(i.gst_rate) })),
       };
       if (editingId) await salesApi.updateInvoice(editingId, payload); else await salesApi.createInvoice(payload);
       setShowForm(false); resetForm(); fetchInvoices();
@@ -159,6 +159,7 @@ const InvoicesPage = () => {
       setItems(data.items.map((i: any) => ({
         product_id: i.product_id,
         quantity: i.quantity,
+        free_quantity: i.free_quantity,
         unit_price: i.unit_price,
         discount_percent: i.discount_percent,
         gst_rate: i.gst_rate,
@@ -363,12 +364,13 @@ const InvoicesPage = () => {
                   <table className="w-full min-w-[980px] table-fixed text-sm">
                     <thead>
                       <tr className="bg-neutral-50">
-                        <th className="w-[36%] px-3 py-2 text-left">Product</th>
-                        <th className="w-20 px-3 py-2 text-right">Qty</th>
-                        <th className="w-32 px-3 py-2 text-right">Price (₹)</th>
+                        <th className="w-[30%] px-3 py-2 text-left">Product</th>
+                        <th className="w-16 px-3 py-2 text-right">Qty</th>
+                        <th className="w-16 px-3 py-2 text-right">Free</th>
+                        <th className="w-28 px-3 py-2 text-right">Price (₹)</th>
                         <th className="w-20 px-3 py-2 text-right">Disc %</th>
                         <th className="w-20 px-3 py-2 text-right">GST</th>
-                        <th className="w-32 px-3 py-2 text-right">Total</th>
+                        <th className="w-28 px-3 py-2 text-right">Total</th>
                         <th className="w-24 px-3 py-2 text-right">Action</th>
                       </tr>
                     </thead>
@@ -383,6 +385,9 @@ const InvoicesPage = () => {
                           </td>
                           <td className="px-3 py-2">
                             <input type="number" min="0.01" step="0.01" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={item.quantity} onChange={e => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input type="number" min="0" step="0.01" className="w-full rounded border px-2 py-1.5 text-right text-sm border-amber-300 bg-amber-50" value={item.free_quantity || 0} onChange={e => updateItem(idx, 'free_quantity', parseFloat(e.target.value) || 0)} title="Free sample quantity (reduces stock, no cost)" />
                           </td>
                           <td className="px-3 py-2">
                             <input type="number" min="0" step="0.01" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={paiseToRupees(item.unit_price)} onChange={e => updateItem(idx, 'unit_price', rupeesToPaise(e.target.value))} />
@@ -503,6 +508,7 @@ const InvoicesPage = () => {
                         <tr className="bg-neutral-50">
                           <th className="px-3 py-2 text-left">Product</th>
                           <th className="px-3 py-2 text-right">Qty</th>
+                          <th className="px-3 py-2 text-right">Free</th>
                           <th className="px-3 py-2 text-right">Unit Price</th>
                           <th className="px-3 py-2 text-right">Discount %</th>
                           <th className="px-3 py-2 text-right">GST %</th>
@@ -514,6 +520,7 @@ const InvoicesPage = () => {
                           <tr key={item.id} className="border-t border-neutral-100">
                             <td className="px-3 py-2">{item.description || productNameById(item.product_id)}</td>
                             <td className="px-3 py-2 text-right">{item.quantity}</td>
+                            <td className="px-3 py-2 text-right text-amber-600 font-medium">{item.free_quantity || 0}</td>
                             <td className="px-3 py-2 text-right">{formatAmount(item.unit_price)}</td>
                             <td className="px-3 py-2 text-right">{item.discount_percent || 0}</td>
                             <td className="px-3 py-2 text-right">{item.gst_rate}</td>

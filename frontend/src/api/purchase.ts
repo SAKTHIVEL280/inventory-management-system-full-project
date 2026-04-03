@@ -18,6 +18,7 @@ export interface PurchaseLineItem {
   manufacture_date?: string;
   expiry_date?: string;
   quantity: number;
+  free_quantity?: number;
   unit_price: number;
   discount_percent?: number;
   gst_rate: number;
@@ -58,6 +59,7 @@ export interface PurchaseReturnLineItem {
   product_id: string;
   grn_item_id?: string;
   quantity: number;
+  free_quantity?: number;
   unit_price: number;
   gst_rate: number;
 }

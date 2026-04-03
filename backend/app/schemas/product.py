@@ -35,6 +35,7 @@ class ProductBase(BaseModel):
     sku: Optional[str] = None
     name: str
     description: Optional[str] = None
+    packing: Optional[str] = None
     category_id: UUID
     uom_id: UUID
     alt_uom_id: Optional[UUID] = None

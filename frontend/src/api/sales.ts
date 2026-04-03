@@ -15,6 +15,7 @@ export interface SalesLineItem {
   product_id: string;
   description?: string;
   quantity: number;
+  free_quantity?: number;
   unit_price: number;
   discount_percent?: number;
   gst_rate: number;
@@ -91,6 +92,7 @@ export interface SalesReturnLineItem {
   product_id: string;
   invoice_item_id?: string;
   quantity: number;
+  free_quantity?: number;
   unit_price: number;
   gst_rate: number;
 }
@@ -190,6 +192,7 @@ export interface SalesInvoiceItem {
   product_id: string;
   description?: string;
   quantity: number;
+  free_quantity?: number;
   unit_price: number;
   discount_percent?: number;
   gst_rate: number;

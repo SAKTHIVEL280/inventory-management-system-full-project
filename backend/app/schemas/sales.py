@@ -9,6 +9,7 @@ class SalesLineItemRequest(BaseModel):
     product_id: UUID
     description: Optional[str] = None
     quantity: float
+    free_quantity: float = 0
     unit_price: int
     discount_percent: float = 0
     gst_rate: int
@@ -147,6 +148,7 @@ class SalesReturnLineItemRequest(BaseModel):
     product_id: UUID
     invoice_item_id: Optional[UUID] = None
     quantity: float
+    free_quantity: float = 0
     unit_price: int
     gst_rate: int
 

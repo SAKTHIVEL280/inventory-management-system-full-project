@@ -181,6 +181,7 @@ export interface Product {
   sku?: string | null;
   name: string;
   description?: string | null;
+  packing?: string | null;
   category_id: string;
   uom_id: string;
   alt_uom_id?: string | null;

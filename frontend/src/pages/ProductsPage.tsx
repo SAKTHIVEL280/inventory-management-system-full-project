@@ -11,6 +11,7 @@ import { PageEmpty, PageError, PageLoading } from '../components/PageState';
 const productSchema = z.object({
   name: z.string().min(1, 'Product name required'),
   description: z.string().optional(),
+  packing: z.string().optional(),
   sku: z.string().optional(),
   hsn_code: z.string().min(6, 'HSN must be 6-8 digits').max(8, 'HSN must be 6-8 digits'),
   gst_rate: z.enum(['0', '5', '12', '18', '28']),
@@ -29,7 +30,7 @@ const productSchema = z.object({
 type ProductForm = z.infer<typeof productSchema>;
 
 const defaultProductValues: ProductForm = {
-  name: '', description: '', sku: '', hsn_code: '', gst_rate: '18',
+  name: '', description: '', packing: '', sku: '', hsn_code: '', gst_rate: '18',
   purchase_price: 0, selling_price: 0, mrp: 0,
   minimum_stock: 0, safety_stock: 0, opening_stock: 0, category_id: '', uom_id: '',
   is_active: true, status: 'active',
@@ -146,6 +147,7 @@ const ProductsPage = () => {
     productForm.reset({
       name: item.name,
       description: item.description ?? '',
+      packing: item.packing ?? '',
       sku: item.sku ?? '',
       hsn_code: item.hsn_code,
       gst_rate: String(item.gst_rate) as '0' | '5' | '12' | '18' | '28',
@@ -187,6 +189,7 @@ const ProductsPage = () => {
     const payload = {
       name: parsed.data.name.trim(),
       description: parsed.data.description?.trim() || null,
+      packing: parsed.data.packing?.trim() || null,
       sku: parsed.data.sku?.trim() || null,
       category_id: parsed.data.category_id,
       uom_id: parsed.data.uom_id,
@@ -284,6 +287,10 @@ const ProductsPage = () => {
                 <div className="xl:col-span-2">
                   <label htmlFor="product_description" className="hms-label">Description</label>
                   <input id="product_description" className="hms-input" placeholder="Short description (optional)" {...productForm.register('description')} />
+                </div>
+                <div>
+                  <label htmlFor="packing" className="hms-label">Packing</label>
+                  <input id="packing" className="hms-input" placeholder="e.g. 1x10 Strip" {...productForm.register('packing')} />
                 </div>
                 <div>
                   <label htmlFor="category_id" className="hms-label">Category *</label>

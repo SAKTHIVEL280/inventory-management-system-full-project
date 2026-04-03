@@ -147,6 +147,7 @@ async def create_quotation(
             product_id=item.product_id,
             description=item.description,
             quantity=item.quantity,
+            free_quantity=item.free_quantity,
             unit_price=item.unit_price,
             discount_percent=item.discount_percent,
             discount_amount=calc["discount"],
@@ -229,6 +230,7 @@ async def update_quotation(
             product_id=item.product_id,
             description=item.description,
             quantity=item.quantity,
+            free_quantity=item.free_quantity,
             unit_price=item.unit_price,
             discount_percent=item.discount_percent,
             discount_amount=calc["discount"],
@@ -362,6 +364,7 @@ async def convert_quotation_to_so(
             product_id=item.product_id,
             description=item.description,
             quantity=item.quantity,
+            free_quantity=item.free_quantity,
             unit_price=item.unit_price,
             discount_percent=item.discount_percent,
             discount_amount=item.discount_amount,
@@ -450,6 +453,7 @@ async def create_sales_order(
             product_id=item.product_id,
             description=item.description,
             quantity=item.quantity,
+            free_quantity=item.free_quantity,
             unit_price=item.unit_price,
             discount_percent=item.discount_percent,
             discount_amount=calc["discount"],
@@ -545,6 +549,7 @@ async def update_sales_order(
             product_id=item.product_id,
             description=item.description,
             quantity=item.quantity,
+            free_quantity=item.free_quantity,
             unit_price=item.unit_price,
             discount_percent=item.discount_percent,
             discount_amount=calc["discount"],
@@ -594,10 +599,10 @@ async def sales_order_status(
         shortages = []
         for item in items:
             stock = get_current_stock(db, item.product_id)
-            if stock < float(item.quantity):
+            if stock < (float(item.quantity) + float(item.free_quantity)):
                 shortages.append({
                     "product_id": str(item.product_id),
-                    "required": float(item.quantity),
+                    "required": float(item.quantity) + float(item.free_quantity),
                     "available": stock,
                 })
         if shortages:
@@ -716,6 +721,7 @@ async def convert_so_to_invoice(
             product_id=item.product_id,
             description=item.description,
             quantity=item.quantity,
+            free_quantity=item.free_quantity,
             unit_price=item.unit_price,
             mrp=product.mrp if product else 0,
             discount_percent=item.discount_percent,
@@ -810,6 +816,7 @@ async def create_invoice(
             product_id=item.product_id,
             description=item.description,
             quantity=item.quantity,
+            free_quantity=item.free_quantity,
             unit_price=item.unit_price,
             mrp=product.mrp,
             discount_percent=item.discount_percent,
@@ -903,6 +910,7 @@ async def update_invoice(
             product_id=item.product_id,
             description=item.description,
             quantity=item.quantity,
+            free_quantity=item.free_quantity,
             unit_price=item.unit_price,
             mrp=product.mrp,
             discount_percent=item.discount_percent,
@@ -951,7 +959,7 @@ async def issue_invoice(
     items = db.query(SalesInvoiceItem).filter(SalesInvoiceItem.invoice_id == invoice.id).all()
     for item in items:
         stock = get_current_stock(db, item.product_id)
-        if stock < float(item.quantity):
+        if stock < (float(item.quantity) + float(item.free_quantity)):
             raise HTTPException(status_code=400, detail=f"Insufficient stock for product {item.product_id}")
 
     # BUG-01: Use stock service for entries
@@ -963,7 +971,7 @@ async def issue_invoice(
             reference_type="invoice",
             reference_id=invoice.id,
             reference_number=invoice.invoice_number,
-            quantity=-float(item.quantity),
+            quantity=-(float(item.quantity) + float(item.free_quantity)),
             rate=item.unit_price,
             transaction_date=invoice.invoice_date,
             created_by=current_user.id,
@@ -1067,6 +1075,7 @@ async def create_sales_return(
             product_id=item.product_id,
             invoice_item_id=item.invoice_item_id,
             quantity=item.quantity,
+            free_quantity=item.free_quantity,
             unit_price=item.unit_price,
             taxable_amount=taxable,
             gst_rate=item.gst_rate,
@@ -1121,7 +1130,7 @@ async def confirm_sales_return(
             reference_type="sales_return",
             reference_id=ret.id,
             reference_number=ret.return_number,
-            quantity=float(item.quantity),
+            quantity=(float(item.quantity) + float(item.free_quantity)),
             rate=item.unit_price,
             transaction_date=ret.return_date,
             created_by=current_user.id,

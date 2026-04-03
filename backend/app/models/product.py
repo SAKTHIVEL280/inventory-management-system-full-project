@@ -45,6 +45,7 @@ class Product(Base):
     sku = Column(String(50), unique=True, nullable=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
+    packing = Column(String(50), nullable=True)
     category_id = Column(UUID(as_uuid=True), ForeignKey("product_categories.id"), nullable=True)
     uom_id = Column(UUID(as_uuid=True), ForeignKey("units_of_measure.id"), nullable=False)
     alt_uom_id = Column(UUID(as_uuid=True), ForeignKey("units_of_measure.id"), nullable=True)
