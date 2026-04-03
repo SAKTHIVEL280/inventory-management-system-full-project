@@ -13,6 +13,7 @@ interface StockItem {
   closing_qty: number;
   min_stock: number;
   safety_stock: number;
+  batch_numbers: string[];
   status: string;
 }
 
@@ -51,21 +52,17 @@ const StockPage = () => {
 
   const sc: Record<string, string> = {
     'In Stock': 'bg-green-100 text-green-700',
-    'Below Safety Stock': 'bg-amber-100 text-amber-700',
     'Low Stock': 'bg-orange-100 text-orange-700 animate-pulse',
-    'Out of Stock': 'bg-red-100 text-red-700',
   };
 
   const lowCount = items.filter(i => i.status === 'Low Stock').length;
-  const safetyCount = 0;
-  const outCount = items.filter(i => i.status === 'Out of Stock').length;
   const normalCount = items.filter(i => i.status === 'In Stock').length;
 
   return (
     <AppLayout title="Stock / Inventory">
       <div className="space-y-6">
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="hms-card p-5">
             <div className="flex items-center justify-between">
               <div>
@@ -80,33 +77,11 @@ const StockPage = () => {
           <div className="hms-card p-5">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-neutral-500">Below Safety</p>
-                <p className="mt-2 text-2xl font-bold text-amber-600">{safetyCount}</p>
-              </div>
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100">
-                <span className="material-icons text-amber-600" aria-hidden="true">inventory_2</span>
-              </div>
-            </div>
-          </div>
-          <div className="hms-card p-5">
-            <div className="flex items-center justify-between">
-              <div>
                 <p className="text-xs font-bold uppercase tracking-wider text-neutral-500">Low Stock</p>
                 <p className="mt-2 text-2xl font-bold text-orange-600">{lowCount}</p>
               </div>
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-100">
                 <span className="material-icons text-orange-600" aria-hidden="true">warning</span>
-              </div>
-            </div>
-          </div>
-          <div className="hms-card p-5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-neutral-500">Out of Stock</p>
-                <p className="mt-2 text-2xl font-bold text-red-600">{outCount}</p>
-              </div>
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-100">
-                <span className="material-icons text-red-600" aria-hidden="true">cancel</span>
               </div>
             </div>
           </div>
@@ -126,9 +101,7 @@ const StockPage = () => {
           >
             <option value="">All Statuses</option>
             <option value="In Stock">In Stock</option>
-            <option value="Below Safety Stock">Below Safety Stock</option>
             <option value="Low Stock">Low Stock</option>
-            <option value="Out of Stock">Out of Stock</option>
           </select>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={lowStockOnly} onChange={e => setLowStockOnly(e.target.checked)} className="rounded" />
@@ -147,11 +120,12 @@ const StockPage = () => {
                 <th className="px-4 py-3 text-right font-semibold text-neutral-600">Current Qty</th>
                 <th className="px-4 py-3 text-right font-semibold text-neutral-600">Safety Stock</th>
                 <th className="px-4 py-3 text-right font-semibold text-neutral-600">Min Stock</th>
+                <th className="px-4 py-3 text-left font-semibold text-neutral-600">Batch(es)</th>
                 <th className="px-4 py-3 text-center font-semibold text-neutral-600">Status</th>
               </tr></thead>
               <tbody>
-                {loading ? <tr><td colSpan={6} className="px-4 py-8 text-center text-neutral-500">Loading...</td></tr>
-                : filtered.length === 0 ? <tr><td colSpan={6} className="px-4 py-8 text-center text-neutral-500">No products found</td></tr>
+                {loading ? <tr><td colSpan={8} className="px-4 py-8 text-center text-neutral-500">Loading...</td></tr>
+                : filtered.length === 0 ? <tr><td colSpan={8} className="px-4 py-8 text-center text-neutral-500">No products found</td></tr>
                 : filtered.map((item, idx) => (
                   <tr key={idx} className="border-b border-neutral-100 hover:bg-neutral-50">
                     <td className="px-4 py-3 font-medium">{item.product_code}</td>
@@ -160,6 +134,11 @@ const StockPage = () => {
                     <td className="px-4 py-3 text-right font-medium">{item.closing_qty}</td>
                     <td className="px-4 py-3 text-right text-neutral-500">{item.safety_stock}</td>
                     <td className="px-4 py-3 text-right text-neutral-500">{item.min_stock}</td>
+                    <td className="px-4 py-3 text-neutral-500 text-xs">
+                      {item.batch_numbers && item.batch_numbers.length > 0
+                        ? item.batch_numbers.join(', ')
+                        : <span className="text-neutral-300">—</span>}
+                    </td>
                     <td className="px-4 py-3 text-center">
                       <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${sc[item.status] || 'bg-gray-100'}`}>{item.status}</span>
                     </td>

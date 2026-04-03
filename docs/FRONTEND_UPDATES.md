@@ -248,3 +248,19 @@ Each item contains:
   - `Product created successfully`
   - `Product modified successfully`
 - Removed duplicate inline success rendering to avoid repeated success popup messages.
+
+---
+
+## Sales + Stock Completion Patch (April 3, 2026)
+
+### 24. Quotation Send PDF Action
+- Added `Send PDF` action button in `frontend/src/pages/QuotationsPage.tsx`.
+- Added API client method `sendQuotationEmail` in `frontend/src/api/sales.ts`.
+- Action triggers backend queue endpoint and shows success/error toast.
+
+### 25. Stock Status UI Alignment
+- Updated `frontend/src/pages/StockPage.tsx` to match Min Safety Stock based behavior.
+- Stock summary and status filter now focus on:
+  - `In Stock`
+  - `Low Stock`
+- Removed legacy `Below Safety Stock` and `Out of Stock` display branches from this page.

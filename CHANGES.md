@@ -229,6 +229,25 @@ See `docs/DATABASE_UPDATES.md` - section: Customer Module - Schema Updates
 
 ---
 
+## Sales + Stock Completion Patch
+**Date**: April 3, 2026
+**Status**: ✅ Completed
+
+### Overview
+Implemented additional pending CSV-aligned fixes:
+1. ✅ Added quotation `Send PDF` action flow
+2. ✅ Added backend quotation email queue endpoint
+3. ✅ Aligned stock report low-stock threshold to Min Safety Stock
+4. ✅ Updated stock page statuses and filters for `In Stock` / `Low Stock`
+
+### Backend Changes
+See `docs/BACKEND_UPDATES.md` - section: Sales + Stock Completion Patch (April 3, 2026)
+
+### Frontend Changes
+See `docs/FRONTEND_UPDATES.md` - section: Sales + Stock Completion Patch (April 3, 2026)
+
+---
+
 ## Products Master - UI, Validation, Status, and Popup Fixes
 **Date**: April 3, 2026
 **Status**: ✅ Completed

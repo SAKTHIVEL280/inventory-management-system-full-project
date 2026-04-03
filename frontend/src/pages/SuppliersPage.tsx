@@ -65,6 +65,7 @@ const schema = z.object({
   billing_country: z.string().optional(),
   pincode: z.string().optional(),
   place_of_supply: z.string().optional(),
+  payment_terms_days: z.coerce.number().min(0).default(30),
 }).superRefine((value, ctx) => {
   if (value.gstin_status === 'registered') {
     if (!value.gstin || !value.gstin.trim()) {
@@ -124,6 +125,7 @@ const SuppliersPage = () => {
       billing_country: 'India',
       pincode: '',
       place_of_supply: '',
+      payment_terms_days: 30,
     },
   });
 
@@ -212,6 +214,7 @@ const SuppliersPage = () => {
       billing_country: 'India',
       pincode: '',
       place_of_supply: '',
+      payment_terms_days: 30,
     });
   };
 

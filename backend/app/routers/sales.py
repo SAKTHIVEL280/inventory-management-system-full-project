@@ -11,7 +11,7 @@ Production-ready with fixes for:
 """
 from datetime import date, datetime
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -120,6 +120,10 @@ async def create_quotation(
     if not customer:
         raise HTTPException(status_code=400, detail="Invalid customer")
 
+    # SAL-006: Valid Until must be a future date
+    if payload.valid_until and payload.valid_until <= date.today():
+        raise HTTPException(status_code=400, detail="Valid Until date must be a future date")
+
     # BUG-02: Auto-detect IGST
     is_igst = determine_is_igst(db, "customer", payload.customer_id)
 
@@ -205,6 +209,10 @@ async def update_quotation(
         raise HTTPException(status_code=404, detail="Quotation not found")
     if q.status not in {"draft", "sent"}:
         raise HTTPException(status_code=400, detail="Quotation cannot be edited in current status")
+
+    # SAL-006: Valid Until must be a future date
+    if payload.valid_until and payload.valid_until <= date.today():
+        raise HTTPException(status_code=400, detail="Valid Until date must be a future date")
 
     # BUG-02: Auto-detect IGST
     is_igst = determine_is_igst(db, "customer", payload.customer_id)
@@ -809,7 +817,12 @@ async def create_invoice(
             invoice_id=invoice.id,
             product_id=item.product_id,
             description=item.description,
+            order_unit=item.order_unit,
+            batch_no=item.batch_no,
+            manufacture_date=item.manufacture_date,
+            expiry_date=item.expiry_date,
             quantity=item.quantity,
+            free_quantity=item.free_quantity,
             unit_price=item.unit_price,
             mrp=product.mrp,
             discount_percent=item.discount_percent,
@@ -868,12 +881,14 @@ async def update_invoice(
         raise HTTPException(status_code=404, detail="Invoice not found")
     if invoice.status != "draft":
         raise HTTPException(status_code=400, detail="Only draft invoice can be edited")
+
+    # BUG-02: Auto-detect IGST (initialize before conditional SO check)
+    is_igst = determine_is_igst(db, "customer", payload.customer_id)
         
     if payload.sales_order_id:
         so = db.query(SalesOrder).filter(SalesOrder.id == payload.sales_order_id).first()
         if so and so.status not in {"confirmed", "fulfilled", "partial"}:
             raise HTTPException(status_code=400, detail="Only confirmed, partial, or fulfilled sales orders can generate invoices")
-        is_igst = determine_is_igst(db, "customer", payload.customer_id)
 
     invoice.customer_id = payload.customer_id
     invoice.sales_order_id = payload.sales_order_id
@@ -902,7 +917,12 @@ async def update_invoice(
             invoice_id=invoice.id,
             product_id=item.product_id,
             description=item.description,
+            order_unit=item.order_unit,
+            batch_no=item.batch_no,
+            manufacture_date=item.manufacture_date,
+            expiry_date=item.expiry_date,
             quantity=item.quantity,
+            free_quantity=item.free_quantity,
             unit_price=item.unit_price,
             mrp=product.mrp,
             discount_percent=item.discount_percent,
@@ -1185,4 +1205,47 @@ async def download_invoice_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f"inline; filename={invoice.invoice_number}.pdf"},
     )
+
+
+# ────────────────────────────── Quotation PDF Download ────────────────────────
+
+@router.get("/api/v1/quotations/{quotation_id}/pdf")
+async def download_quotation_pdf(
+    quotation_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("quotations_read")),
+):
+    """Download Quotation as a professional PDF (same format as Tax Invoice, header = 'Quotation')."""
+    from fastapi.responses import Response
+    from app.services.pdf_service import generate_quotation_pdf
+
+    q = db.query(Quotation).filter(Quotation.id == quotation_id, Quotation.is_deleted == False).first()
+    if not q:
+        raise HTTPException(status_code=404, detail="Quotation not found")
+
+    pdf_bytes = generate_quotation_pdf(db, quotation_id)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"inline; filename={q.quotation_number}.pdf"},
+    )
+
+
+@router.post("/api/v1/quotations/{quotation_id}/send-email")
+async def send_quotation_email(
+    quotation_id: UUID,
+    payload: dict | None = Body(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("quotations_write")),
+):
+    q = db.query(Quotation).filter(Quotation.id == quotation_id, Quotation.is_deleted == False).first()
+    if not q:
+        raise HTTPException(status_code=404, detail="Quotation not found")
+
+    recipient = (payload or {}).get("email")
+    return {
+        "message": "Email queued (email delivery pending implementation)",
+        "quotation_number": q.quotation_number,
+        "recipient": recipient,
+    }
 

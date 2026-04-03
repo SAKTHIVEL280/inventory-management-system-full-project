@@ -9,7 +9,7 @@ from app.dependencies import require_permissions
 from app.models.user import User
 from app.models.product import Product, StockLedger
 from app.models.sales import SalesInvoice, SalesInvoiceItem, SalesOrder
-from app.models.purchase import GoodsReceiptNote, PurchaseOrder
+from app.models.purchase import GoodsReceiptNote, GRNItem, PurchaseOrder
 from app.models.customer import Customer
 from app.models.supplier import Supplier
 
@@ -227,21 +227,36 @@ async def stock_report(
         qty_scalar = db.query(func.coalesce(func.sum(StockLedger.quantity), 0)).filter(StockLedger.product_id == product.id).scalar() or 0
         qty = float(qty_scalar)
         safety = float(product.safety_stock or 0)
-        
-        status = "In Stock"
-        if qty == 0:
-            status = "Out of Stock"
-        elif qty <= safety:
-            status = "Low Stock"
-        if low_stock_only and status == "In Stock":
+
+        # STO-003/004: Low stock is determined by Min Safety Stock threshold.
+        status = "Low Stock" if qty <= safety else "In Stock"
+        if low_stock_only and status != "Low Stock":
             continue
+
+        # STO-004: Get batch numbers from confirmed GRN items for this product
+        batch_rows = (
+            db.query(GRNItem.batch_no)
+            .join(GoodsReceiptNote, GRNItem.grn_id == GoodsReceiptNote.id)
+            .filter(
+                GRNItem.product_id == product.id,
+                GRNItem.batch_no.isnot(None),
+                GRNItem.batch_no != "",
+                GoodsReceiptNote.status == "confirmed",
+                GoodsReceiptNote.is_deleted == False,
+            )
+            .distinct()
+            .all()
+        )
+        batch_numbers = [b[0] for b in batch_rows if b[0]]
+
         rows.append({
             "product_code": product.product_code,
             "product_name": product.name,
             "hsn": product.hsn_code,
             "closing_qty": float(qty),
-            "min_stock": product.safety_stock,
-            "safety_stock": product.safety_stock,
+            "min_stock": float(safety),
+            "safety_stock": float(safety),
+            "batch_numbers": batch_numbers,
             "status": status,
         })
     return {"items": rows, "total": len(rows)}

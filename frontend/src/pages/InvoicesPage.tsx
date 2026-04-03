@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Sales Invoices Page
  * List, create, edit, issue invoices. GST-aware line items.
  */
@@ -10,8 +10,8 @@ import { apiClient } from '../api/client';
 import { toast } from 'sonner';
 import { confirmWithToast } from '../utils/toastHelper';
 
-interface ProductOption { id: string; name: string; product_code: string; selling_price: number; gst_rate: number; }
-interface CustomerOption { id: string; company_name: string; customer_code: string; }
+interface ProductOption { id: string; name: string; product_code: string; selling_price: number; mrp: number; gst_rate: number; hsn_code: string; description?: string; }
+interface CustomerOption { id: string; company_name: string; customer_code: string; payment_terms_days?: number; }
 
 const InvoicesPage = () => {
   const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
@@ -70,30 +70,77 @@ const InvoicesPage = () => {
   }, [showForm, editingId, salesOrders.length]);
 
   const resetForm = () => { setCustomerId(''); setInvoiceDate(new Date().toISOString().split('T')[0]); setDueDate(''); setNotes(''); setItems([]); setEditingId(null); setError(''); setSoNumberSearch(''); setSoId(undefined); };
-  const addItem = () => { setItems([...items, { product_id: '', quantity: 1, unit_price: 0, discount_percent: 0, gst_rate: 18 }]); };
+  const addItem = () => {
+    setItems([
+      ...items,
+      {
+        product_id: '',
+        order_unit: '',
+        batch_no: '',
+        manufacture_date: '',
+        expiry_date: '',
+        quantity: 1,
+        free_quantity: 0,
+        unit_price: 0,
+        discount_percent: 0,
+        gst_rate: 18,
+      },
+    ]);
+  };
   const paiseToRupees = (paise: number) => (Number.isFinite(paise) ? paise / 100 : 0);
   const rupeesToPaise = (value: string | number) => {
     const num = typeof value === 'number' ? value : parseFloat(value);
     return Number.isFinite(num) ? Math.round(num * 100) : 0;
   };
+
+  // SAL-025: Auto-calculate due date from customer payment terms when customer changes
+  const handleCustomerChange = (newCustomerId: string) => {
+    setCustomerId(newCustomerId);
+    if (newCustomerId) {
+      const cust = customers.find(c => c.id === newCustomerId);
+      if (cust?.payment_terms_days && invoiceDate) {
+        const baseDate = new Date(invoiceDate);
+        baseDate.setDate(baseDate.getDate() + cust.payment_terms_days);
+        setDueDate(baseDate.toISOString().split('T')[0]);
+      }
+    }
+  };
+
   const updateItem = (idx: number, field: keyof SalesLineItem, value: string | number) => {
     const updated = [...items]; (updated[idx] as unknown as Record<string, unknown>)[field] = value;
-    if (field === 'product_id') { const p = products.find(x => x.id === value); if (p) { updated[idx].unit_price = p.selling_price; updated[idx].gst_rate = p.gst_rate; } }
+    // SAL-020/022/023: Auto-fill MRP and GST from product master
+    if (field === 'product_id') { const p = products.find(x => x.id === value); if (p) { updated[idx].unit_price = p.mrp || p.selling_price; updated[idx].gst_rate = p.gst_rate; } }
     setItems(updated);
   };
   const removeItem = (idx: number) => { setItems(items.filter((_, i) => i !== idx)); };
   const calcTotal = (i: SalesLineItem) => { const g = i.unit_price * i.quantity; const d = g * (i.discount_percent || 0) / 100; const t = g - d; return Math.round(t + t * i.gst_rate / 100); };
   const formatAmount = (p: number) => `₹${(p / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
-  const formatStatusLabel = (status?: string) => (status || 'unknown').replace('_', ' ');
+  // SAL-028: Proper status label formatting with correct capitalization
+  const formatStatusLabel = (status?: string) => {
+    const s = (status || 'unknown').replace('_', ' ');
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  };
+  const productById = (id: string) => products.find(p => p.id === id);
 
   const handleSubmit = async () => {
     if (!customerId || items.length === 0) { setError('Select customer & add items'); return; }
     setSubmitting(true); setError('');
     try {
       const payload: CreateInvoicePayload = {
-        customer_id: customerId, sales_order_id: soId, invoice_date: invoiceDate, due_date: dueDate || undefined,
+        customer_id: customerId, sales_order_id: undefined, invoice_date: invoiceDate, due_date: dueDate || undefined,
         bill_to_customer_id: customerId, notes: notes || undefined,
-        items: items.map(i => ({ product_id: i.product_id, quantity: Number(i.quantity), unit_price: Number(i.unit_price), discount_percent: Number(i.discount_percent || 0), gst_rate: Number(i.gst_rate) })),
+        items: items.map(i => ({
+          product_id: i.product_id,
+          order_unit: i.order_unit || undefined,
+          batch_no: i.batch_no || undefined,
+          manufacture_date: i.manufacture_date || undefined,
+          expiry_date: i.expiry_date || undefined,
+          quantity: Number(i.quantity),
+          free_quantity: Number(i.free_quantity || 0),
+          unit_price: Number(i.unit_price),
+          discount_percent: Number(i.discount_percent || 0),
+          gst_rate: Number(i.gst_rate),
+        })),
       };
       if (editingId) await salesApi.updateInvoice(editingId, payload); else await salesApi.createInvoice(payload);
       setShowForm(false); resetForm(); fetchInvoices();
@@ -308,88 +355,84 @@ const InvoicesPage = () => {
               {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>}
               
               {!editingId && (
-                <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4">
-                  <div className="relative">
-                    <label className="mb-1 block text-sm font-semibold text-neutral-700">Auto-fill from Sales Order (search by SO #, customer, date, status, amount)</label>
-                    <input
-                      type="text"
-                      className="w-full hms-input"
-                      placeholder="Type SO number, customer name, date (YYYY-MM-DD), status..."
-                      value={soNumberSearch}
-                      onFocus={() => setShowSoDropdown(true)}
-                      onChange={(e) => {
-                        setSoNumberSearch(e.target.value);
-                        setSoId(undefined);
-                        setShowSoDropdown(true);
-                      }}
-                    />
-
-                    {showSoDropdown && soNumberSearch && (
-                      <div className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border border-neutral-200 bg-white shadow-lg">
-                        {loadingSOs ? (
-                          <div className="px-3 py-2 text-sm text-neutral-500">Loading sales orders...</div>
-                        ) : soSuggestions.length === 0 ? (
-                          <div className="px-3 py-2 text-sm text-neutral-500">No matching eligible sales orders (only confirmed/partial/fulfilled are shown)</div>
-                        ) : (
-                          soSuggestions.map((so) => (
-                            <button
-                              key={so.id}
-                              type="button"
-                              className="w-full border-b border-neutral-100 px-3 py-2 text-left text-sm hover:bg-neutral-50"
-                              onClick={() => void handleSelectSO(so)}
-                            >
-                              <div className="font-semibold text-neutral-900">{so.so_number}</div>
-                              <div className="text-xs text-neutral-600">
-                                {customerNameById(so.customer_id)} | Order: {so.order_date} | Expected: {so.expected_delivery_date || '-'} | {so.status} | ₹{(so.total_amount / 100).toFixed(2)}
-                              </div>
-                            </button>
-                          ))
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  {isSearchingSO && <p className="mt-2 text-xs text-neutral-500">Fetching selected sales order...</p>}
+                <div className="rounded-lg border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-600">
+                  Invoice creation is independent of Sales Order auto-fill.
                 </div>
               )}
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Customer *</label><select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={customerId} onChange={e => setCustomerId(e.target.value)}><option value="">Select</option>{customers.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}</select></div>
+                {/* SAL-025: Customer select triggers due date auto-calc */}
+                <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Customer *</label><select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={customerId} onChange={e => handleCustomerChange(e.target.value)}><option value="">Select</option>{customers.map(c => <option key={c.id} value={c.id}>{c.company_name} ({c.customer_code})</option>)}</select></div>
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Invoice Date *</label><input type="date" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} /></div>
-                <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Due Date</label><input type="date" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={dueDate} onChange={e => setDueDate(e.target.value)} /></div>
+                {/* SAL-025/026: Due Date auto-calculated from Customer Payment Terms, allows manual override */}
+                <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Due Date <span className="text-xs text-neutral-400">(auto from payment terms)</span></label><input type="date" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={dueDate} onChange={e => setDueDate(e.target.value)} /></div>
               </div>
               <div>
                 <div className="mb-2 flex items-center justify-between"><h3 className="text-sm font-semibold">Items</h3><button onClick={addItem} className="rounded bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary">+ Add</button></div>
                 <div className="overflow-x-auto rounded-lg border border-neutral-200">
-                  <table className="w-full min-w-[980px] table-fixed text-sm">
+                  <table className="w-full min-w-[1600px] table-fixed text-sm">
                     <thead>
                       <tr className="bg-neutral-50">
-                        <th className="w-[36%] px-3 py-2 text-left">Product</th>
-                        <th className="w-20 px-3 py-2 text-right">Qty</th>
-                        <th className="w-32 px-3 py-2 text-right">Price (₹)</th>
-                        <th className="w-20 px-3 py-2 text-right">Disc %</th>
-                        <th className="w-20 px-3 py-2 text-right">GST</th>
-                        <th className="w-32 px-3 py-2 text-right">Total</th>
-                        <th className="w-24 px-3 py-2 text-right">Action</th>
+                        <th className="w-[18%] px-3 py-2 text-left">Product</th>
+                        <th className="w-[8%] px-3 py-2 text-left">Product ID</th>
+                        <th className="w-[10%] px-3 py-2 text-left">Description</th>
+                        <th className="w-[8%] px-3 py-2 text-left">Order Unit</th>
+                        <th className="w-[8%] px-3 py-2 text-left">Batch</th>
+                        <th className="w-[8%] px-3 py-2 text-left">MFG Date</th>
+                        <th className="w-[8%] px-3 py-2 text-left">EXP Date</th>
+                        <th className="w-[7%] px-3 py-2 text-left">HSN</th>
+                        <th className="w-16 px-3 py-2 text-right">Qty</th>
+                        <th className="w-16 px-3 py-2 text-right">Free</th>
+                        <th className="w-28 px-3 py-2 text-right">MRP (₹)</th>
+                        <th className="w-16 px-3 py-2 text-right">Disc %</th>
+                        <th className="w-16 px-3 py-2 text-right">GST</th>
+                        <th className="w-28 px-3 py-2 text-right">Total</th>
+                        <th className="w-20 px-3 py-2 text-right">Action</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {items.map((item, idx) => (
+                      {items.map((item, idx) => {
+                        const prod = productById(item.product_id);
+                        return (
                         <tr key={idx} className="border-t border-neutral-100">
                           <td className="px-3 py-2">
                             <select className="w-full rounded border px-2 py-1.5 text-sm" value={item.product_id} onChange={e => updateItem(idx, 'product_id', e.target.value)}>
                               <option value="">Select</option>
-                              {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                              {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.product_code})</option>)}
                             </select>
                           </td>
+                          {/* SAL-013: Product ID column */}
+                          <td className="px-3 py-2 text-xs text-neutral-500 font-mono">{prod?.product_code || '-'}</td>
+                          {/* SAL-014: Description column */}
+                          <td className="px-3 py-2 text-xs text-neutral-500">{prod?.description || prod?.name || '-'}</td>
+                          <td className="px-3 py-2">
+                            <input type="text" className="w-full rounded border px-2 py-1.5 text-sm" value={item.order_unit || ''} onChange={e => updateItem(idx, 'order_unit', e.target.value)} placeholder="e.g. Box" />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input type="text" className="w-full rounded border px-2 py-1.5 text-sm" value={item.batch_no || ''} onChange={e => updateItem(idx, 'batch_no', e.target.value)} placeholder="Batch" />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input type="date" className="w-full rounded border px-2 py-1.5 text-sm" value={item.manufacture_date || ''} onChange={e => updateItem(idx, 'manufacture_date', e.target.value)} />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input type="date" className="w-full rounded border px-2 py-1.5 text-sm" value={item.expiry_date || ''} onChange={e => updateItem(idx, 'expiry_date', e.target.value)} />
+                          </td>
+                          {/* SAL-021: HSN Code column */}
+                          <td className="px-3 py-2 text-xs text-neutral-500">{prod?.hsn_code || '-'}</td>
                           <td className="px-3 py-2">
                             <input type="number" min="0.01" step="0.01" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={item.quantity} onChange={e => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} />
                           </td>
+                          <td className="px-3 py-2">
+                            <input type="number" min="0" step="0.01" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={item.free_quantity || 0} onChange={e => updateItem(idx, 'free_quantity', parseFloat(e.target.value) || 0)} />
+                          </td>
+                          {/* SAL-020: MRP auto-fills from Product Master */}
                           <td className="px-3 py-2">
                             <input type="number" min="0" step="0.01" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={paiseToRupees(item.unit_price)} onChange={e => updateItem(idx, 'unit_price', rupeesToPaise(e.target.value))} />
                           </td>
                           <td className="px-3 py-2">
                             <input type="number" min="0" max="100" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={item.discount_percent || 0} onChange={e => updateItem(idx, 'discount_percent', parseFloat(e.target.value) || 0)} />
                           </td>
+                          {/* SAL-022/023: GST auto-fills from Product Master */}
                           <td className="px-3 py-2">
                             <select className="w-full rounded border px-2 py-1.5 text-sm" value={item.gst_rate} onChange={e => updateItem(idx, 'gst_rate', parseInt(e.target.value))}>
                               <option value={0}>0%</option>
@@ -406,13 +449,14 @@ const InvoicesPage = () => {
                             </button>
                           </td>
                         </tr>
-                      ))}
-                  {items.length === 0 && <tr><td colSpan={7} className="px-3 py-4 text-center text-neutral-400">No items</td></tr>}
+                        );
+                      })}
+                  {items.length === 0 && <tr><td colSpan={15} className="px-3 py-4 text-center text-neutral-400">No items</td></tr>}
                     </tbody>
                     {items.length > 0 && (
                       <tfoot>
                         <tr className="border-t-2 bg-neutral-50">
-                          <td colSpan={5} className="px-3 py-2 text-right font-semibold">Total:</td>
+                          <td colSpan={13} className="px-3 py-2 text-right font-semibold">Total:</td>
                           <td className="px-3 py-2 text-right font-bold text-primary">{formatAmount(items.reduce((s, i) => s + calcTotal(i), 0))}</td>
                           <td></td>
                         </tr>
@@ -440,6 +484,37 @@ const InvoicesPage = () => {
                   <p className="mt-1 text-sm text-neutral-600">Customer: {customers.find(c => c.id === selectedInvoice.customer_id)?.company_name || '-'}</p>
                 </div>
                 <div className="flex items-center gap-2">
+                  {/* SAL-027: Edit button in Invoice View for draft invoices */}
+                  {selectedInvoice.status === 'draft' && (
+                    <button
+                      onClick={() => {
+                        setShowInvoiceDetail(false);
+                        // Load into edit form
+                        setEditingId(selectedInvoice.id);
+                        setCustomerId(selectedInvoice.customer_id);
+                        setInvoiceDate(selectedInvoice.invoice_date);
+                        setDueDate(selectedInvoice.due_date || '');
+                        setNotes(selectedInvoice.notes || '');
+                        setItems(selectedInvoiceItems.map(i => ({
+                          product_id: i.product_id,
+                          order_unit: (i as any).order_unit || '',
+                          batch_no: (i as any).batch_no || '',
+                          manufacture_date: (i as any).manufacture_date || '',
+                          expiry_date: (i as any).expiry_date || '',
+                          quantity: i.quantity,
+                          free_quantity: (i as any).free_quantity || 0,
+                          unit_price: i.unit_price,
+                          discount_percent: i.discount_percent || 0,
+                          gst_rate: i.gst_rate,
+                        })));
+                        setShowForm(true);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-lg border border-primary bg-primary/5 px-3 py-2 text-xs font-semibold text-primary hover:bg-primary/10"
+                    >
+                      <span className="material-icons text-sm" aria-hidden="true">edit</span>
+                      Edit Invoice
+                    </button>
+                  )}
                   <button
                     onClick={() => handleDownloadPDF(selectedInvoice)}
                     className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"

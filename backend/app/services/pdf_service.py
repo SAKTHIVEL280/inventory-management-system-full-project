@@ -20,7 +20,7 @@ from app.models.company import Company
 from app.models.customer import Customer
 from app.models.product import Product
 from app.models.purchase import PurchaseOrder, PurchaseOrderItem
-from app.models.sales import SalesInvoice, SalesInvoiceItem, SalesOrder
+from app.models.sales import SalesInvoice, SalesInvoiceItem, SalesOrder, Quotation, QuotationItem
 from app.models.supplier import Supplier
 
 
@@ -396,6 +396,7 @@ DOCUMENT_TEMPLATE = """
 
     body.purchase-order .doc-title::before { content: "PURCHASE ORDER"; }
     body.tax-invoice .doc-title::before { content: "TAX INVOICE"; }
+    body.quotation .doc-title::before { content: "QUOTATION"; }
   </style>
 </head>
 <body class="{{ doc_class }} {{ layout_mode }}">
@@ -836,6 +837,121 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
         "sgst_total": _format_currency(int(invoice.total_sgst or 0), "INR"),
         "igst_total": _format_currency(int(invoice.total_igst or 0), "INR") if int(invoice.total_igst or 0) else "",
         "grand_total": _format_currency(int(invoice.total_amount or 0), "INR"),
+        "total_in_words": total_words,
+        "notes": notes_text,
+    }
+    return _render_pdf(context)
+
+
+def generate_quotation_pdf(db: Session, quotation_id: UUID) -> bytes:
+    """Generate Quotation PDF (same format as Tax Invoice, header = 'Quotation')."""
+    quotation = db.query(Quotation).filter(Quotation.id == quotation_id).first()
+    if not quotation:
+        raise ValueError("Quotation not found")
+
+    company = db.query(Company).first()
+    customer = db.query(Customer).filter(Customer.id == quotation.customer_id).first()
+    items = (
+        db.query(QuotationItem)
+        .filter(QuotationItem.quotation_id == quotation.id, QuotationItem.is_deleted == False)
+        .all()
+    )
+
+    rows: list[dict[str, str]] = []
+    for idx, item in enumerate(items, start=1):
+        product = db.query(Product).filter(Product.id == item.product_id).first()
+        gst_rate = int(item.gst_rate or 0)
+        cgst_pct = f"{gst_rate / 2:.1f}" if item.cgst_amount else "0"
+        sgst_pct = f"{gst_rate / 2:.1f}" if item.sgst_amount else "0"
+        rows.append(
+            {
+                "sr": str(idx),
+                "description": _safe_text((item.description or (product.name if product else ""))),
+                "batch": "-",
+                "mfg": "-",
+                "exp": "-",
+                "hsn": _safe_text(product.hsn_code if product else None),
+                "qty": _decimal_to_str(item.quantity),
+                "rate": _format_currency(int(item.unit_price or 0), "INR"),
+                "mrp": _format_currency(int(product.mrp if product else item.unit_price or 0), "INR"),
+                "cgst_pct": cgst_pct,
+                "sgst_pct": sgst_pct,
+                "amount": _format_currency(int(item.total_amount or 0), "INR"),
+            }
+        )
+
+    if not rows:
+        rows.append(
+            {
+                "sr": "1",
+                "description": "-",
+                "batch": "-",
+                "mfg": "-",
+                "exp": "-",
+                "hsn": "-",
+                "qty": "0",
+                "rate": _format_currency(0, "INR"),
+                "mrp": _format_currency(0, "INR"),
+                "cgst_pct": "0",
+                "sgst_pct": "0",
+                "amount": _format_currency(0, "INR"),
+            }
+        )
+
+    billing_parts = [
+        customer.billing_address_line1 if customer else None,
+        customer.billing_address_line2 if customer else None,
+        customer.billing_city if customer else None,
+        customer.billing_state if customer else None,
+        customer.billing_country if customer else None,
+        customer.billing_pincode if customer else None,
+    ]
+    shipping_parts = [
+        customer.shipping_address_line1 if customer else None,
+        customer.shipping_address_line2 if customer else None,
+        customer.shipping_city if customer else None,
+        customer.shipping_state if customer else None,
+        customer.shipping_country if customer else None,
+        customer.shipping_pincode if customer else None,
+    ]
+
+    ship_to_address = ", ".join([p.strip() for p in shipping_parts if p and p.strip()])
+    if not ship_to_address:
+        ship_to_address = ", ".join([p.strip() for p in billing_parts if p and p.strip()])
+
+    notes_text = _safe_text(quotation.notes or "-")
+    valid_until_text = _format_date(quotation.valid_until) if quotation.valid_until else "-"
+    if quotation.notes:
+        notes_text = f"Valid Until: {valid_until_text}\n{_safe_text(quotation.notes)}"
+    else:
+        notes_text = f"Valid Until: {valid_until_text}"
+    total_words = _amount_in_words(int(quotation.total_amount or 0))
+
+    context = {
+        "doc_class": "quotation",
+        "layout_mode": _layout_mode(rows, total_words, notes_text),
+        "doc_title": "Quotation",
+        "number_label": "Quotation Number",
+        "doc_number": _safe_text(quotation.quotation_number),
+        "doc_date": _format_date(quotation.quotation_date),
+        "company_logo": _resolve_logo_src(company),
+        "company_name": _safe_text(company.name if company else None),
+        "company_address": _build_company_address(company),
+        "company_gstin": _safe_text(company.gstin if company else None),
+        "company_contact": _safe_text(company.phone if company and company.phone else (company.email if company else None)),
+        "party_gstin": _safe_text(customer.gstin if customer else None),
+        "bill_to_name": _safe_text(customer.company_name if customer else None),
+        "bill_to_address": _safe_text(", ".join([p.strip() for p in billing_parts if p and p.strip()])),
+        "bill_to_gstin": _safe_text(customer.gstin if customer else None),
+        "ship_to_name": _safe_text(customer.company_name if customer else None),
+        "ship_to_address": _safe_text(ship_to_address),
+        "ship_to_gstin": _safe_text(customer.gstin if customer else None),
+        "rows": rows,
+        "subtotal": _format_currency(int(quotation.subtotal or 0), "INR"),
+        "cgst_total": _format_currency(int(quotation.total_cgst or 0), "INR"),
+        "sgst_total": _format_currency(int(quotation.total_sgst or 0), "INR"),
+        "igst_total": _format_currency(int(quotation.total_igst or 0), "INR") if int(quotation.total_igst or 0) else "",
+        "grand_total": _format_currency(int(quotation.total_amount or 0), "INR"),
         "total_in_words": total_words,
         "notes": notes_text,
     }
