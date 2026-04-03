@@ -207,3 +207,18 @@ gstin_status: str = 'non-registered'
   - `In Stock`
   - `Low Stock`
   - `Out of Stock`
+
+---
+
+## Sales + Stock Completion Patch (April 3, 2026)
+
+### Quotation Send PDF API
+- Added endpoint `POST /api/v1/quotations/{quotation_id}/send-email` in `backend/app/routers/sales.py`.
+- Endpoint validates quotation existence and returns queued response payload.
+
+### Stock Report Threshold Alignment
+- Updated `GET /api/v1/reports/stock` logic in `backend/app/routers/reports.py`.
+- Status is now derived from Min Safety Stock threshold:
+  - `Low Stock` when `closing_qty <= safety_stock`
+  - `In Stock` otherwise
+- `min_stock` in response is aligned to Min Safety Stock value for consistent frontend display and CSV validation.

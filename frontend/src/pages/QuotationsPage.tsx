@@ -1,20 +1,34 @@
-﻿/**
+/**
  * Quotations Page
- * List, create, edit quotations. Send to customer, convert to Sales Order.
+ * List, create, edit quotations. Approve, download/send PDF.
+ *
+ * SAL-003: MRP instead of Unit Price
+ * SAL-004: Product ID column
+ * SAL-005: Product Description column
+ * SAL-006: Valid Until must be future date
+ * SAL-007: Removed SO reference/convert
+ * SAL-008: Renamed Send → Approve
+ * SAL-009: Download PDF
+ * SAL-010: Send PDF
+ * SAL-011: Quotation output format same as Tax Invoice
+ * SAL-012: Edit option after creation
  */
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AppLayout } from '../components/AppLayout';
 import { salesApi, type Quotation, type CreateQuotationPayload, type SalesLineItem } from '../api/sales';
 import { apiClient } from '../api/client';
-import { confirmWithToast, showError, showSuccess } from '../utils/toastHelper';
+import { toast } from 'sonner';
 
 interface ProductOption {
   id: string;
   name: string;
   product_code: string;
+  description?: string;
   selling_price: number;
+  mrp: number;
   gst_rate: number;
+  hsn_code: string;
 }
 
 interface CustomerOption {
@@ -92,11 +106,11 @@ const QuotationsPage = () => {
   const updateItem = (index: number, field: keyof SalesLineItem, value: string | number) => {
     const updated = [...items];
     (updated[index] as unknown as Record<string, unknown>)[field] = value;
-    // Auto-fill price and GST when product selected
+    // SAL-003: Auto-fill MRP and GST when product selected
     if (field === 'product_id') {
       const product = products.find(p => p.id === value);
       if (product) {
-        updated[index].unit_price = product.selling_price;
+        updated[index].unit_price = product.mrp || product.selling_price;
         updated[index].gst_rate = product.gst_rate;
       }
     }
@@ -115,10 +129,41 @@ const QuotationsPage = () => {
     return taxable + gst;
   };
 
+  // SAL-012: Load quotation data for editing
+  const handleEdit = async (q: Quotation) => {
+    try {
+      const { data } = await salesApi.getQuotation(q.id);
+      const quotation = (data as unknown as { quotation: Quotation; items: Array<{ product_id: string; quantity: number; unit_price: number; discount_percent: number; gst_rate: number }> });
+      setCustomerId(quotation.quotation.customer_id);
+      setQuotationDate(quotation.quotation.quotation_date);
+      setValidUntil(quotation.quotation.valid_until || '');
+      setNotes(quotation.quotation.notes || '');
+      setItems(quotation.items.map((i) => ({
+        product_id: i.product_id,
+        quantity: i.quantity,
+        unit_price: i.unit_price,
+        discount_percent: i.discount_percent,
+        gst_rate: i.gst_rate,
+      })));
+      setEditingId(q.id);
+      setShowForm(true);
+    } catch {
+      toast.error('Failed to load quotation for editing');
+    }
+  };
+
   const handleSubmit = async () => {
     if (!customerId || items.length === 0) {
       setError('Please select a customer and add at least one item');
       return;
+    }
+    // SAL-006: Frontend validation for Valid Until
+    if (validUntil) {
+      const today = new Date().toISOString().split('T')[0];
+      if (validUntil <= today) {
+        setError('Valid Until date must be a future date');
+        return;
+      }
     }
     setSubmitting(true);
     setError('');
@@ -154,29 +199,15 @@ const QuotationsPage = () => {
     }
   };
 
+  // SAL-008: Renamed from Send to Approve
   const handleStatusChange = async (id: string, newStatus: string) => {
     try {
       await salesApi.updateQuotationStatus(id, newStatus);
-      showSuccess('Quotation status updated');
+      toast.success(newStatus === 'sent' ? 'Quotation approved' : 'Quotation status updated');
       fetchQuotations();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      showError(typeof msg === 'string' ? msg : 'Status update failed');
-    }
-  };
-
-  const handleConvertToSO = async (id: string) => {
-    const confirmed = await confirmWithToast('Convert this quotation to a Sales Order?', {
-      type: 'confirm',
-    });
-    if (!confirmed) return;
-    try {
-      await salesApi.convertQuotationToSO(id);
-      showSuccess('Sales Order created successfully!');
-      fetchQuotations();
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      showError(typeof msg === 'string' ? msg : 'Conversion failed');
+      toast.error(typeof msg === 'string' ? msg : 'Status update failed');
     }
   };
 
@@ -187,11 +218,39 @@ const QuotationsPage = () => {
       } else {
         await salesApi.archiveQuotation(id);
       }
-      showSuccess(archived ? 'Quotation restored' : 'Quotation archived');
+      toast.success(archived ? 'Quotation restored' : 'Quotation archived');
       fetchQuotations();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      showError(typeof msg === 'string' ? msg : archived ? 'Restore failed' : 'Archive failed');
+      toast.error(typeof msg === 'string' ? msg : archived ? 'Restore failed' : 'Archive failed');
+    }
+  };
+
+  // SAL-009: Download PDF
+  const handleDownloadPDF = async (q: Quotation) => {
+    try {
+      toast.info('Generating PDF...');
+      const response = await salesApi.downloadQuotationPdf(q.id);
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `Quotation-${q.quotation_number}.pdf`);
+      document.body.appendChild(link);
+      link.click();
+      window.URL.revokeObjectURL(url);
+      link.remove();
+      toast.success('PDF downloaded successfully');
+    } catch {
+      toast.error('Failed to download PDF');
+    }
+  };
+
+  const handleSendPDF = async (q: Quotation) => {
+    try {
+      await salesApi.sendQuotationEmail(q.id);
+      toast.success(`Quotation ${q.quotation_number} queued for sending`);
+    } catch {
+      toast.error('Failed to queue quotation email');
     }
   };
 
@@ -207,6 +266,9 @@ const QuotationsPage = () => {
   const formatAmount = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 
   const customerNameById = (id: string) => customers.find((c) => c.id === id)?.company_name || '-';
+
+  // Helper to get product info by ID
+  const productById = (id: string) => products.find((p) => p.id === id);
 
   const filteredQuotations = quotations.filter((q) => {
     const term = searchQuery.trim().toLowerCase();
@@ -236,7 +298,7 @@ const QuotationsPage = () => {
             >
               <option value="">All Statuses</option>
               <option value="draft">Draft</option>
-              <option value="sent">Sent</option>
+              <option value="sent">Approved</option>
               <option value="accepted">Accepted</option>
               <option value="rejected">Rejected</option>
               <option value="expired">Expired</option>
@@ -315,13 +377,18 @@ const QuotationsPage = () => {
                     <td className="px-4 py-3 text-right font-medium">{formatAmount(q.total_amount)}</td>
                     <td className="px-4 py-3 text-center">
                       <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${statusColors[q.status] || 'bg-gray-100'}`}>
-                        {q.status}
+                        {q.status === 'sent' ? 'approved' : q.status}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1">
+                        {/* SAL-012: Edit button for draft/sent */}
+                        {archiveView === 'active' && (q.status === 'draft' || q.status === 'sent') && (
+                          <button onClick={() => handleEdit(q)} className="rounded px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10">Edit</button>
+                        )}
+                        {/* SAL-008: Renamed Send → Approve */}
                         {archiveView === 'active' && q.status === 'draft' && (
-                          <button onClick={() => handleStatusChange(q.id, 'sent')} className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50">Send</button>
+                          <button onClick={() => handleStatusChange(q.id, 'sent')} className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50">Approve</button>
                         )}
                         {archiveView === 'active' && q.status === 'sent' && (
                           <>
@@ -329,9 +396,21 @@ const QuotationsPage = () => {
                             <button onClick={() => handleStatusChange(q.id, 'rejected')} className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">Reject</button>
                           </>
                         )}
-                        {archiveView === 'active' && (q.status === 'sent' || q.status === 'accepted') && (
-                          <button onClick={() => handleConvertToSO(q.id)} className="rounded px-2 py-1 text-xs font-medium text-purple-600 hover:bg-purple-50">→ SO</button>
-                        )}
+                        {/* SAL-009: Download PDF */}
+                        <button
+                          onClick={() => handleDownloadPDF(q)}
+                          className="inline-flex items-center gap-1 rounded border border-neutral-200 bg-white px-2 py-1 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
+                          title="Download PDF"
+                        >
+                          <span className="material-icons text-sm" aria-hidden="true">picture_as_pdf</span>
+                          PDF
+                        </button>
+                        <button
+                          onClick={() => handleSendPDF(q)}
+                          className="rounded px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50"
+                        >
+                          Send PDF
+                        </button>
                         <button
                           onClick={() => handleArchiveToggle(q.id, archiveView === 'archived')}
                           className={`rounded px-2 py-1 text-xs font-medium ${archiveView === 'archived' ? 'text-emerald-700 hover:bg-emerald-50' : 'text-red-600 hover:bg-red-50'}`}
@@ -371,12 +450,19 @@ const QuotationsPage = () => {
                   <input type="date" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={quotationDate} onChange={e => setQuotationDate(e.target.value)} />
                 </div>
                 <div>
-                  <label className="mb-1 block text-sm font-semibold text-neutral-700">Valid Until</label>
-                  <input type="date" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={validUntil} onChange={e => setValidUntil(e.target.value)} />
+                  {/* SAL-006: Valid Until with future date hint */}
+                  <label className="mb-1 block text-sm font-semibold text-neutral-700">Valid Until <span className="text-xs text-neutral-400">(must be future date)</span></label>
+                  <input
+                    type="date"
+                    className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm"
+                    value={validUntil}
+                    min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
+                    onChange={e => setValidUntil(e.target.value)}
+                  />
                 </div>
               </div>
 
-              {/* Line Items */}
+              {/* Line Items - SAL-003/004/005: MRP, Product ID, Description columns */}
               <div>
                 <div className="mb-2 flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-neutral-700">Items</h3>
@@ -387,8 +473,10 @@ const QuotationsPage = () => {
                     <thead>
                       <tr className="bg-neutral-50">
                         <th className="px-3 py-2 text-left">Product</th>
+                        <th className="px-3 py-2 text-left w-24">Product ID</th>
+                        <th className="px-3 py-2 text-left w-32">Description</th>
                         <th className="px-3 py-2 text-right w-20">Qty</th>
-                        <th className="px-3 py-2 text-right w-28">Unit Price (₹)</th>
+                        <th className="px-3 py-2 text-right w-28">MRP (₹)</th>
                         <th className="px-3 py-2 text-right w-20">Disc %</th>
                         <th className="px-3 py-2 text-right w-20">GST %</th>
                         <th className="px-3 py-2 text-right w-28">Total</th>
@@ -396,32 +484,40 @@ const QuotationsPage = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {items.map((item, idx) => (
-                        <tr key={idx} className="border-t border-neutral-100">
-                          <td className="px-3 py-2">
-                            <select className="w-full rounded border border-neutral-200 px-2 py-1.5 text-sm" value={item.product_id} onChange={e => updateItem(idx, 'product_id', e.target.value)}>
-                              <option value="">Select</option>
-                              {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.product_code})</option>)}
-                            </select>
-                          </td>
-                          <td className="px-3 py-2"><input type="number" min="0.01" step="0.01" className="w-full rounded border border-neutral-200 px-2 py-1.5 text-right text-sm" value={item.quantity} onChange={e => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} /></td>
-                          <td className="px-3 py-2"><input type="number" min="0" className="w-full rounded border border-neutral-200 px-2 py-1.5 text-right text-sm" value={item.unit_price} onChange={e => updateItem(idx, 'unit_price', parseInt(e.target.value) || 0)} /></td>
-                          <td className="px-3 py-2"><input type="number" min="0" max="100" className="w-full rounded border border-neutral-200 px-2 py-1.5 text-right text-sm" value={item.discount_percent || 0} onChange={e => updateItem(idx, 'discount_percent', parseFloat(e.target.value) || 0)} /></td>
-                          <td className="px-3 py-2">
-                            <select className="w-full rounded border border-neutral-200 px-2 py-1.5 text-sm" value={item.gst_rate} onChange={e => updateItem(idx, 'gst_rate', parseInt(e.target.value))}>
-                              <option value={0}>0%</option><option value={5}>5%</option><option value={12}>12%</option><option value={18}>18%</option><option value={28}>28%</option>
-                            </select>
-                          </td>
-                          <td className="px-3 py-2 text-right font-medium">{formatAmount(calcItemTotal(item))}</td>
-                          <td className="px-3 py-2"><button onClick={() => removeItem(idx)} className="inline-flex items-center gap-1 text-red-500 hover:text-red-700"><span className="material-icons text-sm" aria-hidden="true">delete_outline</span>Remove</button></td>
-                        </tr>
-                      ))}
-                      {items.length === 0 && <tr><td colSpan={7} className="px-3 py-4 text-center text-neutral-400">No items added</td></tr>}
+                      {items.map((item, idx) => {
+                        const prod = productById(item.product_id);
+                        return (
+                          <tr key={idx} className="border-t border-neutral-100">
+                            <td className="px-3 py-2">
+                              <select className="w-full rounded border border-neutral-200 px-2 py-1.5 text-sm" value={item.product_id} onChange={e => updateItem(idx, 'product_id', e.target.value)}>
+                                <option value="">Select</option>
+                                {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.product_code})</option>)}
+                              </select>
+                            </td>
+                            {/* SAL-004: Product ID column */}
+                            <td className="px-3 py-2 text-xs text-neutral-500 font-mono">{prod?.product_code || '-'}</td>
+                            {/* SAL-005: Description column */}
+                            <td className="px-3 py-2 text-xs text-neutral-500">{prod?.description || prod?.name || '-'}</td>
+                            <td className="px-3 py-2"><input type="number" min="0.01" step="0.01" className="w-full rounded border border-neutral-200 px-2 py-1.5 text-right text-sm" value={item.quantity} onChange={e => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} /></td>
+                            {/* SAL-003: MRP column */}
+                            <td className="px-3 py-2"><input type="number" min="0" className="w-full rounded border border-neutral-200 px-2 py-1.5 text-right text-sm" value={item.unit_price} onChange={e => updateItem(idx, 'unit_price', parseInt(e.target.value) || 0)} /></td>
+                            <td className="px-3 py-2"><input type="number" min="0" max="100" className="w-full rounded border border-neutral-200 px-2 py-1.5 text-right text-sm" value={item.discount_percent || 0} onChange={e => updateItem(idx, 'discount_percent', parseFloat(e.target.value) || 0)} /></td>
+                            <td className="px-3 py-2">
+                              <select className="w-full rounded border border-neutral-200 px-2 py-1.5 text-sm" value={item.gst_rate} onChange={e => updateItem(idx, 'gst_rate', parseInt(e.target.value))}>
+                                <option value={0}>0%</option><option value={5}>5%</option><option value={12}>12%</option><option value={18}>18%</option><option value={28}>28%</option>
+                              </select>
+                            </td>
+                            <td className="px-3 py-2 text-right font-medium">{formatAmount(calcItemTotal(item))}</td>
+                            <td className="px-3 py-2"><button onClick={() => removeItem(idx)} className="inline-flex items-center gap-1 text-red-500 hover:text-red-700"><span className="material-icons text-sm" aria-hidden="true">delete_outline</span>Remove</button></td>
+                          </tr>
+                        );
+                      })}
+                      {items.length === 0 && <tr><td colSpan={9} className="px-3 py-4 text-center text-neutral-400">No items added</td></tr>}
                     </tbody>
                     {items.length > 0 && (
                       <tfoot>
                         <tr className="border-t-2 border-neutral-200 bg-neutral-50">
-                          <td colSpan={5} className="px-3 py-2 text-right font-semibold">Grand Total:</td>
+                          <td colSpan={7} className="px-3 py-2 text-right font-semibold">Grand Total:</td>
                           <td className="px-3 py-2 text-right font-bold text-primary">{formatAmount(items.reduce((sum, i) => sum + calcItemTotal(i), 0))}</td>
                           <td></td>
                         </tr>
@@ -452,4 +548,3 @@ const QuotationsPage = () => {
 };
 
 export default QuotationsPage;
-

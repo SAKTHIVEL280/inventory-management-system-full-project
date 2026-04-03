@@ -14,6 +14,11 @@ import { apiClient } from './client';
 export interface SalesLineItem {
   product_id: string;
   description?: string;
+  order_unit?: string;
+  batch_no?: string;
+  manufacture_date?: string;
+  expiry_date?: string;
+  free_quantity?: number;
   quantity: number;
   unit_price: number;
   discount_percent?: number;
@@ -257,6 +262,16 @@ class SalesApiClient {
 
   async convertQuotationToSO(id: string, payload?: ConvertQuotationToSOPayload) {
     return apiClient.post<SalesOrder>(`/api/v1/quotations/${id}/convert-to-so`, payload || {});
+  }
+
+  async downloadQuotationPdf(id: string) {
+    return apiClient.get(`/api/v1/quotations/${id}/pdf`, {
+      responseType: 'blob',
+    });
+  }
+
+  async sendQuotationEmail(id: string, email?: string) {
+    return apiClient.post(`/api/v1/quotations/${id}/send-email`, { email });
   }
 
   // ========== Sales Orders ==========
