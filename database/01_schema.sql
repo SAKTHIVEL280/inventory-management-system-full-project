@@ -48,6 +48,7 @@ CREATE TABLE company (
   website VARCHAR(255),
   logo_url VARCHAR(500),
   bank_name VARCHAR(150),
+  account_holder_name VARCHAR(255),
   bank_account_no VARCHAR(50),
   bank_ifsc VARCHAR(20),
   bank_branch VARCHAR(150),

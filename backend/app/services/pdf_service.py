@@ -368,6 +368,13 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
             <div style="font-size: 9.5px; font-weight: bold; font-style: italic; margin-bottom: 12px;">{{ total_in_words }}</div>
             <div style="font-size: 9px; text-decoration: underline; margin-bottom: 2px;">Notes</div>
             <div style="font-size: 9px;">{{ notes }}</div>
+            {% if account_holder_name or company_bank_name or company_bank_account_no or company_bank_ifsc %}
+            <div style="font-size: 9px; text-decoration: underline; margin: 8px 0 2px 0;">Payment Details</div>
+            {% if account_holder_name %}<div style="font-size: 9px;">Account Holder: {{ account_holder_name }}</div>{% endif %}
+            {% if company_bank_name %}<div style="font-size: 9px;">Bank: {{ company_bank_name }}{% if company_bank_branch %}, {{ company_bank_branch }}{% endif %}</div>{% endif %}
+            {% if company_bank_account_no %}<div style="font-size: 9px;">A/c No: {{ company_bank_account_no }}</div>{% endif %}
+            {% if company_bank_ifsc %}<div style="font-size: 9px;">IFSC: {{ company_bank_ifsc }}</div>{% endif %}
+            {% endif %}
         </td>
         <td style=" padding: 0; vertical-align: top;">
             <!-- Totals -->
@@ -471,6 +478,10 @@ def _decimal_to_str(value: Decimal | float | int | None) -> str:
 
 def _safe_text(value: Any) -> str:
     return str(value).strip() if value is not None and str(value).strip() else "-"
+
+
+def _optional_text(value: Any) -> str:
+    return str(value).strip() if value is not None and str(value).strip() else ""
 
 
 def _amount_in_words(paise: int) -> str:
@@ -792,6 +803,11 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
         "company_address": _build_company_address(company),
         "company_gstin": _safe_text(company.gstin if company else None),
         "company_contact": _safe_text(company.phone if company and company.phone else (company.email if company else None)),
+        "account_holder_name": _optional_text(company.account_holder_name if company else None),
+        "company_bank_name": _optional_text(company.bank_name if company else None),
+        "company_bank_account_no": _optional_text(company.bank_account_no if company else None),
+        "company_bank_ifsc": _optional_text(company.bank_ifsc if company else None),
+        "company_bank_branch": _optional_text(company.bank_branch if company else None),
         "party_gstin": _safe_text(customer.gstin if customer else None),
         "bill_to_state": _safe_text(customer.billing_state if customer else None),
         "bill_to_name": _safe_text(customer.company_name if customer else None),
@@ -931,6 +947,11 @@ def generate_quotation_pdf(db: Session, quotation_id: UUID) -> bytes:
         "company_address": _build_company_address(company),
         "company_gstin": _safe_text(company.gstin if company else None),
         "company_contact": _safe_text(company.phone if company and company.phone else (company.email if company else None)),
+        "account_holder_name": _optional_text(company.account_holder_name if company else None),
+        "company_bank_name": _optional_text(company.bank_name if company else None),
+        "company_bank_account_no": _optional_text(company.bank_account_no if company else None),
+        "company_bank_ifsc": _optional_text(company.bank_ifsc if company else None),
+        "company_bank_branch": _optional_text(company.bank_branch if company else None),
         "party_gstin": _safe_text(customer.gstin if customer else None),
         "bill_to_state": _safe_text(customer.billing_state if customer else None),
         "bill_to_name": _safe_text(customer.company_name if customer else None),

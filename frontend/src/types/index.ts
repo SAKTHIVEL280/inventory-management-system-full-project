@@ -57,6 +57,7 @@ export interface Company {
   website?: string | null;
   logo_url?: string | null;
   bank_name?: string | null;
+  account_holder_name?: string | null;
   bank_account_no?: string | null;
   bank_ifsc?: string | null;
   bank_branch?: string | null;

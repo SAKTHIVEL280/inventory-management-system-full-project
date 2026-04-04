@@ -32,6 +32,7 @@ class Company(Base):
     logo_url = Column(String(500), nullable=True)
 
     bank_name = Column(String(150), nullable=True)
+    account_holder_name = Column(String(255), nullable=True)
     bank_account_no = Column(String(50), nullable=True)
     bank_ifsc = Column(String(20), nullable=True)
     bank_branch = Column(String(150), nullable=True)

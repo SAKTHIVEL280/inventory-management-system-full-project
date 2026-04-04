@@ -28,6 +28,7 @@ class CompanyBase(BaseModel):
     logo_url: Optional[str] = None
 
     bank_name: Optional[str] = None
+    account_holder_name: Optional[str] = None
     bank_account_no: Optional[str] = None
     bank_ifsc: Optional[str] = None
     bank_branch: Optional[str] = None

@@ -28,6 +28,7 @@ const schema = z.object({
   state: z.string().optional(),
   pincode: z.string().optional(),
   bank_name: z.string().optional(),
+  account_holder_name: z.string().optional(),
   bank_account_no: z.string().optional(),
   bank_ifsc: z.string().optional(),
   bank_branch: z.string().optional(),
@@ -82,6 +83,7 @@ const CompanyPage = () => {
       state: data?.state ?? '',
       pincode: data?.pincode ?? '',
       bank_name: data?.bank_name ?? '',
+      account_holder_name: data?.account_holder_name ?? '',
       bank_account_no: data?.bank_account_no ?? '',
       bank_ifsc: data?.bank_ifsc ?? '',
       bank_branch: data?.bank_branch ?? '',
@@ -112,6 +114,7 @@ const CompanyPage = () => {
         state: updated.state ?? '',
         pincode: updated.pincode ?? '',
         bank_name: updated.bank_name ?? '',
+        account_holder_name: updated.account_holder_name ?? '',
         bank_account_no: updated.bank_account_no ?? '',
         bank_ifsc: updated.bank_ifsc ?? '',
         bank_branch: updated.bank_branch ?? '',
@@ -168,6 +171,7 @@ const CompanyPage = () => {
       state: normalizeOptional(parsed.data.state),
       pincode: normalizeOptional(parsed.data.pincode),
       bank_name: normalizeOptional(parsed.data.bank_name),
+      account_holder_name: normalizeOptional(parsed.data.account_holder_name),
       bank_account_no: normalizeOptional(parsed.data.bank_account_no),
       bank_ifsc: normalizeOptional(parsed.data.bank_ifsc)?.toUpperCase() ?? null,
       bank_branch: normalizeOptional(parsed.data.bank_branch),
@@ -301,6 +305,10 @@ const CompanyPage = () => {
                 <div>
                   <label htmlFor="bank_name" className="hms-label">Bank name</label>
                   <input id="bank_name" className="hms-input" {...register('bank_name')} />
+                </div>
+                <div>
+                  <label htmlFor="account_holder_name" className="hms-label">Account Holder Name</label>
+                  <input id="account_holder_name" className="hms-input" {...register('account_holder_name')} />
                 </div>
                 <div>
                   <label htmlFor="bank_branch" className="hms-label">Branch</label>

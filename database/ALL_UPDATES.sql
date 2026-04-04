@@ -22,6 +22,7 @@ BEGIN;
 ALTER TABLE company
 ADD COLUMN IF NOT EXISTS company_director_name VARCHAR(255),
 ADD COLUMN IF NOT EXISTS company_director_contact VARCHAR(255),
+ADD COLUMN IF NOT EXISTS account_holder_name VARCHAR(255),
 ADD COLUMN IF NOT EXISTS gstin_status VARCHAR(20) NOT NULL DEFAULT 'non-registered';
 
 ALTER TABLE customers
@@ -63,6 +64,7 @@ WHERE business_type IS NULL;
 -- Add column comments (PostgreSQL)
 COMMENT ON COLUMN company.company_director_name IS 'Optional: Name of company director';
 COMMENT ON COLUMN company.company_director_contact IS 'Optional: Contact info of company director';
+COMMENT ON COLUMN company.account_holder_name IS 'Bank account holder name printed in billing documents';
 COMMENT ON COLUMN company.gstin_status IS 'GSTIN registration status: registered or non-registered';
 COMMENT ON COLUMN customers.company_director_name IS 'Optional: Name of customer company director';
 COMMENT ON COLUMN customers.company_director_contact IS 'Optional: Contact of customer company director';
@@ -112,6 +114,7 @@ CREATE TABLE company (
     
     company_director_name VARCHAR(255) NULL,
     company_director_contact VARCHAR(255) NULL,
+    account_holder_name VARCHAR(255) NULL,
     
     bank_name VARCHAR(150) NULL,
     bank_account_no VARCHAR(50) NULL,
