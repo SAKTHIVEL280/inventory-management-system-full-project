@@ -129,7 +129,7 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
       icon: 'shopping_cart',
       items: [
         { to: '/purchase/orders', label: 'Purchase Orders', visible: can('purchase_orders_read'), icon: 'shopping_cart' },
-        { to: '/purchase/grn', label: 'GRN', visible: can('grn_read'), icon: 'move_to_inbox' },
+        { to: '/purchase/grn', label: 'Good Receipt Notes', visible: can('grn_read'), icon: 'move_to_inbox' },
       ],
     },
     {

@@ -1,6 +1,6 @@
 -- ALL DATABASE UPDATES - GRN Module Enhancements
 -- Date: April 3, 2026
--- Features: Payment Due Date, Free Quantity Tracking
+-- Features: Payment Due Date, Free Quantity Tracking, Sales Invoice Item Extended Fields
 
 BEGIN;
 
@@ -23,6 +23,27 @@ ALTER TABLE grn_items
 ADD COLUMN IF NOT EXISTS free_quantity NUMERIC(12,4) NOT NULL DEFAULT 0;
 
 COMMENT ON COLUMN grn_items.free_quantity IS 'Free quantity received (not charged)';
+
+-- ============================================================================
+-- 3. Sales Invoice Item Extended Fields
+-- ============================================================================
+
+ALTER TABLE sales_invoice_items
+ADD COLUMN IF NOT EXISTS order_unit VARCHAR(50);
+
+ALTER TABLE sales_invoice_items
+ADD COLUMN IF NOT EXISTS batch_no VARCHAR(50);
+
+ALTER TABLE sales_invoice_items
+ADD COLUMN IF NOT EXISTS manufacture_date DATE;
+
+ALTER TABLE sales_invoice_items
+ADD COLUMN IF NOT EXISTS expiry_date DATE;
+
+ALTER TABLE sales_invoice_items
+ADD COLUMN IF NOT EXISTS free_quantity NUMERIC(12,4) NOT NULL DEFAULT 0;
+
+COMMENT ON COLUMN sales_invoice_items.free_quantity IS 'Free quantity sold (not billed)';
 
 -- ============================================================================
 COMMIT;

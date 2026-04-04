@@ -142,6 +142,8 @@ export interface Customer {
   opening_balance_type: 'dr' | 'cr';
   currency_code: string;
   is_active: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 export interface Supplier {
@@ -173,6 +175,8 @@ export interface Supplier {
   opening_balance: number;
   opening_balance_type: 'dr' | 'cr';
   is_active: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
 }
 
 export interface ProductCategory {

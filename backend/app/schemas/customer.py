@@ -1,4 +1,5 @@
 """Customer schemas."""
+from datetime import datetime
 from typing import Optional, List
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
@@ -158,6 +159,8 @@ class CustomerUpdateRequest(CustomerBase):
 
 class CustomerResponse(CustomerBase):
     id: UUID
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 

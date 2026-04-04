@@ -37,9 +37,16 @@ type CreateCustomerPayload = {
   is_active: boolean;
 };
 
+type ListCustomersParams = {
+  search?: string;
+  is_active?: boolean;
+  page?: number;
+  page_size?: number;
+};
+
 export const customersApi = {
-  list: async (): Promise<PaginatedResponse<Customer>> => {
-    const response = await apiClient.get<PaginatedResponse<Customer>>('/api/v1/customers');
+  list: async (params: ListCustomersParams = {}): Promise<PaginatedResponse<Customer>> => {
+    const response = await apiClient.get<PaginatedResponse<Customer>>('/api/v1/customers', { params });
     return response.data;
   },
 

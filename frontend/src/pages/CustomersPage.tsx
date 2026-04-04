@@ -1,4 +1,4 @@
-import { type FocusEvent, useEffect, useState } from 'react';
+import { type FocusEvent, useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
@@ -85,6 +85,14 @@ const schema = z.object({
 });
 
 type CustomerForm = z.infer<typeof schema>;
+type CustomerSortField = 'created_at' | 'company_name' | 'customer_code' | 'phone' | 'customer_type';
+
+const formatDisplayDate = (value?: string | null): string => {
+  if (!value) return '—';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return '—';
+  return parsed.toLocaleDateString();
+};
 
 const normalizeOptional = (value?: string): string | null => value?.trim() || null;
 
@@ -136,10 +144,18 @@ const CustomersPage = () => {
   const [editingItem, setEditingItem] = useState<Customer | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [defaultsApplied, setDefaultsApplied] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortBy, setSortBy] = useState<CustomerSortField>('created_at');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [customerTypeFilter, setCustomerTypeFilter] = useState<'all' | 'regular' | 'dealer' | 'distributor' | 'retail'>('all');
+  const [businessTypeFilter, setBusinessTypeFilter] = useState<'all' | 'domestic' | 'international'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [createdFrom, setCreatedFrom] = useState('');
+  const [createdTo, setCreatedTo] = useState('');
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['customers'],
-    queryFn: customersApi.list,
+    queryFn: () => customersApi.list({ page: 1, page_size: 500 }),
   });
 
   const { data: companyData } = useQuery({
@@ -304,13 +320,107 @@ const CustomersPage = () => {
   };
 
   const items = data?.items ?? [];
+  const filteredItems = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+    const fromTime = createdFrom ? new Date(`${createdFrom}T00:00:00`).getTime() : null;
+    const toTime = createdTo ? new Date(`${createdTo}T23:59:59.999`).getTime() : null;
+
+    const filtered = items.filter((item) => {
+      if (normalizedSearch) {
+        const haystack = [
+          item.customer_code ?? '',
+          item.company_name ?? '',
+          item.phone ?? '',
+          item.contact_person ?? '',
+          item.email ?? '',
+        ]
+          .join(' ')
+          .toLowerCase();
+
+        if (!haystack.includes(normalizedSearch)) {
+          return false;
+        }
+      }
+
+      if (customerTypeFilter !== 'all' && item.customer_type !== customerTypeFilter) {
+        return false;
+      }
+
+      if (businessTypeFilter !== 'all' && (item.business_type ?? 'domestic') !== businessTypeFilter) {
+        return false;
+      }
+
+      if (statusFilter !== 'all') {
+        const expectedActive = statusFilter === 'active';
+        if ((item.is_active ?? true) !== expectedActive) {
+          return false;
+        }
+      }
+
+      if (fromTime !== null || toTime !== null) {
+        const createdTime = item.created_at ? new Date(item.created_at).getTime() : NaN;
+        if (!Number.isFinite(createdTime)) {
+          return false;
+        }
+        if (fromTime !== null && createdTime < fromTime) {
+          return false;
+        }
+        if (toTime !== null && createdTime > toTime) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+
+    filtered.sort((left, right) => {
+      let compareResult = 0;
+
+      if (sortBy === 'created_at') {
+        const leftValue = left.created_at ? new Date(left.created_at).getTime() : 0;
+        const rightValue = right.created_at ? new Date(right.created_at).getTime() : 0;
+        compareResult = leftValue - rightValue;
+      } else {
+        const leftValue = (left[sortBy] ?? '').toString().toLowerCase();
+        const rightValue = (right[sortBy] ?? '').toString().toLowerCase();
+        compareResult = leftValue.localeCompare(rightValue);
+      }
+
+      return sortDirection === 'asc' ? compareResult : -compareResult;
+    });
+
+    return filtered;
+  }, [
+    businessTypeFilter,
+    createdFrom,
+    createdTo,
+    customerTypeFilter,
+    items,
+    searchTerm,
+    sortBy,
+    sortDirection,
+    statusFilter,
+  ]);
   const isSaving = createMutation.isPending || updateMutation.isPending;
   const businessType = watch('business_type');
   const gstinStatus = watch('gstin_status');
   const billingState = watch('billing_state');
   const billingStateCode = watch('billing_state_code');
   const billingCountry = watch('billing_country');
+  const isIndiaBillingCountry = (billingCountry || '').trim().toLowerCase() === 'india';
   const customerCodePreview = toCustomerCodePreview(businessType, billingState, billingStateCode, billingCountry);
+  const customerCodeDisplay = editingItem?.customer_code || customerCodePreview;
+
+  const clearListFilters = () => {
+    setSearchTerm('');
+    setSortBy('created_at');
+    setSortDirection('desc');
+    setCustomerTypeFilter('all');
+    setBusinessTypeFilter('all');
+    setStatusFilter('all');
+    setCreatedFrom('');
+    setCreatedTo('');
+  };
 
   return (
     <AppLayout title="Customer Master">
@@ -373,10 +483,58 @@ const CustomersPage = () => {
                     <option value="international">International</option>
                   </select>
                 </div>
+                {editingItem && (
+                  <>
+                    <div>
+                      <label htmlFor="customer_record_id" className="hms-label">Customer Record ID (Read-only)</label>
+                      <input
+                        id="customer_record_id"
+                        className="hms-input bg-neutral-100"
+                        value={editingItem.id}
+                        readOnly
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="customer_code_saved" className="hms-label">Customer ID (Read-only)</label>
+                      <input
+                        id="customer_code_saved"
+                        className="hms-input bg-neutral-100"
+                        value={customerCodeDisplay}
+                        readOnly
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label htmlFor="customer_opening_balance" className="hms-label">Opening Balance (Read-only)</label>
+                        <input
+                          id="customer_opening_balance"
+                          className="hms-input bg-neutral-100"
+                          value={`${editingItem.opening_balance ?? 0} ${(editingItem.opening_balance_type ?? 'dr').toUpperCase()}`}
+                          readOnly
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="customer_status" className="hms-label">Status (Read-only)</label>
+                        <input
+                          id="customer_status"
+                          className="hms-input bg-neutral-100"
+                          value={editingItem.is_active ? 'Active' : 'Inactive'}
+                          readOnly
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
                 <div>
-                  <label htmlFor="customer_code_preview" className="hms-label">Customer ID (Auto)</label>
+                  <label htmlFor="customer_code_preview" className="hms-label">
+                    {editingItem ? 'Customer ID Pattern Preview' : 'Customer ID (Auto)'}
+                  </label>
                   <input id="customer_code_preview" className="hms-input bg-neutral-100" value={customerCodePreview} readOnly />
-                  <p className="mt-1 text-xs text-neutral-500">Prefix auto-fills from selected State/Country; running number is assigned on save.</p>
+                  <p className="mt-1 text-xs text-neutral-500">
+                    {editingItem
+                      ? 'Pattern preview based on current State/Country. Saved Customer ID remains unchanged.'
+                      : 'Prefix auto-fills from selected State/Country; running number is assigned on save.'}
+                  </p>
                 </div>
                 <div>
                   <label htmlFor="company_director_name" className="hms-label">Company Director Name</label>
@@ -455,14 +613,23 @@ const CustomersPage = () => {
                   </div>
                   <div>
                     <label htmlFor="billing_state" className="hms-label">State</label>
-                    <select id="billing_state" className="hms-input" {...register('billing_state')}>
-                      <option value="">Select state</option>
-                      {STATE_OPTIONS.map(({ state, code }) => (
-                        <option key={state} value={state}>
-                          {state.replace(/\b\w/g, (char) => char.toUpperCase())} ({code})
-                        </option>
-                      ))}
-                    </select>
+                    {isIndiaBillingCountry ? (
+                      <select id="billing_state" className="hms-input" {...register('billing_state')}>
+                        <option value="">Select state</option>
+                        {STATE_OPTIONS.map(({ state, code }) => (
+                          <option key={state} value={state}>
+                            {state.replace(/\b\w/g, (char) => char.toUpperCase())} ({code})
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        id="billing_state"
+                        className="hms-input"
+                        placeholder="State / Province"
+                        {...register('billing_state')}
+                      />
+                    )}
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
@@ -502,10 +669,125 @@ const CustomersPage = () => {
             <h2 className="font-display text-lg font-bold text-neutral-900">Customers</h2>
           </div>
           <div className="p-5">
+          {!isLoading && !isError && (
+            <div className="mb-4 space-y-3 rounded-lg border border-neutral-200 bg-neutral-50/70 p-3">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="xl:col-span-2">
+                  <label htmlFor="customer_list_search" className="hms-label">Search</label>
+                  <input
+                    id="customer_list_search"
+                    className="hms-input"
+                    placeholder="Search by code, company, phone, contact, email"
+                    value={searchTerm}
+                    onChange={(event) => setSearchTerm(event.target.value)}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="customer_sort_by" className="hms-label">Sort By</label>
+                  <select
+                    id="customer_sort_by"
+                    className="hms-input"
+                    value={sortBy}
+                    onChange={(event) => setSortBy(event.target.value as CustomerSortField)}
+                  >
+                    <option value="created_at">Created Date</option>
+                    <option value="company_name">Company</option>
+                    <option value="customer_code">Customer ID</option>
+                    <option value="phone">Phone</option>
+                    <option value="customer_type">Customer Type</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="customer_sort_direction" className="hms-label">Order</label>
+                  <select
+                    id="customer_sort_direction"
+                    className="hms-input"
+                    value={sortDirection}
+                    onChange={(event) => setSortDirection(event.target.value as 'asc' | 'desc')}
+                  >
+                    <option value="desc">Descending</option>
+                    <option value="asc">Ascending</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+                <div>
+                  <label htmlFor="customer_filter_type" className="hms-label">Customer Type</label>
+                  <select
+                    id="customer_filter_type"
+                    className="hms-input"
+                    value={customerTypeFilter}
+                    onChange={(event) => setCustomerTypeFilter(event.target.value as typeof customerTypeFilter)}
+                  >
+                    <option value="all">All</option>
+                    <option value="regular">Regular</option>
+                    <option value="dealer">Dealer</option>
+                    <option value="distributor">Distributor</option>
+                    <option value="retail">Retail</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="customer_filter_business" className="hms-label">Business Type</label>
+                  <select
+                    id="customer_filter_business"
+                    className="hms-input"
+                    value={businessTypeFilter}
+                    onChange={(event) => setBusinessTypeFilter(event.target.value as typeof businessTypeFilter)}
+                  >
+                    <option value="all">All</option>
+                    <option value="domestic">Domestic</option>
+                    <option value="international">International</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="customer_filter_status" className="hms-label">Status</label>
+                  <select
+                    id="customer_filter_status"
+                    className="hms-input"
+                    value={statusFilter}
+                    onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
+                  >
+                    <option value="all">All</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="customer_filter_created_from" className="hms-label">Created From</label>
+                  <input
+                    id="customer_filter_created_from"
+                    type="date"
+                    className="hms-input"
+                    value={createdFrom}
+                    onChange={(event) => setCreatedFrom(event.target.value)}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="customer_filter_created_to" className="hms-label">Created To</label>
+                  <input
+                    id="customer_filter_created_to"
+                    type="date"
+                    className="hms-input"
+                    value={createdTo}
+                    onChange={(event) => setCreatedTo(event.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-neutral-500">Showing {filteredItems.length} of {items.length} customers</p>
+                <button type="button" onClick={clearListFilters} className="rounded border border-neutral-200 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-100">
+                  Clear Filters
+                </button>
+              </div>
+            </div>
+          )}
           {isLoading && <PageLoading message="Loading customers..." />}
           {isError && <PageError message="Failed to load customers" />}
           {!isLoading && !isError && items.length === 0 && <PageEmpty message="No customers found" />}
-          {!isLoading && !isError && items.length > 0 && (
+          {!isLoading && !isError && items.length > 0 && filteredItems.length === 0 && <PageEmpty message="No customers match current filters" />}
+          {!isLoading && !isError && filteredItems.length > 0 && (
             <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <caption className="sr-only">Customers list</caption>
@@ -515,11 +797,12 @@ const CustomersPage = () => {
                   <th scope="col" className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">Company</th>
                   <th scope="col" className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">Phone</th>
                   <th scope="col" className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">Type</th>
+                  <th scope="col" className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">Created</th>
                   <th scope="col" className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
-                {items.map((item) => (
+                {filteredItems.map((item) => (
                   <tr key={item.id} className="hover:bg-neutral-50/80">
                     <td className="px-4 py-3 font-mono text-xs">{item.customer_code}</td>
                     <td className="px-4 py-3 font-medium">{item.company_name}</td>
@@ -529,6 +812,7 @@ const CustomersPage = () => {
                         {item.customer_type}
                       </span>
                     </td>
+                    <td className="px-4 py-3 text-xs text-neutral-600">{formatDisplayDate(item.created_at)}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <button 

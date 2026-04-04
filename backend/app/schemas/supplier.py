@@ -1,4 +1,5 @@
 """Supplier schemas."""
+from datetime import datetime
 from typing import Optional, List
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
@@ -90,6 +91,8 @@ class SupplierUpdateRequest(SupplierBase):
 
 class SupplierResponse(SupplierBase):
     id: UUID
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 

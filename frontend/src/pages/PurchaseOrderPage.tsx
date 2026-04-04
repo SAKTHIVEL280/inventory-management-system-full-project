@@ -87,7 +87,7 @@ const PurchaseOrderPage = () => {
     queryKey: ['purchase-orders', statusFilter, archiveView],
     queryFn: () => purchaseApi.listPOs(statusFilter ?? undefined, 1, 20, { archived_only: archiveView === 'archived' }),
   });
-  const suppliersQuery = useQuery({ queryKey: ['suppliers'], queryFn: suppliersApi.list });
+  const suppliersQuery = useQuery({ queryKey: ['suppliers'], queryFn: () => suppliersApi.list() });
   const productsQuery = useQuery({ queryKey: ['products'], queryFn: productsApi.list });
 
   const form = useForm<POForm>({

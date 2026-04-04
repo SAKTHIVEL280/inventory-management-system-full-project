@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
@@ -6,9 +6,9 @@ import { companyApi } from '../api/company';
 import { Company } from '../types';
 import { AppLayout } from '../components/AppLayout';
 import { PageError, PageLoading } from '../components/PageState';
-import { useRef } from 'react';
-import { toast } from 'sonner';
 import { getStaticUrl } from '../utils/url_utils';
+import { getApiDetail, getApiDetailMessage } from '../utils/apiError';
+import { showError, showSuccess } from '../utils/toastHelper';
 
 const schema = z.object({
   name: z.string().min(1, 'Company name is required'),
@@ -56,7 +56,6 @@ const emptyCompany: Company = {
 
 const CompanyPage = () => {
   const queryClient = useQueryClient();
-  const [formError, setFormError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data, isLoading, isError } = useQuery({
@@ -117,7 +116,11 @@ const CompanyPage = () => {
         bank_ifsc: updated.bank_ifsc ?? '',
         bank_branch: updated.bank_branch ?? '',
       });
-      setFormError('');
+      showSuccess('Company profile saved successfully');
+    },
+    onError: (error: unknown) => {
+      const detail = getApiDetail(error);
+      showError(getApiDetailMessage(detail, 'Failed to save company profile'));
     },
   });
 
@@ -125,9 +128,12 @@ const CompanyPage = () => {
     mutationFn: companyApi.uploadLogo,
     onSuccess: (res) => {
       queryClient.setQueryData(['company'], (old: Company | undefined) => ({ ...(old ?? emptyCompany), logo_url: res.logo_url }));
-      toast.success('Logo uploaded successfully');
+      showSuccess('Logo uploaded successfully');
     },
-    onError: () => toast.error('Failed to upload logo'),
+    onError: (error: unknown) => {
+      const detail = getApiDetail(error);
+      showError(getApiDetailMessage(detail, 'Failed to upload logo'));
+    },
   });
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -139,7 +145,7 @@ const CompanyPage = () => {
   const onSubmit = (values: CompanyForm): void => {
     const parsed = schema.safeParse(values);
     if (!parsed.success) {
-      setFormError(parsed.error.issues[0]?.message ?? 'Validation failed');
+      showError(parsed.error.issues[0]?.message ?? 'Validation failed');
       return;
     }
 
@@ -313,9 +319,6 @@ const CompanyPage = () => {
 
             {/* Submit */}
             <div className="hms-card p-6">
-              {formError && <p className="mb-4 text-sm text-danger" role="alert">{formError}</p>}
-              {mutation.isError && <p className="mb-4 text-sm text-danger" role="alert">Failed to save company profile</p>}
-              {mutation.isSuccess && <p className="mb-4 text-sm text-success" role="status">Company profile saved successfully</p>}
               <div className="flex justify-end">
                 <button type="submit" disabled={mutation.isPending} className="rounded-lg bg-primary px-6 py-2.5 text-sm font-bold text-white shadow-lg shadow-primary/20 transition hover:bg-primary/90 disabled:opacity-60">
                   {mutation.isPending ? 'Saving...' : 'Save Company Profile'}

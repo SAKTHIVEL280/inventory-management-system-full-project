@@ -31,9 +31,16 @@ type CreateSupplierPayload = {
   is_active: boolean;
 };
 
+type ListSuppliersParams = {
+  search?: string;
+  is_active?: boolean;
+  page?: number;
+  page_size?: number;
+};
+
 export const suppliersApi = {
-  list: async (): Promise<PaginatedResponse<Supplier>> => {
-    const response = await apiClient.get<PaginatedResponse<Supplier>>('/api/v1/suppliers');
+  list: async (params: ListSuppliersParams = {}): Promise<PaginatedResponse<Supplier>> => {
+    const response = await apiClient.get<PaginatedResponse<Supplier>>('/api/v1/suppliers', { params });
     return response.data;
   },
 
