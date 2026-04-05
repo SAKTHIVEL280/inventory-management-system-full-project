@@ -2,6 +2,25 @@
 
 ---
 
+## DB-24: Branding Inline Logo Fallback - No Database Changes Required
+**Date**: April 5, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Test Case**: Sidebar Top-Left Logo Still Missing on Ubuntu
+**Module**: Company / Branding API
+**Type**: Bug Fix - Backend/Frontend Logic Only
+
+### Overview
+Validated schema impact for branding inline logo fallback implementation.
+
+### Findings
+- Change is API response and frontend rendering behavior only.
+- Existing company/logo fields are unchanged.
+
+### Conclusion
+No database changes required.
+
+---
+
 ## DB-23: Ubuntu Frontend Load Fix - No Database Changes Required
 **Date**: April 5, 2026
 **Status**: ✅ Verified - No Changes Needed

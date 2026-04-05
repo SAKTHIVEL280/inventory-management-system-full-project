@@ -74,3 +74,4 @@ class CompanyLogoResponse(BaseModel):
 class CompanyBrandingResponse(BaseModel):
     name: str
     logo_url: Optional[str] = None
+    logo_data_url: Optional[str] = None

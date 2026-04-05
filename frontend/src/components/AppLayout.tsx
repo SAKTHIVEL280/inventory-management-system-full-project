@@ -208,8 +208,8 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
           <div className="flex h-full flex-col p-6">
             <div className="mb-8 flex items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary">
-                {company?.logo_url ? (
-                  <img src={getStaticUrl(company.logo_url) ?? ''} alt={company.name} className="h-full w-full rounded-full object-cover" />
+                {company?.logo_data_url || company?.logo_url ? (
+                  <img src={company.logo_data_url || getStaticUrl(company.logo_url) || ''} alt={company.name} className="h-full w-full rounded-full object-cover" />
                 ) : (
                   <span className="material-icons text-white" aria-hidden="true">business</span>
                 )}

@@ -4,6 +4,7 @@ import { Company } from '../types';
 export interface CompanyBranding {
   name: string;
   logo_url?: string | null;
+  logo_data_url?: string | null;
 }
 
 export const companyApi = {

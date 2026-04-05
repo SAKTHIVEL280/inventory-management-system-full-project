@@ -1,5 +1,26 @@
 # Frontend Updates Log
 
+## FE-30: Sidebar Uses Inline Branding Logo Fallback
+**Date**: April 5, 2026
+**Status**: ✅ Completed
+**Test Case**: Sidebar Top-Left Logo Still Missing on Ubuntu
+**Module**: App Layout / Branding
+**Type**: Bug Fix
+
+### Overview
+Updated sidebar logo rendering to prefer inline branding data URL and fall back to URL path.
+
+### Changes Made
+- Added `logo_data_url` to branding API type.
+- Updated sidebar image source to use `logo_data_url` first.
+- Relaxed render condition to show logo when either `logo_data_url` or `logo_url` is available.
+
+### Files Modified
+- `frontend/src/api/company.ts`
+- `frontend/src/components/AppLayout.tsx`
+
+---
+
 ## FE-29: Ubuntu Deployment Frontend Load Fix (Production API Base)
 **Date**: April 5, 2026
 **Status**: ✅ Completed

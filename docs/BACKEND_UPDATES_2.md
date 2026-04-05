@@ -2,6 +2,27 @@
 
 ---
 
+## BE-27: Branding API Inline Logo Fallback for Server UI Reliability
+**Date**: April 5, 2026
+**Status**: ✅ Completed
+**Test Case**: Sidebar Top-Left Logo Still Missing on Ubuntu
+**Module**: Company / Branding API
+**Type**: Bug Fix
+
+### Overview
+Added inline base64 logo fallback in branding API response so app UI can render logo without relying on a second image request path.
+
+### Changes Made
+- Extended branding response with `logo_data_url`.
+- Added backend helper to build data URL from logo file.
+- Included `logo_data_url` in `GET /api/v1/company/branding` response when logo file exists.
+
+### Files Modified
+- `backend/app/schemas/company.py`
+- `backend/app/routers/company.py`
+
+---
+
 ## BE-26: Ubuntu Frontend Load Fix - No Backend Changes Required
 **Date**: April 5, 2026
 **Status**: ✅ Verified - No Changes Needed

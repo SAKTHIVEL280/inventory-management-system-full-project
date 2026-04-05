@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from pathlib import Path
+import base64
 
 from app.database import get_db
 from app.dependencies import get_current_user, require_permissions
@@ -28,6 +29,16 @@ def _resolve_logo_file_path(logo_url: str) -> Path | None:
     return None
 
 
+def _build_logo_data_url(file_path: Path) -> str | None:
+    try:
+        suffix = file_path.suffix.lower()
+        media_type = "image/png" if suffix == ".png" else "image/jpeg"
+        data = base64.b64encode(file_path.read_bytes()).decode("ascii")
+        return f"data:{media_type};base64,{data}"
+    except Exception:
+        return None
+
+
 @router.get("/branding", response_model=CompanyBrandingResponse)
 async def get_company_branding(
     db: Session = Depends(get_db),
@@ -35,10 +46,20 @@ async def get_company_branding(
 ):
     company = db.query(Company).first()
     if not company:
-        return CompanyBrandingResponse(name="Inventory Management", logo_url=None)
+        return CompanyBrandingResponse(name="Inventory Management", logo_url=None, logo_data_url=None)
 
     logo_url = "/api/v1/company/logo-file" if company.logo_url else None
-    return CompanyBrandingResponse(name=company.name or "Inventory Management", logo_url=logo_url)
+    logo_data_url = None
+    if company.logo_url:
+        file_path = _resolve_logo_file_path(company.logo_url)
+        if file_path:
+            logo_data_url = _build_logo_data_url(file_path)
+
+    return CompanyBrandingResponse(
+        name=company.name or "Inventory Management",
+        logo_url=logo_url,
+        logo_data_url=logo_data_url,
+    )
 
 
 @router.get("/logo-file")
