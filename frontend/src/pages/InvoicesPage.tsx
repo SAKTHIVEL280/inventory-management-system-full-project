@@ -251,7 +251,7 @@ const InvoicesPage = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="border-b border-neutral-200 bg-neutral-50">
-                <th className="px-4 py-3 text-left font-semibold text-neutral-600">Invoice #</th>
+                <th className="px-4 py-3 text-left font-semibold text-neutral-600">Invoice Number</th>
                 <th className="px-4 py-3 text-left font-semibold text-neutral-600">Customer</th>
                 <th className="px-4 py-3 text-left font-semibold text-neutral-600">Date</th>
                 <th className="px-4 py-3 text-left font-semibold text-neutral-600">Due Date</th>
@@ -331,7 +331,7 @@ const InvoicesPage = () => {
                         <th className="w-16 px-3 py-2 text-right">Free</th>
                         <th className="w-28 px-3 py-2 text-right">MRP (₹)</th>
                         <th className="w-16 px-3 py-2 text-right">Disc %</th>
-                        <th className="w-16 px-3 py-2 text-right">GST</th>
+                        <th className="w-20 px-3 py-2 text-right">GST %</th>
                         <th className="w-28 px-3 py-2 text-right">Total</th>
                         <th className="w-20 px-3 py-2 text-right">Action</th>
                       </tr>
@@ -380,7 +380,7 @@ const InvoicesPage = () => {
                           </td>
                           {/* SAL-022/023: GST auto-fills from Product Master */}
                           <td className="px-3 py-2">
-                            <select className="w-full rounded border px-2 py-1.5 text-sm" value={item.gst_rate} onChange={e => updateItem(idx, 'gst_rate', parseInt(e.target.value))}>
+                            <select className="w-full min-w-[60px] rounded border border-neutral-300 bg-white px-2 py-1.5 text-sm text-neutral-900 appearance-auto" value={item.gst_rate} onChange={e => updateItem(idx, 'gst_rate', parseInt(e.target.value))}>
                               <option value={0}>0%</option>
                               <option value={5}>5%</option>
                               <option value={12}>12%</option>

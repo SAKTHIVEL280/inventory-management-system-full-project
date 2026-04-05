@@ -59,8 +59,11 @@ const ProductsPage = () => {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<Product | null>(null);
   const [adjustStock, setAdjustStock] = useState<{ productId: string; productName: string; currentStock: number } | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
-  const productsQuery = useQuery({ queryKey: ['products'], queryFn: productsApi.list });
+  const productsQuery = useQuery({ queryKey: ['products'], queryFn: productsApi.listAll });
   const categoriesQuery = useQuery({ queryKey: ['product-categories'], queryFn: productsApi.listCategories });
   const uomQuery = useQuery({ queryKey: ['uom'], queryFn: productsApi.listUom });
 
@@ -336,6 +339,40 @@ const ProductsPage = () => {
   const baseUnitQty = productForm.watch('base_unit_qty');
   const computedPurchase = (Number(unitPrice || 0) * Number(baseUnitQty || 0)).toFixed(2);
 
+  // Filter products based on search query
+  const filteredProducts = products.filter((product) => {
+    if (!searchQuery.trim()) return true;
+    const search = searchQuery.toLowerCase();
+    return (
+      product.name.toLowerCase().includes(search) ||
+      product.product_code?.toLowerCase().includes(search) ||
+      product.sku?.toLowerCase().includes(search) ||
+      product.description?.toLowerCase().includes(search)
+    );
+  });
+
+  // Calculate pagination
+  const totalItems = filteredProducts.length;
+  const totalPages = Math.ceil(totalItems / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedProducts = filteredProducts.slice(startIndex, endIndex);
+
+  // Reset to page 1 when search query changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
+
+  // Reset to page 1 when products are updated
+  useEffect(() => {
+    setCurrentPage(1);
+    setSearchQuery('');
+  }, [productsQuery.dataUpdatedAt]);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(Math.max(1, Math.min(page, totalPages)));
+  };
+
   useEffect(() => {
     if (!editingProduct) {
       productForm.setValue('alt_uom_conversion', Number(baseUnitQty || 0));
@@ -503,13 +540,29 @@ const ProductsPage = () => {
 
         <div className="hms-card overflow-hidden">
           <div className="border-b border-neutral-200 px-5 py-4">
-            <h2 className="font-display text-lg font-bold text-neutral-900">Products</h2>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <h2 className="font-display text-lg font-bold text-neutral-900">Products</h2>
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 text-[20px]" aria-hidden="true">search</span>
+                  <input
+                    type="text"
+                    className="w-64 rounded-lg border border-neutral-200 bg-white pl-10 pr-3 py-2 text-sm outline-none focus:border-primary"
+                    placeholder="Search by name, code, SKU..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
           </div>
           <div className="p-5">
           {(productsQuery.isLoading || categoriesQuery.isLoading || uomQuery.isLoading) && <PageLoading message="Loading products..." />}
           {(productsQuery.isError || categoriesQuery.isError || uomQuery.isError) && <PageError message="Failed to load product data" />}
-          {!productsQuery.isLoading && !productsQuery.isError && products.length === 0 && <PageEmpty message="No products found. Create a category first, then add products." />}
-          {!productsQuery.isLoading && !productsQuery.isError && products.length > 0 && (
+          {!productsQuery.isLoading && !productsQuery.isError && filteredProducts.length === 0 && (
+            <PageEmpty message={searchQuery ? "No products match your search criteria." : "No products found. Create a category first, then add products."} />
+          )}
+          {!productsQuery.isLoading && !productsQuery.isError && filteredProducts.length > 0 && (
             <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <caption className="sr-only">Products list with tax and stock status</caption>
@@ -528,7 +581,7 @@ const ProductsPage = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
-                {products.map((item) => (
+                {paginatedProducts.map((item) => (
                   <tr key={item.id} className={`hover:bg-neutral-50/80 ${!item.is_active ? 'opacity-50' : ''}`}>
                     <td className="px-4 py-3 font-mono text-xs">{item.product_code}</td>
                     <td className="px-4 py-3">
@@ -562,6 +615,37 @@ const ProductsPage = () => {
                 ))}
               </tbody>
             </table>
+            </div>
+          )}
+          
+          {/* Pagination Controls */}
+          {!productsQuery.isLoading && !productsQuery.isError && filteredProducts.length > 0 && (
+            <div className="flex items-center justify-between border-t border-neutral-200 px-5 py-4">
+              <p className="text-sm text-neutral-600">
+                Showing {startIndex + 1} to {Math.min(endIndex, totalItems)} of {totalItems} product{totalItems !== 1 ? 's' : ''}
+                {searchQuery && ` (filtered from ${products.length} total)`}
+              </p>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage === 1}
+                    className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-sm text-neutral-600">
+                    Page {currentPage} of {totalPages}
+                  </span>
+                  <button
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                    className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
             </div>
           )}
           </div>

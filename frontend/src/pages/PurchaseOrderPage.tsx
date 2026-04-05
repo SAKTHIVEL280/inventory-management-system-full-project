@@ -88,7 +88,7 @@ const PurchaseOrderPage = () => {
     queryFn: () => purchaseApi.listPOs(statusFilter ?? undefined, 1, 20, { archived_only: archiveView === 'archived' }),
   });
   const suppliersQuery = useQuery({ queryKey: ['suppliers'], queryFn: () => suppliersApi.list() });
-  const productsQuery = useQuery({ queryKey: ['products'], queryFn: productsApi.list });
+  const productsQuery = useQuery({ queryKey: ['products'], queryFn: productsApi.listAll });
 
   const form = useForm<POForm>({
     defaultValues: {
@@ -486,11 +486,14 @@ const PurchaseOrderPage = () => {
                     onChange={(e) => handleProductSelect(e.target.value)}
                   >
                     <option value="">Select product</option>
-                    {products.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} (₹{(p.purchase_price / 100).toFixed(2)} | GST: {p.gst_rate}%)
-                      </option>
-                    ))}
+                    {products
+                      .slice()
+                      .sort((a, b) => a.name.localeCompare(b.name))
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} (₹{(p.purchase_price / 100).toFixed(2)} | GST: {p.gst_rate}%)
+                        </option>
+                      ))}
                   </select>
                 </div>
 

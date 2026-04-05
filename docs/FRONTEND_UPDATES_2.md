@@ -1,5 +1,128 @@
 # Frontend Updates Log
 
+## FE-13: Billing PDFs - No Frontend Changes Required
+**Date**: April 5, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Test Case**: Bill-001
+**Module**: POs, Tax Invoices, Quotations
+**Type**: Feature - Backend Only
+
+### Overview
+Billing PDF pagination is handled entirely by the backend PDF generation service.
+
+### Findings
+- Frontend already has PDF download buttons in place (POs, Invoices, Quotations pages)
+- Frontend calls backend PDF endpoints which generate the paginated PDFs
+- No frontend changes needed - pagination is handled during PDF generation
+
+### Conclusion
+No frontend changes required. PDF pagination is a backend-only implementation.
+
+---
+
+## FE-12: Product Module - Add Pagination and Search to Products Table
+**Date**: April 5, 2026
+**Status**: ✅ Completed
+**Test Case**: Prod-01
+**Module**: Product
+**Type**: Feature/Improvement
+
+### Issue
+Product table was only showing the first 20 recently added products instead of all products from the database. No search or pagination functionality existed.
+
+### Changes Made
+
+#### 1. Products API Client (`frontend/src/api/products.ts`)
+- **Reusing existing `listAll` method** (added in FE-11) to fetch all products without pagination
+- All products are now fetched from backend sorted alphabetically by name
+
+#### 2. Products Page (`frontend/src/pages/ProductsPage.tsx`)
+- **Added search state**: `searchQuery` state to track user search input
+- **Added pagination state**: `currentPage` state (default: 1), `itemsPerPage` constant (10)
+- **Implemented search filtering**: Filters products by name, product_code, SKU, and description
+- **Implemented client-side pagination**: 
+  - Shows 10 products per page
+  - Calculates total pages based on filtered results
+  - Slices products array based on current page
+- **Added search input UI**: 
+  - Search bar with icon in products table header
+  - Placeholder: "Search by name, code, SKU..."
+  - Real-time filtering as user types
+- **Added pagination controls**:
+  - "Previous" and "Next" buttons (disabled when at first/last page)
+  - "Page X of Y" indicator
+  - Shows "Showing X to Y of Z products" with filter info when searching
+- **Auto-reset behaviors**:
+  - Resets to page 1 when search query changes
+  - Resets to page 1 and clears search when products are updated (after create/edit)
+
+### Technical Details
+- Backend returns all products sorted by name (A-Z)
+- Frontend applies additional client-side filtering based on search query
+- Pagination works seamlessly with search (search results are also paginated if > 10)
+- Search is case-insensitive and searches across multiple fields
+- No database changes required
+
+### Files Modified
+- `frontend/src/pages/ProductsPage.tsx` - Added search, pagination logic, and UI controls
+
+### Testing Checklist
+- [x] All products from database appear in table (not just recent 20)
+- [x] Products sorted alphabetically (A-Z) by name
+- [x] Search bar filters products by name, code, SKU, description
+- [x] Table shows 10 products per page
+- [x] Previous/Next buttons work correctly
+- [x] Page indicator shows current page and total pages
+- [x] Search results are paginated if more than 10 matches
+- [x] Page resets to 1 when search changes
+- [x] Page resets to 1 after product create/edit
+- [x] Build passes without TypeScript errors
+
+---
+
+## FE-11: Purchase Order Module - Show All Products in Product Dropdown
+**Date**: April 5, 2026
+**Status**: ✅ Completed
+**Test Case**: PO-01
+**Module**: Purchase Order
+**Type**: Bug Fix
+
+### Issue
+Product dropdown in Purchase Order creation page was only showing recently added products instead of complete inventory.
+
+### Changes Made
+
+#### 1. Products API Client (`frontend/src/api/products.ts`)
+- **Added `listAll` method** to fetch all products without pagination
+- Calls `/api/v1/products?all_products=true` to get complete product list
+- Returns all products sorted alphabetically by name from backend
+
+#### 2. Purchase Order Page (`frontend/src/pages/PurchaseOrderPage.tsx`)
+- **Changed product query** from `productsApi.list` to `productsApi.listAll`
+- Products are now fetched in complete list (not paginated)
+- Added client-side alphabetical sorting in dropdown: `.sort((a, b) => a.name.localeCompare(b.name))`
+- Dropdown now displays all products with name, price, and GST rate
+
+### Technical Details
+- Backend returns all products when `all_products=true` parameter is set
+- Frontend applies additional sorting using `localeCompare` for proper A-Z ordering
+- Maintains backward compatibility: other pages still use paginated `list` method
+- No database changes required (existing products table structure is correct)
+
+### Files Modified
+- `frontend/src/api/products.ts` - Added `listAll` method
+- `frontend/src/pages/PurchaseOrderPage.tsx` - Updated to use `listAll` and sort products
+
+### Testing Checklist
+- [x] All products from inventory appear in dropdown
+- [x] Products sorted alphabetically (A-Z) by name
+- [x] No duplicate products in dropdown
+- [x] Product selection auto-fills unit price and GST rate
+- [x] Recent products no longer limited to first 20
+- [x] Build passes without TypeScript errors
+
+---
+
 ## FE-1: GRN Module - Add Product Code Field in New GRN Form
 **Date**: April 3, 2026  
 **Status**: ✅ Completed  

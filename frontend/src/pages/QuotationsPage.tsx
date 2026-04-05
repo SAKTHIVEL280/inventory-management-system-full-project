@@ -373,7 +373,7 @@ const QuotationsPage = () => {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-neutral-200 bg-neutral-50">
-                  <th className="px-4 py-3 text-left font-semibold text-neutral-600">Quotation #</th>
+                  <th className="px-4 py-3 text-left font-semibold text-neutral-600">Quotation Number</th>
                   <th className="px-4 py-3 text-left font-semibold text-neutral-600">Customer</th>
                   <th className="px-4 py-3 text-left font-semibold text-neutral-600">Date</th>
                   <th className="px-4 py-3 text-left font-semibold text-neutral-600">Valid Until</th>

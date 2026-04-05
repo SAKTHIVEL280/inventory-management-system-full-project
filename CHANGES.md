@@ -25,6 +25,164 @@ For each new feature or bug fix:
 
 ---
 
+## Product Module - Search and Pagination Features
+**Date**: April 5, 2026
+**Status**: ✅ Completed
+
+### Overview
+Added search and pagination functionality to Product page. Product table now displays all products from database (not just recent ones) with 10 items per page and a search bar to filter by name, code, or SKU.
+
+### Backend Changes
+See [BACKEND_UPDATES_2.md](./docs/BACKEND_UPDATES_2.md) - section: BE-8
+
+**Status**: ✅ COMPLETED
+
+### Changes Made:
+1. **API Endpoint** (`backend/app/routers/products.py`):
+   - Changed default sorting from `created_at.desc()` to `name.asc()`
+   - Products now return in alphabetical order (A-Z) by default
+   - Applies to both paginated and `all_products` responses
+
+---
+
+## Frontend Changes
+See [FRONTEND_UPDATES_2.md](./docs/FRONTEND_UPDATES_2.md) - section: FE-12
+
+**Status**: ✅ COMPLETED
+
+### Changes Made:
+1. **Products Page** (`frontend/src/pages/ProductsPage.tsx`):
+   - Changed from `productsApi.list` to `productsApi.listAll` to fetch all products
+   - Added search input with real-time filtering (searches name, code, SKU, description)
+   - Added client-side pagination (10 products per page)
+   - Added Previous/Next navigation buttons
+   - Added page indicator ("Page X of Y")
+   - Added result count display ("Showing X to Y of Z products")
+   - Auto-resets to page 1 when search changes or products are updated
+
+---
+
+## Database Changes
+See [DATABASE_UPDATES_2.md](./docs/DATABASE_UPDATES_2.md) - section: DB-5
+
+**Status**: ✅ Verified - No Changes Required
+
+### Findings:
+- Products table already has all required fields (name, product_code, sku, description)
+- No schema changes needed
+- Feature implemented at API and UI layers only
+
+---
+
+## Testing Checklist
+
+### Product Page Search and Pagination
+- [x] All products from database appear in table
+- [x] Products sorted alphabetically (A-Z) by name
+- [x] Search bar filters products by name, code, SKU, description
+- [x] Table shows 10 products per page
+- [x] Previous/Next pagination buttons work correctly
+- [x] Page indicator shows current page and total pages
+- [x] Search results are paginated if more than 10 matches
+- [x] Page resets to 1 when search changes
+- [x] Page resets to 1 after product create/edit
+- [x] Frontend build passes without errors
+
+---
+
+## Files Modified
+
+### Backend
+- `backend/app/routers/products.py` - Changed sort order to name ascending
+
+### Frontend
+- `frontend/src/pages/ProductsPage.tsx` - Added search, pagination logic, and UI
+
+### Documentation
+- `docs/BACKEND_UPDATES_2.md` - BE-8 entry (NEW)
+- `docs/FRONTEND_UPDATES_2.md` - FE-12 entry (NEW)
+- `docs/DATABASE_UPDATES_2.md` - DB-5 entry (NEW)
+- `CHANGES.md` - This file (tracking all changes)
+
+---
+
+## Purchase Order Module - Show All Products in Dropdown
+**Date**: April 5, 2026
+**Status**: ✅ Completed
+
+### Overview
+Fixed Purchase Order product dropdown to display all products from inventory instead of only recent products.
+
+### Backend Changes
+See [BACKEND_UPDATES_2.md](./docs/BACKEND_UPDATES_2.md) - section: BE-7
+
+**Status**: ✅ COMPLETED
+
+### Changes Made:
+1. **API Endpoint** (`backend/app/routers/products.py`):
+   - Added `all_products` query parameter to `list_products` endpoint
+   - When `true`, bypasses pagination and returns all products sorted by name (A-Z)
+   - Maintains backward compatibility with default paginated behavior
+
+---
+
+## Frontend Changes
+See [FRONTEND_UPDATES_2.md](./docs/FRONTEND_UPDATES_2.md) - section: FE-11
+
+**Status**: ✅ COMPLETED
+
+### Changes Made:
+1. **API Client** (`frontend/src/api/products.ts`):
+   - Added `listAll` method to fetch all products without pagination
+
+2. **Purchase Order Page** (`frontend/src/pages/PurchaseOrderPage.tsx`):
+   - Changed from `productsApi.list` to `productsApi.listAll`
+   - Added client-side alphabetical sorting in dropdown
+   - Products now display in A-Z order by name
+
+---
+
+## Database Changes
+See [DATABASE_UPDATES_2.md](./docs/DATABASE_UPDATES_2.md) - section: DB-4
+
+**Status**: ✅ Verified - No Changes Required
+
+### Findings:
+- Products table already has all required fields
+- No schema changes needed
+- Issue was at API/data fetching layer, not database
+
+---
+
+## Testing Checklist
+
+### Purchase Order Product Dropdown
+- [x] All products from inventory appear in dropdown
+- [x] Products sorted alphabetically (A-Z) by name
+- [x] No duplicate products in dropdown
+- [x] Product selection auto-fills unit price and GST rate
+- [x] Frontend build passes without errors
+- [x] Backward compatibility maintained for other pages
+
+---
+
+## Files Modified
+
+### Backend
+- `backend/app/routers/products.py` - Added `all_products` parameter
+
+### Frontend
+- `frontend/src/api/products.ts` - Added `listAll` method
+- `frontend/src/pages/PurchaseOrderPage.tsx` - Updated to fetch all products
+
+### Documentation
+- `docs/BACKEND_UPDATES_2.md` - BE-7 entry (NEW)
+- `docs/FRONTEND_UPDATES_2.md` - FE-11 entry (NEW)
+- `docs/DATABASE_UPDATES_2.md` - DB-4 entry (NEW)
+- `CHANGES.md` - This file (tracking all changes)
+
+---
+
 ## Company Module - Director & GSTIN Features
 **Date**: April 3, 2026
 **Status**: ✅ Completed
@@ -336,9 +494,40 @@ See `docs/DATABASE_UPDATES.md` - section: Supplier Module - Schema Updates
 
 #### Database
 - `database/ALL_UPDATES.sql`
+- Migration executed via `backend/run_migration.py` (April 4, 2026)
 
 #### Documentation
 - `docs/BACKEND_UPDATES.md`
 - `docs/FRONTEND_UPDATES.md`
 - `docs/DATABASE_UPDATES.md`
+- `docs/DATABASE_UPDATES_2.md` - DB-3 entry for migration execution
+
+---
+
+## Database Migration Execution - Missing Columns Fix
+**Date**: April 4, 2026
+**Status**: ✅ Completed
+
+### Overview
+Executed pending database migrations to fix critical backend errors:
+1. ✅ Ran `backend/run_migration.py` to add all missing columns
+2. ✅ Verified 5 required supplier columns exist in database
+3. ✅ Fixed `UndefinedColumn` error on `/api/v1/suppliers` endpoint
+4. ✅ Added columns for suppliers, customers, company, and related tables
+
+### Database Changes
+See `docs/DATABASE_UPDATES_2.md` - section: DB-3
+
+### Files Modified
+
+#### Backend
+- `backend/run_migration.py` - Executed successfully
+- `backend/verify_columns.py` - Verification script created (NEW)
+
+#### Database
+- All migrations applied to PostgreSQL database
+
+#### Documentation
+- `docs/DATABASE_UPDATES_2.md` - DB-3 entry (migration execution log)
+- `CHANGES.md` - This entry (tracking)
 

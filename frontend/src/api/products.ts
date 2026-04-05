@@ -28,6 +28,13 @@ export const productsApi = {
     return response.data;
   },
 
+  listAll: async (): Promise<PaginatedResponse<Product>> => {
+    const response = await apiClient.get<PaginatedResponse<Product>>('/api/v1/products', {
+      params: { all_products: true },
+    });
+    return response.data;
+  },
+
   get: async (id: string): Promise<Product> => {
     const response = await apiClient.get<Product>(`/api/v1/products/${id}`);
     return response.data;

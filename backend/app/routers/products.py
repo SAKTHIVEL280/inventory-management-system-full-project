@@ -78,6 +78,7 @@ async def list_products(
     search: str | None = Query(default=None),
     category_id: UUID | None = Query(default=None),
     is_active: bool | None = Query(default=None),
+    all_products: bool = Query(default=False),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=500),
     db: Session = Depends(get_db),
@@ -101,22 +102,28 @@ async def list_products(
     if is_active is not None:
         query = query.filter(Product.is_active == is_active)
 
-    total = query.count()
-    products = (
-        query.order_by(Product.created_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-        .all()
-    )
+    # If all_products is True, fetch all products sorted by name
+    if all_products:
+        products = query.order_by(Product.name.asc()).all()
+        total = len(products)
+    else:
+        # Paginated response - sort by name ascending (A-Z) by default
+        total = query.count()
+        products = (
+            query.order_by(Product.name.asc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
 
     items = [_to_product_with_stock(product, _current_stock(db, product.id)) for product in products]
 
     return ProductsListResponse(
         items=items,
         total=total,
-        page=page,
-        page_size=page_size,
-        has_more=(page * page_size) < total,
+        page=page if not all_products else 1,
+        page_size=page_size if not all_products else total,
+        has_more=False if all_products else (page * page_size) < total,
     )
 
 
