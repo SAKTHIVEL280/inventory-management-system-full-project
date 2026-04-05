@@ -17,7 +17,7 @@ Use this exact checklist on a new machine.
    - IMPORTANT: Check "Add Python to PATH" during install
    - Check: `python --version`
 
-3. **Node.js 20+**
+3. **Node.js 20.19+ (or 22.12+)**
    - Download from https://nodejs.org/
    - This also installs npm
    - Check: `npm --version`
@@ -26,7 +26,7 @@ Use this exact checklist on a new machine.
 
 ```powershell
 python --version        # Should show 3.11+
-node --version          # Should show 20+
+node --version          # Should show >=20.19 (or >=22.12)
 npm --version           # Should show 10+
 psql --version          # Should show PostgreSQL 15+
 createdb --version      # Should show createdb version
@@ -65,6 +65,14 @@ cd inventory-management-system-full-project
 ## 4. Configure Database Credentials (Important!)
 
 Open `backend/.env` in any text editor.
+
+If `backend/.env` does not exist yet, create it from template first:
+
+```powershell
+cd backend
+Copy-Item .env.example .env
+cd ..
+```
 
 **Find this line:**
 ```
@@ -226,7 +234,7 @@ If backend crashed, restart it: `uvicorn app.main:app --reload --host 127.0.0.1 
 **Fix:** Node dependencies conflict (rare). Try:
 ```powershell
 cd frontend
-rm package-lock.json
+Remove-Item package-lock.json -Force
 npm install
 ```
 

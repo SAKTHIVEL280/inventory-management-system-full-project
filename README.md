@@ -13,7 +13,7 @@ python verify_prerequisites.py
 ```
 
 Expected tooling:
-- Node.js 20+
+- Node.js 20.19+ (or 22.12+)
 - Python 3.11+
 - PostgreSQL 15+
 
@@ -125,19 +125,24 @@ inventory-management-system-full-project/
 
 ## Run Tests
 
-Backend:
+Backend smoke checks:
 
 ```powershell
-cd backend
-.venv\Scripts\activate
-python -m pytest
+python verify_prerequisites.py
+python setup_db.py
+# with backend server running:
+Invoke-RestMethod http://127.0.0.1:8001/health
 ```
+
+Note:
+- no automated backend pytest suite is currently checked in this repository
 
 Frontend gate (lint + build):
 
 ```powershell
 cd frontend
-npm test
+npm run lint
+npm run build
 ```
 
 ## Environment Configuration

@@ -1,167 +1,135 @@
-﻿#  Mecandria ERP - Documentation Index
+﻿# Mecandria ERP - Documentation Index
 
-Welcome to the IMS documentation. This guide helps you navigate the entire project structure and find what you need.
+Welcome to the project documentation. This index points to current guides and reflects the repository structure as of April 2026.
 
 ---
 
-## [LIST] Quick Navigation
+## Quick Navigation
 
 ### Getting Started
-- [Setup Guide](./guides/SETUP.md) — Complete installation and configuration
-- [First-Time Setup Checklist](./guides/FIRST_TIME_SETUP_CHECKLIST.md) — One-page quick onboarding steps
-- [Coding Standards](./guides/CODING_STANDARDS.md) — Code quality rules
-- [Project Specification](./MASTER_SPEC.md) — Complete system specification
+- [Setup Guide](./guides/SETUP.md) - full installation and startup flow
+- [First-Time Setup Checklist](./guides/FIRST_TIME_SETUP_CHECKLIST.md) - one-page onboarding
+- [Database Guide](./guides/DATABASE.md) - DB setup, migration, and troubleshooting
+- [Coding Standards](./guides/CODING_STANDARDS.md) - engineering quality rules
 
-### System Design
-- [Design System](./design/DESIGN_SYSTEM_MASTER.md) — UI/UX patterns and components
-- [Master Specification](./MASTER_SPEC.md) — Complete technical specification
+### Specifications and Design
+- [Master Specification](../MASTER_SPEC.md) - full feature and architecture spec
+- [Design System](./design/DESIGN_SYSTEM_MASTER.md) - UI system and patterns
 
-### Workflow Documentation
-- [WF-01: Authentication](./workflows/WF_01_AUTH.md) — User login and JWT tokens
-- [WF-02: Masters](./workflows/WF_02_MASTERS.md) — Company, users, products setup
-- [WF-03: Purchase](./workflows/WF_03_PURCHASE.md) — PO → GRN → Payment
-- [WF-04: Sales](./workflows/WF_04_SALES.md) — Quotation → Invoice → Payment
-- [WF-05: Payments](./workflows/WF_05_PAYMENTS.md) — Receipt/Payment entries
-- [WF-06: Reports](./workflows/WF_06_REPORTS.md) — Dashboard, stock, P&L reports
+### Workflow Docs
+- [WF-01: Authentication](./workflows/WF_01_AUTH.md)
+- [WF-02: Masters](./workflows/WF_02_MASTERS.md)
+- [WF-03: Purchase](./workflows/WF_03_PURCHASE.md)
+- [WF-04: Sales](./workflows/WF_04_SALES.md)
+- [WF-05: Payments](./workflows/WF_05_PAYMENTS.md)
+- [WF-06: Reports](./workflows/WF_06_REPORTS.md)
 
 ---
 
-## [FILES] Project Structure
+## Project Structure (Current)
 
-```
-ims1/
-├── docs/                           # Documentation
-│   ├── INDEX.md                    # This file - Navigation hub
-│   ├── MASTER_SPEC.md              # Complete system specification
-│   ├── guides/                     # How-to guides
-│   │   ├── SETUP.md                # Installation & configuration
-│   │   ├── CODING_STANDARDS.md     # Code quality standards
-│   │   └── DATABASE.md             # Database setup & migration
-│   ├── workflows/                  # Business workflow documentation
-│   │   ├── WF_01_AUTH.md
-│   │   ├── WF_02_MASTERS.md
-│   │   ├── WF_03_PURCHASE.md
-│   │   ├── WF_04_SALES.md
-│   │   ├── WF_05_PAYMENTS.md
-│   │   └── WF_06_REPORTS.md
-│   └── design/                     # UI/UX guidelines
-│       └── DESIGN_SYSTEM_MASTER.md
-│
-├── scripts/                        # Utility scripts
-│   ├── setup_db.py                 # Database initialization
-│   └── seed_db.py                  # Sample data seeding
-│
-├── backend/                        # FastAPI application
-│   ├── app/                        # Main application code
-│   │   ├── models/                 # SQLAlchemy models
-│   │   ├── routers/                # API endpoints
-│   │   ├── schemas/                # Pydantic validation schemas
-│   │   ├── services/               # Business logic
-│   │   ├── utils/                  # Utility functions
-│   │   ├── config.py               # Configuration
-│   │   ├── database.py             # Database setup
-│   │   └── main.py                 # FastAPI app entry
-│   ├── .env                        # Environment variables (local)
-│   ├── .env.example                # Environment template
-│   ├── requirements.txt            # Python dependencies
-│   └── venv/                       # Virtual environment
-│
-├── frontend/                       # React application
-│   ├── src/
-│   │   ├── api/                    # API client functions
-│   │   ├── components/             # Reusable components
-│   │   ├── pages/                  # Page components
-│   │   ├── store/                  # Zustand state management
-│   │   ├── hooks/                  # Custom React hooks
-│   │   ├── types/                  # TypeScript type definitions
-│   │   ├── App.tsx
-│   │   └── main.tsx
-│   ├── .env                        # Frontend config (local)
-│   ├── .env.example                # Frontend config template
-│   ├── package.json
-│   ├── tailwind.config.ts          # Tailwind CSS config
-│   └── tsconfig.json               # TypeScript config
-│
-├── database/                       # Database migrations
-│   ├── alembic/                    # Alembic migration tool
-│   │   ├── versions/               # Migration scripts
-│   │   ├── env.py                  # Alembic environment config
-│   │   └── script.py.mako          # Migration template
-│   └── alembic.ini                 # Alembic configuration
-│
-├── README.md                       # Project overview (start here)
-├── .gitignore                      # Git ignore rules
-└── .env.example                    # Environment template (root)
+```text
+inventory-management-system-full-project/
+|-- setup_db.py
+|-- verify_prerequisites.py
+|-- MASTER_SPEC.md
+|-- README.md
+|-- backend/
+|   |-- .env.example
+|   |-- requirements.txt
+|   |-- setup_db.py
+|   |-- run_migration.py
+|   `-- app/
+|       |-- main.py
+|       |-- config.py
+|       |-- database.py
+|       |-- dependencies.py
+|       |-- models/
+|       |-- routers/
+|       |-- schemas/
+|       |-- services/
+|       `-- utils/
+|-- frontend/
+|   |-- .env.example
+|   |-- package.json
+|   |-- vite.config.ts
+|   `-- src/
+|       |-- api/
+|       |-- components/
+|       |-- hooks/
+|       |-- pages/
+|       |-- routes/
+|       |-- store/
+|       |-- types/
+|       `-- utils/
+|-- database/
+|   |-- 01_schema.sql
+|   |-- 02_seed_data.sql
+|   |-- 03_queries.sql
+|   |-- ALL_UPDATES.sql
+|   |-- ALL_UPDATES_2.sql
+|   `-- README.md
+`-- docs/
+	 |-- INDEX.md
+	 |-- guides/
+	 |-- workflows/
+	 `-- design/
 ```
 
----
-
-## [START] Quick Start
-
-1. **First time setup?** → Start with [First-Time Setup Checklist](./guides/FIRST_TIME_SETUP_CHECKLIST.md)
-2. **Need full details?** → Read [Setup Guide](./guides/SETUP.md)
-3. **Working on code?** → Check [Coding Standards](./guides/CODING_STANDARDS.md)
-4. **Building a feature?** → Find related workflow in [Workflows](./workflows/)
-5. **Designing UI?** → Use [Design System](./design/DESIGN_SYSTEM_MASTER.md)
-6. **Database issues?** → See [Database Guide](./guides/DATABASE.md)
+Notes:
+- `database/` SQL files are reference/manual artifacts.
+- Active runtime setup path is `setup_db.py` + `backend/run_migration.py`.
 
 ---
 
-## [DOCS] Key Documents
+## Quick Start
 
-| Document | Purpose | Read Time |
-|----------|---------|-----------|
-| [MASTER_SPEC.md](./MASTER_SPEC.md) | Complete system specification | 30 min |
-| [SETUP.md](./guides/SETUP.md) | Installation & configuration | 15 min |
-| [CODING_STANDARDS.md](./guides/CODING_STANDARDS.md) | Code quality rules | 10 min |
-| [Design System](./design/DESIGN_SYSTEM_MASTER.md) | UI patterns | 20 min |
-| Workflows (WF_*.md) | Feature workflows | 5-10 min each |
-
----
-
-## [TOOLS] Development Stack
-
-| Layer | Technology |
-|-------|-----------|
-| **Frontend** | React 18 + TypeScript + Tailwind CSS |
-| **Backend** | FastAPI + SQLAlchemy + PostgreSQL |
-| **Database** | PostgreSQL 15+ |
-| **State Management** | Zustand (frontend) |
-| **API Client** | React Query + Custom API layer |
-| **Forms** | React Hook Form + Zod |
-| **Authentication** | JWT (python-jose + passlib) |
+1. Run prerequisite check:
+	- `python verify_prerequisites.py`
+2. Bootstrap backend + DB + seed + migration:
+	- `python setup_db.py`
+3. Start backend:
+	- `cd backend`
+	- `.venv\Scripts\activate`
+	- `uvicorn app.main:app --reload --host 127.0.0.1 --port 8001`
+4. Start frontend in a new terminal:
+	- `cd frontend`
+	- `npm install`
+	- `npm run dev`
+5. Login:
+	- `admin@company.com` / `Admin@123`
 
 ---
 
-## [IDEA] Common Tasks
+## Common Tasks
 
 ### Add a New Feature
-1. Read relevant workflow doc (WF_*.md)
-2. Check [MASTER_SPEC.md](./MASTER_SPEC.md) for detailed requirements
-3. Follow [Coding Standards](./guides/CODING_STANDARDS.md)
-4. Use [Design System](./design/DESIGN_SYSTEM_MASTER.md) for UI
+1. Read the relevant workflow document in `docs/workflows/`.
+2. Confirm constraints in [Master Specification](../MASTER_SPEC.md).
+3. Implement using [Coding Standards](./guides/CODING_STANDARDS.md).
+4. Validate UI against [Design System](./design/DESIGN_SYSTEM_MASTER.md).
 
-### Set Up Development Environment
-1. Follow [Setup Guide](./guides/SETUP.md)
-2. Check environment variables in `.env.example`
-3. Initialize database with scripts in `/scripts/`
+### Set Up a New Machine
+1. Follow [First-Time Setup Checklist](./guides/FIRST_TIME_SETUP_CHECKLIST.md).
+2. Follow [Setup Guide](./guides/SETUP.md) for complete details.
+3. Use [Database Guide](./guides/DATABASE.md) for DB-specific issues.
 
-### Deploy to Production
-1. See production section in [SETUP.md](./guides/SETUP.md)
-2. Configure environment variables securely
-3. Run database migrations
-
----
-
-## [SUPPORT] Support
-
-- **Questions about the system?** → Check [MASTER_SPEC.md](./MASTER_SPEC.md)
-- **How to implement something?** → Find workflow in [Workflows](./workflows/)
-- **Code style issues?** → Review [Coding Standards](./guides/CODING_STANDARDS.md)
-- **Design help?** → Use [Design System](./design/DESIGN_SYSTEM_MASTER.md)
+### Production Update Flow
+1. Pull latest code.
+2. Install/update dependencies.
+3. Run `backend/run_migration.py`.
+4. Restart backend and frontend services.
 
 ---
 
-**Last Updated:** March 25, 2026  
-**Version:** 1.0
+## Support
+
+- Architecture and feature rules: [Master Specification](../MASTER_SPEC.md)
+- Setup and environment issues: [Setup Guide](./guides/SETUP.md)
+- Database issues: [Database Guide](./guides/DATABASE.md)
+- UI/UX guidance: [Design System](./design/DESIGN_SYSTEM_MASTER.md)
+
+---
+
+Last updated: April 5, 2026
 

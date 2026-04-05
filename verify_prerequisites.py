@@ -80,7 +80,7 @@ def main():
     
     checks = [
         ("python", "Python 3.11+"),
-        ("node", "Node.js 20+"),
+        ("node", "Node.js 20.19+"),
         ("npm", "npm 10+"),
         ("git", "Git"),
         ("psql", "PostgreSQL Tools (psql)"),

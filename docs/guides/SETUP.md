@@ -4,7 +4,7 @@
 
 | Tool | Minimum Version |
 |---|---|
-| Node.js | 20.x LTS |
+| Node.js | 20.19+ (or 22.12+) |
 | Python | 3.11+ |
 | PostgreSQL | 15+ |
 | Git | 2.x |
@@ -15,130 +15,140 @@
 
 ```bash
 git clone <repository-url>
-cd inventory-management
+cd inventory-management-system-full-project
 ```
 
-Expected top-level folders after setup:
+Expected top-level folders:
 - `backend/` (FastAPI app)
 - `frontend/` (React app)
-- `database/` (Alembic migrations)
-- `docs/` (System documentation)
+- `database/` (reference/manual SQL scripts)
+- `docs/` (project documentation)
 
 ---
 
 ## 2. Setup Options
 
-Choose **ONE** of the paths below to set up your environment.
+Choose one path.
 
----
+### [A] Path A: Automated Setup (Recommended)
 
-### [A] Path A: The Easy Way (Recommended)
+Runs environment prep, dependency install, DB create/reuse, seed, and compatibility migration.
 
-Use the automated bootstrap to handle environment setup, dependency install, compatibility migration (including currency fields), and seeding in one go.
-
-**Windows (PowerShell):**
+Windows (PowerShell):
 ```powershell
-# Run from repository root
 python setup_db.py
 ```
 
-**Linux/macOS:**
+Linux/macOS:
 ```bash
-# Run from repository root
 python3 setup_db.py
 ```
 
-**Next Steps after Path A:**
-1. Start backend and frontend servers (see section 4).
+### [B] Path B: Manual Setup
 
----
+Use this if you need full manual control.
 
-### [B] Path B: The Manual Way (Step-by-Step)
-
-Use this path if you want full control over your environment or if the automated script fails.
-
-#### B.1 Database Creation
-1. Open your PostgreSQL terminal or tool (pgAdmin/DBeaver).
-2. Create a new database named `ims_db`.
+#### B.1 Create Database
+1. Create PostgreSQL database `ims_db`.
+2. Ensure the DB user/password match your `DATABASE_URL`.
 
 #### B.2 Backend Environment
-1. Navigate to the backend folder:
-   ```bash
-   cd backend
-   ```
-2. Create and activate a virtual environment:
-   ```bash
-    python -m venv .venv
-   # Windows:
-    .venv\Scripts\activate
-   # Linux/macOS:
-    source .venv/bin/activate
-   ```
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. Configure `.env` (see section 3.1).
-
-#### B.3 Initialize DB Compatibility + Seed
-Run compatibility migration first (adds missing columns like currency/exchange_rate/safety_stock), then seed:
-```bash
-python run_migration.py
-python -m app.utils.seed
-```
-
----
-
-## 3. Configuration & Startup
-
-### 3.1 Backend Environment (.env)
-
-Navigate to `backend/`, copy `.env.example` to `.env`, and fill in the values:
-
-```bash
-cp .env.example .env
-```
-
-**Key Values:**
-- `DATABASE_URL`: `postgresql://postgres:root@localhost:5432/ims_db`
-- `SECRET_KEY`: Generate one using `python -c "import secrets; print(secrets.token_hex(32))"`
-- `FRONTEND_URL`: `http://localhost:3001`
-
-### 3.2 Frontend Environment (.env)
-
-Navigate to `frontend/`, copy `.env.example` to `.env`:
-
-```bash
-cd ../frontend
-cp .env.example .env
-```
-
-Ensure `VITE_API_BASE_URL` matches your backend URL (default: `http://127.0.0.1:8001`).
-
----
-
-## 4. Starting the Application
-
-### 4.1 Backend
 ```bash
 cd backend
-.venv\Scripts\activate   # Windows
+python -m venv .venv
+```
+
+Activate venv:
+
+Windows (PowerShell):
+```powershell
+.venv\Scripts\activate
+```
+
+Linux/macOS:
+```bash
+source .venv/bin/activate
+```
+
+Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+#### B.3 Configure Backend Env
+
+In `backend/`, copy `.env.example` to `.env` and set values.
+
+Windows (PowerShell):
+```powershell
+Copy-Item .env.example .env
+```
+
+Linux/macOS:
+```bash
+cp .env.example .env
+```
+
+Required values:
+- `DATABASE_URL` (must be PostgreSQL)
+- `SECRET_KEY`
+- `FRONTEND_URL` (usually `http://localhost:3001`)
+
+#### B.4 Initialize Schema + Seed + Compatibility Migration
+
+Important order:
+```bash
+python -m app.utils.seed
+python run_migration.py
+```
+
+---
+
+## 3. Frontend Environment
+
+In `frontend/`, copy `.env.example` to `.env`.
+
+Windows (PowerShell):
+```powershell
+cd frontend
+Copy-Item .env.example .env
+```
+
+Linux/macOS:
+```bash
+cd frontend
+cp .env.example .env
+```
+
+Default value:
+- `VITE_API_BASE_URL=http://localhost:8001`
+
+---
+
+## 4. Start the Application
+
+### 4.1 Backend
+```powershell
+cd backend
+.venv\Scripts\activate
 uvicorn app.main:app --reload --host 127.0.0.1 --port 8001
 ```
 
 ### 4.2 Frontend
-```bash
+```powershell
 cd frontend
 npm install
 npm run dev
 ```
 
-API is available at: http://localhost:8001
-API documentation: http://localhost:8001/docs
+Runtime URLs:
+- API: http://127.0.0.1:8001
+- API docs: http://127.0.0.1:8001/docs
+- Health: http://127.0.0.1:8001/health
+- Frontend: http://localhost:3001
 
-If dashboard or sales pages fail after upgrading older databases, run:
-
-```bash
+If upgrading older DBs, run:
+```powershell
 cd backend
 python run_migration.py
 ```
@@ -147,83 +157,28 @@ python run_migration.py
 
 ## 5. First Login
 
-1. Open http://localhost:3001 (or current Vite port)
-2. Login with: **admin@company.com** / **Admin@123**
-3. You will be prompted to change your password immediately.
-4. Go to Masters > Company and fill in your company details (name, GSTIN, state, bank details).
-5. Go to Masters > Users and create users for each role.
-6. Go to Masters > Products and add your product catalogue.
-7. Go to Masters > Customers and add your customers.
-8. Go to Masters > Suppliers and add your suppliers.
+1. Open `http://localhost:3001`.
+2. Login with `admin@company.com` / `Admin@123`.
+3. Change password when prompted.
+4. Configure company, users, products, customers, suppliers.
 
 ---
 
-## 6. Production Deployment
+## 6. Validation Gates
 
-### 6.1 Backend (Linux server)
+Backend:
+- no automated pytest suite is currently checked in this repository
+- use smoke checks:
 
-```bash
-pip install gunicorn
-gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8001
+```powershell
+python verify_prerequisites.py
+python setup_db.py
+# with backend running
+Invoke-RestMethod http://127.0.0.1:8001/health
 ```
 
-Use a process manager like systemd or supervisor to keep it running.
-
-### 6.2 Frontend Build
-
-```bash
-cd frontend
-npm run build
-```
-
-Serve the `dist/` folder using Nginx or any static file server.
-
-### 6.3 Nginx Configuration (sample)
-
-```nginx
-server {
-    listen 80;
-    server_name yourdomain.com;
-
-    location / {
-        root /path/to/frontend/dist;
-        try_files $uri $uri/ /index.html;
-    }
-
-    location /api/ {
-        proxy_pass http://127.0.0.1:8001;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
-}
-```
-
-### 6.4 Environment Variables in Production
-
-Never commit `.env` to version control. Set environment variables using your server's environment manager or a secrets manager.
-
----
-
-## 7. Common Issues
-
-| Issue | Solution |
-|---|---|
-| `psycopg2` install fails | Run: `sudo apt install libpq-dev python3-dev` (Linux) |
-| Compatibility migration fails | Run from `backend/` folder (`python run_migration.py`) and check DATABASE_URL in `backend/.env` is correct |
-| Email not sending | Use Gmail App Password (not account password). Enable 2FA first. |
-| CORS error in browser | Verify FRONTEND_URL in backend .env matches your frontend URL exactly |
-| PDF generation fails | Install WeasyPrint dependencies: `sudo apt install libpango-1.0-0 libpangoft2-1.0-0` |
-
----
-
-## 8. Running Tests
-
-```bash
-# Backend
-cd backend
-pytest
-
-# Frontend
+Frontend:
+```powershell
 cd frontend
 npm run lint
 npm run build
@@ -231,14 +186,46 @@ npm run build
 
 ---
 
-## 9. requirements.txt
+## 7. Production Deployment
 
-Use the canonical dependency file in the backend folder.
-
+### 7.1 Backend (Linux)
 ```bash
-cd backend
-pip install -r requirements.txt
+pip install gunicorn
+gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8001
 ```
 
-Do not maintain a duplicate package list in this document; keep `backend/requirements.txt` as the single source of truth.
+### 7.2 Frontend Build
+```bash
+cd frontend
+npm run build
+```
+
+Serve `frontend/dist` from Nginx (or another static host) and reverse-proxy API traffic to backend.
+
+### 7.3 Update Flow
+1. Pull code
+2. Update dependencies
+3. Run `backend/run_migration.py`
+4. Restart services
+
+---
+
+## 8. Common Issues
+
+| Issue | Solution |
+|---|---|
+| `Dependency installation failed` in setup script | Activate backend venv and run `pip install -r requirements.txt` manually to inspect full error. |
+| `Could not auto-create database` | Check PostgreSQL service is running and `DATABASE_URL` credentials in `backend/.env` are correct. |
+| CORS error | Ensure backend `FRONTEND_URL` exactly matches frontend origin (`http://localhost:3001`). |
+| Port 8001 already in use | Free the process using that port or run backend on another port and update frontend env accordingly. |
+| PDF generation fails on Linux | Install system libs required by WeasyPrint (`libpango-1.0-0`, `libpangoft2-1.0-0`). |
+
+---
+
+## 9. Dependency Source of Truth
+
+- Backend dependencies: `backend/requirements.txt`
+- Frontend dependencies: `frontend/package.json`
+
+Keep dependencies updated in those files only.
 

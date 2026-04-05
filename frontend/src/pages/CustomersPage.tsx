@@ -319,7 +319,7 @@ const CustomersPage = () => {
     }
   };
 
-  const items = data?.items ?? [];
+  const items = useMemo(() => data?.items ?? [], [data?.items]);
   const filteredItems = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
     const fromTime = createdFrom ? new Date(`${createdFrom}T00:00:00`).getTime() : null;

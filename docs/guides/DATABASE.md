@@ -1,26 +1,44 @@
 ﻿# Database Setup & Management Guide
 
-This guide covers database configuration, initialization, migration, and troubleshooting.
+This guide reflects the current database lifecycle used by this repository.
 
 ---
 
-## [LIST] Quick Reference
+## Quick Reference
 
-- **Development**: PostgreSQL 15+ (Docker or local install)
-- **Production**: PostgreSQL 15+ (required)
-- **Schema management**: SQLAlchemy models + compatibility migration (`backend/run_migration.py`)
+- Database engine: PostgreSQL 15+
+- ORM/schema source: SQLAlchemy models in `backend/app/models/`
+- Bootstrap script: `setup_db.py` (repo root)
+- Compatibility migration script: `backend/run_migration.py`
+- Manual SQL artifacts: `database/*.sql` (reference/manual only)
 
 ---
 
-## [POSTGRES] PostgreSQL Setup (Docker)
+## 1. Current Database Lifecycle
 
-### Prerequisites
-- Docker installed
-- Docker Compose (optional, for multi-container setup)
+The active setup path is:
 
-### Quick Start (One Command)
+1. Run `python setup_db.py` from repo root.
+2. Script ensures backend venv + dependencies.
+3. Script creates/reuses DB from `backend/.env` (`DATABASE_URL`).
+4. Script runs `python -m app.utils.seed` to create tables and seed defaults.
+5. Script runs `backend/run_migration.py` for compatibility columns.
+
+This flow is idempotent and safe to rerun.
+
+---
+
+## 2. PostgreSQL Setup
+
+### Option A: Local PostgreSQL (Windows/Linux/macOS)
+
+1. Install PostgreSQL 15+.
+2. Ensure tools are in PATH (`psql`, `createdb`).
+3. Ensure service is running on `localhost:5432`.
+
+### Option B: Docker
+
 ```bash
-# Start PostgreSQL 15 container
 docker run -d \
   --name ims-postgres \
   -e POSTGRES_USER=ims_admin \
@@ -31,290 +49,182 @@ docker run -d \
   postgres:15-alpine
 ```
 
-### Environment Configuration
-Create or update `backend/.env`:
+If using Docker credentials, set matching `DATABASE_URL` in `backend/.env`.
+
+---
+
+## 3. Environment Configuration
+
+Configure `backend/.env`:
+
 ```env
-DATABASE_URL=postgresql://ims_admin:SecureP@ss123@localhost:5432/ims_db
-SQLALCHEMY_ECHO=false
+DATABASE_URL=postgresql://postgres:your_password@localhost:5432/ims_db
+SECRET_KEY=change-this-in-production
+FRONTEND_URL=http://localhost:3001
 ```
 
-### Initialize Database Schema
-```bash
+Notes:
+- `DATABASE_URL` must be PostgreSQL.
+- App config rejects non-PostgreSQL database URLs.
+
+---
+
+## 4. Initialize Database
+
+From repo root:
+
+```powershell
+python setup_db.py
+```
+
+Expected successful output includes:
+- `[OK] Setup completed successfully`
+
+What gets seeded:
+- admin user: `admin@company.com` / `Admin@123`
+- units of measure
+- default product category
+- default company record
+
+---
+
+## 5. Compatibility Migration
+
+Run after pulling backend updates into an existing DB:
+
+```powershell
 cd backend
-
-# Create Python virtual environment (if not exists)
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Initialize schema + seed data (recommended)
-python ../setup_db.py
+python run_migration.py
 ```
 
-### Verify Connection
-```bash
-# Connect to PostgreSQL container
-docker exec -it ims-postgres psql -U ims_admin -d ims_db
+This script adds missing columns with safe `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements.
 
-# See all tables
+---
+
+## 6. Table Overview (Current Models)
+
+### Core
+- `users`
+- `company`
+- `customers`
+- `suppliers`
+
+### Product and Inventory
+- `product_categories`
+- `units_of_measure`
+- `products`
+- `stock_ledger`
+
+### Purchase Flow
+- `purchase_orders`
+- `purchase_order_items`
+- `goods_receipt_notes`
+- `grn_items`
+- `purchase_returns`
+- `purchase_return_items`
+
+### Sales Flow
+- `quotations`
+- `quotation_items`
+- `sales_orders`
+- `sales_order_items`
+- `sales_invoices`
+- `sales_invoice_items`
+- `sales_returns`
+- `sales_return_items`
+
+### Payments
+- `payments`
+- `payment_allocations`
+
+---
+
+## 7. Verify Database State
+
+Connect and inspect:
+
+```bash
+psql -h localhost -U postgres -d ims_db
+```
+
+Useful checks:
+
+```sql
 \dt
 
-# Check row counts
-SELECT 'users' as table_name, COUNT(*) as count FROM users
+SELECT 'users' AS table_name, COUNT(*) FROM users
 UNION ALL
 SELECT 'products', COUNT(*) FROM products
 UNION ALL
 SELECT 'customers', COUNT(*) FROM customers
 UNION ALL
 SELECT 'suppliers', COUNT(*) FROM suppliers;
-
-# Exit
-\q
 ```
 
 ---
 
-## [PACKAGE] Database Schema Overview
+## 8. SQL Files in database/
 
-### Core Tables
+The files below are kept as reference/manual artifacts:
+- `01_schema.sql`
+- `02_seed_data.sql`
+- `03_queries.sql`
+- `ALL_UPDATES.sql`
+- `ALL_UPDATES_2.sql`
 
-#### Users & Auth
-- `users` — Login accounts with JWT tokens
-- `roles` — Permission definitions (admin, accounting, etc.)
-- `role_permissions` — Role ↔ Permission mapping
-
-#### Masters (Setup Data)
-- `companies` — Organization info
-- `customers` — Customer records
-- `suppliers` — Vendor records
-- `products` — Inventory items
-- `product_units` — Units of measure (PCS, KG, LTR, etc.)
-
-#### Transactions
-- `purchases` — Purchase orders
-- `purchase_lines` — PO line items
-- `purchase_receipts` — Goods receipt notes
-- `sales_orders` — Sale orders
-- `sales_lines` — SO line items
-- `receipts` — Cash received
-- `payments` — Cash paid
-
-#### Reports
-- `stock_history` — Inventory movements
-
-### Key Design Patterns
-
-**UUID Primary Keys**
-```python
-id: UUID = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-```
-
-**Timestamps**
-```python
-created_at: DateTime = Column(DateTime(timezone=True), default=datetime.utcnow)
-updated_at: DateTime = Column(DateTime(timezone=True), onupdate=datetime.utcnow)
-```
-
-**JSON Columns (Flexible Storage)**
-```python
-permission_overrides: dict = Column(JSON, nullable=True)
-```
+They are not automatically executed by app startup scripts.
 
 ---
 
-## [SYNC] Database Migrations
+## 9. Backup & Restore
 
-Use the compatibility migration script whenever new columns are introduced.
+### Backup
 
 ```bash
-cd backend
-python run_migration.py
+pg_dump -h localhost -U postgres -d ims_db > ims_db_backup.sql
 ```
 
-This is idempotent and safe to run multiple times.
+### Restore
 
----
-
-## [METRICS] Database Initialization Scripts
-
-### setup_db.py (Full Setup)
 ```bash
-cd <repo-root>
-python setup_db.py
+psql -h localhost -U postgres -d ims_db < ims_db_backup.sql
 ```
 
-**What it does:**
-1. [OK] Connects to the PostgreSQL database
-2. [OK] Creates all tables (via SQLAlchemy metadata)
-3. [OK] Seeds admin user: `admin@company.com` / `Admin@123`
-4. [OK] Seeds product units: PCS, KG, LTR, BOX, etc.
-5. [OK] Creates default company record
-
-**Main script location:** `setup_db.py` (wrapper also available at `backend/setup_db.py`)
-
-### seed_db.py (Sample Data)
-```bash
-cd backend
-python seed_db.py
-```
-
-**What it does:**
-- Generates sample customers, suppliers, products
-- Creates test purchase orders and sales orders
-- Useful for development and testing
+Use role/host values that match your environment.
 
 ---
 
-## [SECURITY] Security Best Practices
+## 10. Troubleshooting
 
-### Development
-```env
-DATABASE_URL=postgresql://dev_user:dev_pass@localhost:5432/ims_dev
-SQLALCHEMY_ECHO=true  # Log SQL queries
-```
+### "password authentication failed"
+- Verify `DATABASE_URL` credentials in `backend/.env`.
 
-### Production
-```env
-DATABASE_URL=postgresql://prod_user:VERY_STRONG_PASSWORD@prod-host:5432/ims_production
-SQLALCHEMY_ECHO=false
-# Use environment variables from secrets manager (AWS Secrets, Azure Key Vault, etc.)
-```
+### "database \"ims_db\" does not exist"
+- Create DB manually or rerun `python setup_db.py` after fixing credentials.
 
-### Never Commit
-- `.env` files with real credentials
-- Database dumps with sensitive data
-- Use `.env.example` template for reference only
+### "relation does not exist"
+- Run:
+  - `python setup_db.py`
+  - `cd backend; python run_migration.py`
+
+### `psql` or `createdb` not recognized
+- Add PostgreSQL command-line tools to PATH and restart terminal.
 
 ---
 
-## 🆘 Troubleshooting
+## 11. FAQ
 
-### "Connection refused" Error
-```
-Error: could not translate host name "localhost" to address
+Q: Can I use MySQL/SQLite?
+A: No. This codebase supports PostgreSQL only.
 
-Solutions:
-1. Check Docker container is running: docker ps
-2. Verify DATABASE_URL is correct
-3. Ensure PostgreSQL port 5432 is not blocked
-4. Check firewall settings
-```
+Q: Are Alembic migrations used right now?
+A: No Alembic files are currently part of this repository. Compatibility updates are handled by `backend/run_migration.py`.
 
-### "Database does not exist" Error
-```
-Error: database "ims_db" does not exist
-
-Solution:
-docker exec -it ims-postgres psql -U ims_admin -c "CREATE DATABASE ims_db;"
-```
-
-### "Table does not exist" Error
-```
-Error: relation "users" does not exist
-
-Solution:
-# Re-run initialization:
-cd backend && python setup_db.py
-```
-
-### Check Database Size
-```bash
-# PostgreSQL
-docker exec -it ims-postgres psql -U ims_admin -d ims_db -c "SELECT pg_size_pretty(pg_database_size('ims_db'));"
-```
+Q: Can `setup_db.py` be run multiple times?
+A: Yes. It is designed to be idempotent.
 
 ---
 
-## [GROWTH] Performance Optimization
-
-### Add Indexes (After Heavy Usage)
-```python
-# In model:
-__table_args__ = (
-    Index('idx_created_at', 'created_at'),
-    Index('idx_user_email', 'email', unique=True),
-)
-```
-
-### Monitor Slow Queries
-```python
-# In database.py, enable query logging:
-SQLALCHEMY_ECHO = True
-```
-
-### Connection Pooling (Production)
-```python
-from sqlalchemy.pool import QueuePool
-
-engine = create_engine(
-    DATABASE_URL,
-    poolclass=QueuePool,
-    pool_size=20,
-    max_overflow=40,
-)
-```
-
----
-
-## [SYNC] Backup & Restore
-
-### PostgreSQL Backup
-```bash
-# Backup entire database
-docker exec -it ims-postgres pg_dump -U ims_admin ims_db > backup.sql
-
-# Backup with compression
-docker exec -it ims-postgres pg_dump -U ims_admin -F c ims_db > backup.dump
-
-# List backups
-ls -lh backup*
-```
-
-### PostgreSQL Restore
-```bash
-# Restore from SQL file
-docker exec -i ims-postgres psql -U ims_admin ims_db < backup.sql
-
-# Restore from compressed dump
-docker exec -i ims-postgres pg_restore -U ims_admin -d ims_db backup.dump
-```
-
----
-
-## [LIST] Checklist for New Developers
-
-- [ ] Read this guide completely
-- [ ] Run database initialization: `python setup_db.py`
-- [ ] Verify tables exist in database
-- [ ] Test API connection: `GET /api/users/me`
-- [ ] Review schema in `backend/app/models/`
-- [ ] Understand workflow in [WF_03_PURCHASE.md](../workflows/WF_03_PURCHASE.md)
-- [ ] Subscribe to workflow changes in Git
-
----
-
-## [SUPPORT] Common Questions
-
-**Q: Can I use MySQL instead of PostgreSQL?**  
-A: Not supported. This repository is PostgreSQL-only.
-
-**Q: Can I use a different database for development?**  
-A: No. Use PostgreSQL locally or via Docker.
-
-**Q: How often should I backup data?**  
-A: Daily in production. See Backup & Restore section above.
-
-**Q: Can I modify schema in production?**  
-A: Yes, but only via Alembic migrations. Never use raw ALTER TABLE in production.
-
-**Q: What's the maximum number of records?**  
-A: PostgreSQL handles billions of rows. No practical limit for this application.
-
----
-
-**Last Updated:** March 25, 2026  
-**Database Version:** PostgreSQL 15+
+Last updated: April 5, 2026
 
 
