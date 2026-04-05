@@ -1,5 +1,6 @@
 """Company profile router."""
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from pathlib import Path
 
@@ -7,11 +8,53 @@ from app.database import get_db
 from app.dependencies import get_current_user, require_permissions
 from app.models.company import Company
 from app.models.user import User
-from app.schemas.company import CompanyResponse, CompanyUpdate, CompanyLogoResponse
+from app.schemas.company import CompanyResponse, CompanyUpdate, CompanyLogoResponse, CompanyBrandingResponse
 
 router = APIRouter(prefix="/api/v1/company", tags=["company"])
 
 STATIC_DIR = Path(__file__).resolve().parents[2] / "static"
+
+
+def _resolve_logo_file_path(logo_url: str) -> Path | None:
+    if not logo_url:
+        return None
+    if logo_url.startswith("/static/"):
+        file_name = logo_url.split("/static/", 1)[1]
+        candidate = STATIC_DIR / file_name
+        return candidate if candidate.exists() else None
+    candidate = Path(logo_url)
+    if candidate.exists() and candidate.is_file():
+        return candidate
+    return None
+
+
+@router.get("/branding", response_model=CompanyBrandingResponse)
+async def get_company_branding(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    company = db.query(Company).first()
+    if not company:
+        return CompanyBrandingResponse(name="Inventory Management", logo_url=None)
+
+    logo_url = "/api/v1/company/logo-file" if company.logo_url else None
+    return CompanyBrandingResponse(name=company.name or "Inventory Management", logo_url=logo_url)
+
+
+@router.get("/logo-file")
+async def get_company_logo_file(
+    db: Session = Depends(get_db),
+):
+    company = db.query(Company).first()
+    if not company or not company.logo_url:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company logo not found")
+
+    file_path = _resolve_logo_file_path(company.logo_url)
+    if not file_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Logo file not found")
+
+    media_type = "image/png" if file_path.suffix.lower() == ".png" else "image/jpeg"
+    return FileResponse(path=str(file_path), media_type=media_type)
 
 
 @router.get("", response_model=CompanyResponse)

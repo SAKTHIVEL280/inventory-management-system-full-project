@@ -38,10 +38,10 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
   const [confirmationText, setConfirmationText] = useState('');
 
   const { data: company } = useQuery({
-    queryKey: ['company'],
-    queryFn: companyApi.get,
+    queryKey: ['company-branding'],
+    queryFn: companyApi.getBranding,
     staleTime: 5 * 60 * 1000,
-    enabled: Boolean(user) && can('company_read'),
+    enabled: Boolean(user),
   });
 
   const { data: archiveAlerts } = useQuery({
@@ -207,9 +207,9 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
         <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-neutral-200 bg-white lg:block overflow-hidden">
           <div className="flex h-full flex-col p-6">
             <div className="mb-8 flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary">
                 {company?.logo_url ? (
-                  <img src={getStaticUrl(company.logo_url) ?? ''} alt={company.name} className="h-full w-full rounded-lg object-cover" />
+                  <img src={getStaticUrl(company.logo_url) ?? ''} alt={company.name} className="h-full w-full rounded-full object-cover" />
                 ) : (
                   <span className="material-icons text-white" aria-hidden="true">business</span>
                 )}

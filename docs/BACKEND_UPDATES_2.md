@@ -2,6 +2,75 @@
 
 ---
 
+## BE-25: Sidebar Logo Shape Update - No Backend Changes Required
+**Date**: April 5, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Test Case**: Sidebar Top-Left Logo Shape
+**Module**: Company / Branding API
+**Type**: UI Enhancement - Frontend Only
+
+### Overview
+Validated backend impact for sidebar logo outer-shape UI update.
+
+### Findings
+- Change affects frontend CSS classes only.
+- No backend endpoint, logic, or schema changes required.
+
+### Conclusion
+No backend changes required.
+
+---
+
+## BE-24: Sidebar Logo Endpoint Auth Fix (Browser Image Requests)
+**Date**: April 5, 2026
+**Status**: ✅ Completed
+**Test Case**: Sidebar Top-Left Logo Visibility After Refresh
+**Module**: Company / Branding API
+**Type**: Bug Fix
+
+### Overview
+Fixed remaining logo visibility issue after refresh where app UI logo endpoint returned unauthorized in server deployments.
+
+### Root Cause
+- Browser image requests do not include Authorization headers from localStorage tokens.
+- `GET /api/v1/company/logo-file` was protected by token dependency, so image fetch failed in UI.
+
+### Changes Made
+- Removed auth dependency from `GET /api/v1/company/logo-file`.
+- Kept `GET /api/v1/company/branding` authenticated for app metadata.
+- Verified logo-file endpoint returns image bytes successfully without auth header.
+
+### Files Modified
+- `backend/app/routers/company.py`
+
+---
+
+## BE-23: App UI Logo Fix for Ubuntu Deployment (Proxy + Permissions Safe)
+**Date**: April 5, 2026
+**Status**: ✅ Completed
+**Test Case**: Sidebar Top-Left Logo Visibility
+**Module**: Company / Branding API
+**Type**: Bug Fix
+
+### Overview
+Fixed top-left app logo visibility issue observed on Ubuntu server while logo still appeared in generated PDFs.
+
+### Changes Made
+- Added authenticated lightweight branding endpoint: `GET /api/v1/company/branding`.
+- Added authenticated logo file endpoint: `GET /api/v1/company/logo-file`.
+- Implemented logo path resolver to serve file reliably from backend static folder.
+- Kept existing company master endpoints and logo upload behavior intact.
+
+### Why This Fix
+- Avoids dependency on reverse-proxy `/static` path exposure.
+- Avoids requiring `company_read` just to display app branding in sidebar.
+
+### Files Modified
+- `backend/app/routers/company.py`
+- `backend/app/schemas/company.py`
+
+---
+
 ## BE-22: Company Logo Serving Fix for Deployment Environments
 **Date**: April 5, 2026
 **Status**: ✅ Completed

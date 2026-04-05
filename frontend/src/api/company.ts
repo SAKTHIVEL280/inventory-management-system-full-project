@@ -1,7 +1,17 @@
 import { apiClient } from './client';
 import { Company } from '../types';
 
+export interface CompanyBranding {
+  name: string;
+  logo_url?: string | null;
+}
+
 export const companyApi = {
+  getBranding: async (): Promise<CompanyBranding> => {
+    const response = await apiClient.get<CompanyBranding>('/api/v1/company/branding');
+    return response.data;
+  },
+
   get: async (): Promise<Company> => {
     const response = await apiClient.get<Company>('/api/v1/company');
     return response.data;

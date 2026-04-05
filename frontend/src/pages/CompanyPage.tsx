@@ -96,6 +96,10 @@ const CompanyPage = () => {
     mutationFn: (payload: Company) => companyApi.update(payload),
     onSuccess: (updated) => {
       queryClient.setQueryData(['company'], updated);
+      queryClient.setQueryData(['company-branding'], (old: { name?: string; logo_url?: string | null } | undefined) => ({
+        name: updated.name,
+        logo_url: updated.logo_url ?? old?.logo_url ?? null,
+      }));
       reset({
         name: updated.name,
         legal_name: updated.legal_name ?? '',
@@ -131,6 +135,10 @@ const CompanyPage = () => {
     mutationFn: companyApi.uploadLogo,
     onSuccess: (res) => {
       queryClient.setQueryData(['company'], (old: Company | undefined) => ({ ...(old ?? emptyCompany), logo_url: res.logo_url }));
+      queryClient.setQueryData(['company-branding'], (old: { name?: string; logo_url?: string | null } | undefined) => ({
+        name: old?.name ?? data?.name ?? 'Inventory Management',
+        logo_url: res.logo_url,
+      }));
       showSuccess('Logo uploaded successfully');
     },
     onError: (error: unknown) => {

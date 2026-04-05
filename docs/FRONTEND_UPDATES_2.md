@@ -1,5 +1,68 @@
 # Frontend Updates Log
 
+## FE-28: Sidebar Logo Outer Shape Updated to Circle
+**Date**: April 5, 2026
+**Status**: ✅ Completed
+**Test Case**: Sidebar Top-Left Logo Shape
+**Module**: App Layout / Branding
+**Type**: UI Enhancement
+
+### Overview
+Changed sidebar top-left logo outer shape from box style to circular style.
+
+### Changes Made
+- Updated logo container class from rounded box to full circle.
+- Updated logo image class to render inside circular mask.
+- Preserved existing logo source and fallback icon behavior.
+
+### Files Modified
+- `frontend/src/components/AppLayout.tsx`
+
+---
+
+## FE-27: Sidebar Logo Endpoint Auth Fix - No Frontend Changes Required
+**Date**: April 5, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Test Case**: Sidebar Top-Left Logo Visibility After Refresh
+**Module**: App Layout / Company Branding
+**Type**: Bug Fix - Backend Endpoint Behavior
+
+### Overview
+Validated frontend behavior for final sidebar logo fix.
+
+### Findings
+- Frontend already points sidebar logo to branding-provided URL.
+- Final issue was backend auth behavior for image endpoint.
+- No additional frontend code changes required for this step.
+
+### Conclusion
+No frontend changes required.
+
+---
+
+## FE-26: Sidebar Branding Fetch Update for Deployed Logo Visibility
+**Date**: April 5, 2026
+**Status**: ✅ Completed
+**Test Case**: Sidebar Top-Left Logo Visibility
+**Module**: App Layout / Company API
+**Type**: Bug Fix
+
+### Overview
+Updated sidebar branding data source so logo/name are fetched through branding endpoint suitable for all authenticated users in deployed environments.
+
+### Changes Made
+- Added `companyApi.getBranding()` client method.
+- Updated `AppLayout` company query to use branding endpoint.
+- Removed `company_read` gate from sidebar branding query so branding can render for all logged-in users.
+- Switched sidebar branding query key to `company-branding` to avoid cache collision with full company profile query.
+- Synced `company-branding` cache updates after company profile save and logo upload.
+
+### Files Modified
+- `frontend/src/api/company.ts`
+- `frontend/src/components/AppLayout.tsx`
+
+---
+
 ## FE-25: Logo URL Resolution Fix for Deployed App
 **Date**: April 5, 2026
 **Status**: ✅ Completed

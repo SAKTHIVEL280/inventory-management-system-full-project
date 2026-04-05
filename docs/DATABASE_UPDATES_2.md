@@ -2,6 +2,63 @@
 
 ---
 
+## DB-22: Sidebar Logo Shape Update - No Database Changes Required
+**Date**: April 5, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Test Case**: Sidebar Top-Left Logo Shape
+**Module**: Company / Branding
+**Type**: UI Enhancement - Frontend Only
+
+### Overview
+Validated schema impact for sidebar logo outer-shape update.
+
+### Findings
+- Change is presentation-only (CSS class update).
+- No table/column/data changes required.
+
+### Conclusion
+No database changes required.
+
+---
+
+## DB-21: Sidebar Logo Endpoint Auth Fix - No Database Changes Required
+**Date**: April 5, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Test Case**: Sidebar Top-Left Logo Visibility After Refresh
+**Module**: Company / Branding API
+**Type**: Bug Fix - Backend/Frontend Logic Only
+
+### Overview
+Validated schema impact for final sidebar logo auth fix.
+
+### Findings
+- Change is API endpoint auth behavior only.
+- Existing company/logo fields are unchanged and sufficient.
+
+### Conclusion
+No database changes required.
+
+---
+
+## DB-20: Sidebar Logo Visibility Fix - No Database Changes Required
+**Date**: April 5, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Test Case**: Sidebar Top-Left Logo Visibility
+**Module**: Company / Branding API
+**Type**: Bug Fix - Backend/Frontend Logic Only
+
+### Overview
+Validated schema impact for sidebar logo visibility fix.
+
+### Findings
+- Fix uses new API endpoints and frontend query update only.
+- Existing company logo columns/data are sufficient.
+
+### Conclusion
+No database changes required.
+
+---
+
 ## DB-19: Logo Visibility Fix - No Database Changes Required
 **Date**: April 5, 2026
 **Status**: ✅ Verified - No Changes Needed
