@@ -4,7 +4,9 @@ import { toast } from 'sonner';
 
 const defaultApiBaseUrl =
   typeof window !== 'undefined'
-    ? `${window.location.protocol}//${window.location.hostname}:8001`
+    ? (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? `${window.location.protocol}//${window.location.hostname}:8001`
+        : '/api')
     : 'http://localhost:8001';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || defaultApiBaseUrl;

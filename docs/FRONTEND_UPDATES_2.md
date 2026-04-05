@@ -1,5 +1,34 @@
 # Frontend Updates Log
 
+## FE-29: Ubuntu Deployment Frontend Load Fix (Production API Base)
+**Date**: April 5, 2026
+**Status**: ✅ Completed
+**Test Case**: Frontend Not Loading After Server Upload
+**Module**: API Client / Vite Config
+**Type**: Bug Fix
+
+### Overview
+Fixed production frontend load/runtime failures caused by default API base URL pointing to `:8001` in deployed environments.
+
+### Root Cause
+- Frontend default API base used `http(s)://<host>:8001`.
+- In Ubuntu/Nginx deployments, backend is typically exposed via same-origin `/api` and port `8001` is not public.
+- API calls failed at startup, causing app flow to break.
+
+### Changes Made
+- Updated API client default base URL:
+  - Localhost/127.0.0.1: keep `:8001`
+  - Non-localhost: use `/api`
+- Updated static URL helper to follow the same production-safe base logic.
+- Updated Vite dev proxy target to use `VITE_DEV_PROXY_TARGET` instead of `VITE_API_BASE_URL`.
+
+### Files Modified
+- `frontend/src/api/client.ts`
+- `frontend/src/utils/url_utils.ts`
+- `frontend/vite.config.ts`
+
+---
+
 ## FE-28: Sidebar Logo Outer Shape Updated to Circle
 **Date**: April 5, 2026
 **Status**: ✅ Completed
