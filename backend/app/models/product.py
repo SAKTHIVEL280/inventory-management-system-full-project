@@ -42,7 +42,7 @@ class Product(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     product_code = Column(String(30), unique=True, nullable=False, index=True)
-    sku = Column(String(50), unique=True, nullable=True)
+    sku = Column(String(50), nullable=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)
     category_id = Column(UUID(as_uuid=True), ForeignKey("product_categories.id"), nullable=True)

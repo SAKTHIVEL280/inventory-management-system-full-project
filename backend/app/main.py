@@ -71,9 +71,7 @@ async def integrity_error_handler(request: Request, exc: IntegrityError):
 
     if "unique" in lower or "duplicate key value" in lower:
         detail = "Duplicate value found. Please use a unique value."
-        if "sku" in lower:
-            detail = "SKU already exists. Please use a unique SKU."
-        elif "email" in lower:
+        if "email" in lower:
             detail = "Email already exists. Please use a different email."
         elif "product_code" in lower:
             detail = "Product code already exists. Please try again."

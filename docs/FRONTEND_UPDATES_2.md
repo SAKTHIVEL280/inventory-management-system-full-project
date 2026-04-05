@@ -1,5 +1,224 @@
 # Frontend Updates Log
 
+## FE-24: Migration Parity Audit - No Frontend Changes Required
+**Date**: April 5, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Test Case**: Migration Consistency Audit
+**Module**: Database Migration Tooling
+**Type**: Verification - Backend/DB Only
+
+### Overview
+Validated impact scope for migration parity task.
+
+### Findings
+- Task affects database SQL update files and backend migration runner only.
+- No frontend code or API contract updates required.
+
+### Conclusion
+No frontend changes required.
+
+---
+
+## FE-23: Product Master Data Seeding (10 Medicines) - No Frontend Changes Required
+**Date**: April 5, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Test Case**: Product Master Data Additions
+**Module**: Products
+**Type**: Data Update - Backend/DB Only
+
+### Overview
+Validated frontend product listing/forms for newly seeded medicine records.
+
+### Findings
+- Frontend reads product master from existing APIs.
+- No UI/API contract changes were needed for adding records.
+
+### Conclusion
+No frontend code changes required for this task.
+
+---
+
+## FE-22: Quotation PDF Column Removal - No Frontend Changes Required
+**Date**: April 5, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Test Case**: Quotation PDF Table Simplification
+**Module**: Quotations PDF
+**Type**: Feature - Backend PDF Rendering
+
+### Overview
+Validated frontend quotation PDF download flow for removal of Batch/MFG/EXP columns.
+
+### Findings
+- Frontend already downloads backend-rendered quotation PDFs.
+- Column removal is handled in backend template/rendering only.
+- No frontend API or UI changes required.
+
+### Conclusion
+No frontend code changes required for this update.
+
+---
+
+## FE-21: Invoice Due Date Display-Only with Backend-Driven Value
+**Date**: April 5, 2026
+**Status**: ✅ Completed
+**Test Case**: Invoice Due Date Auto-Calculate (No Manual Input)
+**Module**: Sales Invoices
+**Type**: Enhancement
+
+### Overview
+Updated invoice form behavior to keep due date visible but non-editable, and aligned payload to avoid sending user-driven due date values.
+
+### Changes Made
+- Kept due date field read-only/disabled in invoice form.
+- Added guard to avoid transient due-date clearing before customer master data is loaded.
+- Removed `due_date` from invoice create/update payload from frontend.
+
+### Files Modified
+- `frontend/src/pages/InvoicesPage.tsx`
+
+---
+
+## FE-20: Invoice Due Date Auto-Calculation in Invoice Form
+**Date**: April 5, 2026
+**Status**: ✅ Completed
+**Test Case**: Invoice Due Date Auto-Calculate
+**Module**: Sales Invoices
+**Type**: Feature
+
+### Overview
+Updated invoice form behavior so invoice due date is auto-calculated from customer payment terms and cannot be manually edited.
+
+### Changes Made
+- Added due date calculation helper based on selected customer and invoice date.
+- Recalculated due date automatically when customer changes.
+- Recalculated due date automatically when invoice date changes.
+- Made due date input read-only/disabled to enforce auto-calculated behavior.
+
+### Files Modified
+- `frontend/src/pages/InvoicesPage.tsx`
+
+---
+
+## FE-19: Invoice/Quotation Date Label Update - No Frontend Changes Required
+**Date**: April 5, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Test Case**: PDF Header Label Update
+**Module**: Tax Invoices, Quotations
+**Type**: Feature - Backend PDF Rendering
+
+### Overview
+Validated frontend PDF download flow for invoice/quotation date label update.
+
+### Findings
+- Frontend download flow remains unchanged.
+- Date label rendering is controlled by backend PDF template context.
+- No frontend code changes required.
+
+### Conclusion
+No frontend code changes required for this update.
+
+---
+
+## FE-18: Invoice/Quotation PDF Layout Update - No Frontend Changes Required
+**Date**: April 5, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Test Case**: Layout Change - Tax Invoice & Quotation PDF
+**Module**: Tax Invoices, Quotations
+**Type**: Feature - Backend PDF Rendering
+
+### Overview
+Validated frontend invoice/quotation PDF download flow for header/table layout update.
+
+### Findings
+- Frontend already downloads backend-generated PDFs for invoice and quotation.
+- Requested header/table changes are render-template updates on backend only.
+- No frontend API or UI changes required.
+
+### Conclusion
+No frontend code changes required for this update.
+
+---
+
+## FE-17: Billing PDF Packing/Order Unit Fix - No Frontend Changes Required
+**Date**: April 5, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Test Case**: Billing PDF Packing/Order Unit Display
+**Module**: POs, Tax Invoices, Quotations
+**Type**: Bug Fix - Backend PDF Rendering
+
+### Overview
+Validated frontend billing PDF flow for packing/order unit display correction.
+
+### Findings
+- Frontend download flow is unchanged and already correct.
+- Incorrect value formatting came from backend PDF render logic.
+- No frontend code changes required.
+
+### Conclusion
+No frontend code changes required for this fix.
+
+---
+
+## FE-16: Billing PDF Pagination (15 Items) - No Frontend Changes Required
+**Date**: April 5, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Test Case**: Bill-03
+**Module**: POs, Tax Invoices, Quotations
+**Type**: Feature - Backend PDF Rendering
+
+### Overview
+Validated frontend billing PDF download flow for PO, Tax Invoice, and Quotation modules.
+
+### Findings
+- Frontend already triggers backend PDF endpoints for PO, Invoice, and Quotation downloads.
+- Pagination behavior is generated server-side during PDF rendering.
+- No frontend API/UI/state changes required.
+
+### Conclusion
+No frontend code changes required for Bill-03.
+
+---
+
+## FE-15: Products Base Unit Duplicate Error - No Frontend Changes Required
+**Date**: April 5, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Test Case**: Product Update (Modify/Change Product)
+**Module**: Products
+**Type**: Bug Fix - Backend/DB Only
+
+### Overview
+Validated product modify form behavior for Base Unit update failure.
+
+### Findings
+- Frontend correctly sends the product update payload.
+- Error was raised by backend/DB SKU uniqueness enforcement, not frontend validation.
+- No frontend form, API client, or state changes were required.
+
+### Conclusion
+No frontend code changes required for this fix.
+
+---
+
+## FE-14: Purchase Order PDF Labels - No Frontend Changes Required
+**Date**: April 5, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Test Case**: Bill-02
+**Module**: POs, Tax Invoices, Quotations
+**Type**: Feature - Backend PDF Rendering
+
+### Overview
+Validated frontend flow for Purchase Order PDF generation and download.
+
+### Findings
+- Frontend already calls backend PO PDF endpoint (`GET /api/v1/purchase-orders/{id}/pdf`).
+- Requested label and data changes are rendered by backend PDF template/service.
+- No frontend API contract, UI form, or download logic changes were needed.
+
+### Conclusion
+No frontend code changes required for Bill-02.
+
+---
+
 ## FE-13: Billing PDFs - No Frontend Changes Required
 **Date**: April 5, 2026
 **Status**: ✅ Verified - No Changes Needed

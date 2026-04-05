@@ -25,6 +25,7 @@ from app.models.supplier import Supplier
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
+BILLING_PDF_ITEMS_PER_PAGE = 15
 
 
 PO_TEMPLATE = """<!DOCTYPE html>
@@ -58,6 +59,9 @@ PO_TEMPLATE = """<!DOCTYPE html>
             vertical-align: top;
             word-wrap: break-word;
             overflow-wrap: break-word;
+        }
+        tr {
+            page-break-inside: avoid;
         }
         .page-break {
             page-break-after: always;
@@ -97,7 +101,7 @@ PO_TEMPLATE = """<!DOCTYPE html>
             <table style="width: 100%;">
                 <tr><td style="width: 85px; border: none; padding: 1px 0; font-size: 10px;">PO Number:</td><td style="border: none; padding: 1px 0; font-size: 10px; font-weight: bold;">{{ doc_number }}</td></tr>
                 <tr><td style="width: 85px; border: none; padding: 1px 0; font-size: 10px;">PO Date:</td><td style="border: none; padding: 1px 0; font-size: 10px;">{{ doc_date }}</td></tr>
-                <tr><td style="width: 85px; border: none; padding: 1px 0; font-size: 10px;">Terms:</td><td style="border: none; padding: 1px 0; font-size: 10px;">{{ terms }}</td></tr>
+                <tr><td style="width: 85px; border: none; padding: 1px 0; font-size: 10px;">Payment Terms:</td><td style="border: none; padding: 1px 0; font-size: 10px;">{{ terms }}</td></tr>
             </table>
         </td>
         <td style="width: 50%; padding: 4px 6px; vertical-align: top;">
@@ -131,9 +135,9 @@ PO_TEMPLATE = """<!DOCTYPE html>
         <tr style="background: #f2f2f2; border-bottom: 1px solid #000;">
             <th style="width: 3%; border-right: 1px solid #000; padding: 4px 2px; text-align: center; font-size: 9px; font-weight: bold;">#</th>
             <th style="width: 28%; border-right: 1px solid #000; padding: 4px 2px; text-align: left; font-size: 9px; font-weight: bold;">Item Description</th>
-            <th style="width: 9%; border-right: 1px solid #000; padding: 4px 2px; text-align: left; font-size: 9px; font-weight: bold;">Packing</th>
+            <th style="width: 9%; border-right: 1px solid #000; padding: 4px 2px; text-align: left; font-size: 9px; font-weight: bold;">Packing / Order Unit</th>
             <th style="width: 7%; border-right: 1px solid #000; padding: 4px 2px; text-align: right; font-size: 9px; font-weight: bold;">Qty</th>
-            <th style="width: 5%; border-right: 1px solid #000; padding: 4px 2px; text-align: left; font-size: 9px; font-weight: bold;">Unit</th>
+            <th style="width: 5%; border-right: 1px solid #000; padding: 4px 2px; text-align: left; font-size: 9px; font-weight: bold;">Base Unit</th>
             <th style="width: 12%; border-right: 1px solid #000; padding: 4px 2px; text-align: right; font-size: 9px; font-weight: bold;">Unit Price</th>
             <th style="width: 9%; border-right: 1px solid #000; padding: 4px 2px; text-align: right; font-size: 9px; font-weight: bold;">Discount</th>
             <th style="width: 7%; border-right: 1px solid #000; padding: 4px 2px; text-align: center; font-size: 9px; font-weight: bold;">CGST</th>
@@ -157,7 +161,7 @@ PO_TEMPLATE = """<!DOCTYPE html>
         </tr>
         {% endfor %}
         <!-- Spacer row -->
-        <tr style="height: 200px;">
+        <tr style="height: {% if rows|length < items_per_page %}120px{% else %}12px{% endif %};">
             <td style="border-right: 1px solid #000;"></td>
             <td style="border-right: 1px solid #000;"></td>
             <td style="border-right: 1px solid #000;"></td>
@@ -262,6 +266,9 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
             word-wrap: break-word;
             overflow-wrap: break-word;
         }
+        tr {
+            page-break-inside: avoid;
+        }
     </style>
 </head>
 <body>
@@ -296,9 +303,9 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
         <td style="width: 50%; border-right: 1px solid #000; padding: 4px 6px;">
             <table style="width: 100%;">
                 <tr><td style="width: 110px; border: none; padding: 1px 0; font-size: 10px;">{{ doc_number_label }}</td><td style="border: none; padding: 1px 0; font-size: 10px; font-weight: bold;">: {{ doc_number }}</td></tr>
-                <tr><td style="width: 85px; border: none; padding: 1px 0; font-size: 10px;">Date</td><td style="border: none; padding: 1px 0; font-size: 10px; font-weight: bold;">: {{ doc_date }}</td></tr>
-                {% if due_date %}<tr><td style="width: 85px; border: none; padding: 1px 0; font-size: 10px;">Due Date</td><td style="border: none; padding: 1px 0; font-size: 10px; font-weight: bold;">: {{ due_date }}</td></tr>{% endif %}
-                <tr><td style="width: 85px; border: none; padding: 1px 0; font-size: 10px;">GSTIN</td><td style="border: none; padding: 1px 0; font-size: 10px; font-weight: bold;">: {{ party_gstin }}</td></tr>
+                <tr><td style="width: 85px; border: none; padding: 1px 0; font-size: 10px;">{{ doc_date_label }}</td><td style="border: none; padding: 1px 0; font-size: 10px; font-weight: bold;">: {{ doc_date }}</td></tr>
+                <tr><td style="width: 85px; border: none; padding: 1px 0; font-size: 10px;">Due Date</td><td style="border: none; padding: 1px 0; font-size: 10px; font-weight: bold;">: {{ due_date }}</td></tr>
+                <tr><td style="width: 85px; border: none; padding: 1px 0; font-size: 10px;">Payment Terms</td><td style="border: none; padding: 1px 0; font-size: 10px; font-weight: bold;">: {{ payment_terms }}</td></tr>
             </table>
         </td>
         <td style="width: 50%; padding: 4px 6px; vertical-align: top;">
@@ -331,18 +338,21 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
     <thead>
         <tr style="background: #f2f2f2; border-bottom: 1px solid #000;">
             <th style="width: 3%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Sr</th>
-            <th style="width: 16%; border-right: 1px solid #000; padding: 3px 2px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Item &amp; Description</th>
-            <th style="width: 6%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">HSN</th>
-            <th style="width: 5%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Qty</th>
-            <th style="width: 4%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Free</th>
-            <th style="width: 4%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">UoM</th>
-            <th style="width: 9%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Rate</th>
-            <th style="width: 5%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Disc%</th>
-            <th style="width: 10%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Taxable Amt</th>
-            <th style="width: 5%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">GST%</th>
-            <th style="width: 8%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">CGST</th>
-            <th style="width: 8%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">SGST</th>
-            <th style="width: 17%; padding: 3px 2px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Amount</th>
+            <th style="width: {% if show_batch_columns %}15%{% else %}24%{% endif %}; border-right: 1px solid #000; padding: 3px 2px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Item &amp; Description</th>
+            {% if show_batch_columns %}
+            <th style="width: 8%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Batch No</th>
+            <th style="width: 7%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">MFG Date</th>
+            <th style="width: 7%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">EXP Date</th>
+            {% endif %}
+            <th style="width: {% if show_batch_columns %}6%{% else %}8%{% endif %}; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">HSN</th>
+            <th style="width: {% if show_batch_columns %}5%{% else %}7%{% endif %}; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Qty</th>
+            <th style="width: {% if show_batch_columns %}4%{% else %}5%{% endif %}; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Free</th>
+            <th style="width: {% if show_batch_columns %}6%{% else %}8%{% endif %}; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Base Unit</th>
+            <th style="width: {% if show_batch_columns %}9%{% else %}11%{% endif %}; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Rate</th>
+            <th style="width: {% if show_batch_columns %}5%{% else %}6%{% endif %}; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Disc%</th>
+            <th style="width: {% if show_batch_columns %}7%{% else %}8%{% endif %}; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">CGST %</th>
+            <th style="width: {% if show_batch_columns %}7%{% else %}8%{% endif %}; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">SGST %</th>
+            <th style="width: {% if show_batch_columns %}11%{% else %}12%{% endif %}; padding: 3px 2px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Amount</th>
         </tr>
     </thead>
     <tbody>
@@ -350,25 +360,31 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
         <tr>
             <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.sr }}</td>
             <td style="border: 1px solid #000; padding: 2px 2px; text-align: left; font-size: 7px; word-wrap: break-word; overflow-wrap: break-word;">{{ row.description }}</td>
+            {% if show_batch_columns %}
+            <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.batch_no }}</td>
+            <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.mfg_date }}</td>
+            <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.exp_date }}</td>
+            {% endif %}
             <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.hsn }}</td>
             <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.qty }}</td>
             <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px; color: #d97706;">{{ row.free }}</td>
-            <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.uom }}</td>
+            <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.base_unit }}</td>
             <td style="border: 1px solid #000; padding: 2px 2px; text-align: right; font-size: 7px;">{{ row.rate }}</td>
             <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.disc }}</td>
-            <td style="border: 1px solid #000; padding: 2px 2px; text-align: right; font-size: 7px;">{{ row.taxable_amt }}</td>
-            <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.gst_pct }}</td>
-            <td style="border: 1px solid #000; padding: 2px 2px; text-align: right; font-size: 7px;">{{ row.cgst_amt }}</td>
-            <td style="border: 1px solid #000; padding: 2px 2px; text-align: right; font-size: 7px;">{{ row.sgst_amt }}</td>
+            <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.cgst_pct }}</td>
+            <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.sgst_pct }}</td>
             <td style="border: 1px solid #000; padding: 2px 2px; text-align: right; font-size: 7px; font-weight: bold;">{{ row.amount }}</td>
         </tr>
         {% endfor %}
         <!-- Spacer row -->
-        <tr style="height: 200px;">
+        <tr style="height: {% if rows|length < items_per_page %}120px{% else %}12px{% endif %};">
+            <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
+            <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
+            {% if show_batch_columns %}
             <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
             <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
             <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
-            <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
+            {% endif %}
             <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
             <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
             <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
@@ -549,18 +565,30 @@ def _get_uom_abbr(db: Session, uom_id) -> str:
 
 
 def _get_packing_label(db: Session, product: Product | None) -> str:
-    """Get packing/order unit label from product's alt_uom_id."""
+    """Get packing/order unit label from product's alt_uom_id only."""
     if not product or not product.alt_uom_id:
         return "-"
     uom = db.query(UnitOfMeasure).filter(UnitOfMeasure.id == product.alt_uom_id).first()
     if not uom:
         return "-"
-    abbr = uom.abbreviation
-    conv = product.alt_uom_conversion
-    if conv and float(conv) > 0:
-        conv_str = f"{float(conv):.0f}" if float(conv) == int(float(conv)) else f"{float(conv):.2f}"
-        return f"{conv_str} {abbr}"
-    return abbr
+    return _safe_text(uom.abbreviation or uom.name)
+
+
+def _get_base_unit_label(product: Product | None) -> str:
+    """Get base unit from product base-unit field (SKU column in this project)."""
+    if not product:
+        return "-"
+    return _safe_text(product.sku)
+
+
+def _get_payment_terms_label(supplier: Supplier | None) -> str:
+    """Build payment terms text from a party's payment_terms_days field."""
+    if not supplier:
+        return "-"
+    days = getattr(supplier, "payment_terms_days", None)
+    if days is None:
+        return "-"
+    return f"{int(days)} Days"
 
 
 def _amount_in_words(paise: int) -> str:
@@ -637,13 +665,13 @@ def _render_pdf(context: dict[str, Any]) -> bytes:
     return buffer.read()
 
 
-def _chunk_items(items: list, chunk_size: int = 10) -> list[list]:
+def _chunk_items(items: list, chunk_size: int = BILLING_PDF_ITEMS_PER_PAGE) -> list[list]:
     """Split items into chunks of specified size for pagination."""
     return [items[i:i + chunk_size] for i in range(0, len(items), chunk_size)]
 
 
 def _render_pdf_with_pagination(context: dict[str, Any], template: str, rows: list[dict],
-                                items_per_page: int = 10) -> bytes:
+                                items_per_page: int = BILLING_PDF_ITEMS_PER_PAGE) -> bytes:
     """Render PDF with proper pagination - max items_per_page items per page.
 
     Each page is rendered as its own standalone PDF, then all pages are merged
@@ -667,6 +695,7 @@ def _render_pdf_with_pagination(context: dict[str, Any], template: str, rows: li
         page_context = {
             **context,
             "rows": chunk,
+            "items_per_page": items_per_page,
             "current_page": page_num,
             "total_pages": total_pages,
             "is_last_page": is_last_page,
@@ -729,7 +758,6 @@ def generate_po_pdf(db: Session, po_id: UUID) -> bytes:
 
         rate_val = f"{(int(item.unit_price or 0) / 100):,.2f}"
         mrp_val = f"{(int(product.mrp or item.unit_price or 0) / 100):,.2f}" if product else rate_val
-        uom_abbr = _get_uom_abbr(db, product.uom_id) if product else "Pcs"
 
         rows.append(
             {
@@ -741,7 +769,7 @@ def generate_po_pdf(db: Session, po_id: UUID) -> bytes:
                 "exp": "-",
                 "hsn": _safe_text(product.hsn_code if product else None),
                 "qty": f"{float(item.quantity):.2f}",
-                "uom": uom_abbr,
+                "uom": _get_base_unit_label(product),
                 "free": _decimal_to_str(getattr(item, "free_quantity", 0)),
                 "rate": rate_val,
                 "mrp": mrp_val,
@@ -760,7 +788,7 @@ def generate_po_pdf(db: Session, po_id: UUID) -> bytes:
         rows.append(
             {
                 "sr": "1", "description": "-", "packing": "-", "batch": "-", "mfg": "-", "exp": "-",
-                "hsn": "-", "qty": "0.00", "uom": "Pcs", "free": "0", "rate": "0.00", "mrp": "0.00",
+                "hsn": "-", "qty": "0.00", "uom": "-", "free": "0", "rate": "0.00", "mrp": "0.00",
                 "disc": "0.0%", "taxable_amt": "0.00", "gst_pct": "0%",
                 "cgst_pct": "0.0%", "cgst_amt": "0.00", "sgst_pct": "0.0%", "sgst_amt": "0.00", "amount": "0.00",
             }
@@ -792,7 +820,7 @@ def generate_po_pdf(db: Session, po_id: UUID) -> bytes:
         "doc_number": _safe_text(po.po_number),
         "doc_date": _format_date(po.order_date),
         "expected_delivery_date": _format_date(po.expected_delivery_date) if po.expected_delivery_date else "-",
-        "terms": "Net 30",
+        "terms": _get_payment_terms_label(supplier),
         "order_currency": f"{currency} ({cs})",
         "cs": cs,
         "company_logo": _resolve_logo_src(company),
@@ -814,7 +842,7 @@ def generate_po_pdf(db: Session, po_id: UUID) -> bytes:
         "total_in_words": _amount_in_words(int(po.total_amount or 0)),
         "notes": notes_text,
     }
-    return _render_pdf_with_pagination(context, PO_TEMPLATE, rows, items_per_page=10)
+    return _render_pdf_with_pagination(context, PO_TEMPLATE, rows, items_per_page=BILLING_PDF_ITEMS_PER_PAGE)
 
 
 def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
@@ -859,24 +887,26 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
             sgst_paise = igst_paise - cgst_paise
 
         rate_val = f"{(int(item.unit_price or 0) / 100):,.2f}"
-        uom_abbr = _get_uom_abbr(db, product.uom_id) if product else "Pcs"
+        base_unit = _get_base_unit_label(product)
+        batch_no = _safe_text(getattr(item, "batch_no", None))
+        mfg_date = _format_date(getattr(item, "manufacture_date", None))
+        exp_date = _format_date(getattr(item, "expiry_date", None))
 
         rows.append(
             {
                 "sr": str(idx),
                 "description": _safe_text((item.description or (product.name if product else ""))),
+                "batch_no": batch_no,
+                "mfg_date": mfg_date,
+                "exp_date": exp_date,
                 "hsn": _safe_text(product.hsn_code if product else None),
                 "qty": f"{float(item.quantity):.2f}",
                 "free": _decimal_to_str(getattr(item, "free_quantity", 0)),
-                "uom": uom_abbr,
+                "base_unit": base_unit,
                 "rate": rate_val,
                 "disc": f"{float(item.discount_percent or 0):.1f}%",
-                "taxable_amt": f"{(taxable_paise / 100):,.2f}",
-                "gst_pct": f"{gst_rate}%",
                 "cgst_pct": f"{half_rate:.1f}%",
-                "cgst_amt": f"{(cgst_paise / 100):,.2f}",
                 "sgst_pct": f"{half_rate:.1f}%",
-                "sgst_amt": f"{(sgst_paise / 100):,.2f}",
                 "amount": f"{(total_paise / 100):,.2f}",
             }
         )
@@ -884,9 +914,9 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
     if not rows:
         rows.append(
             {
-                "sr": "1", "description": "-", "hsn": "-", "qty": "0.00", "free": "0", "uom": "Pcs",
-                "rate": "0.00", "disc": "0.0%", "taxable_amt": "0.00", "gst_pct": "0%",
-                "cgst_pct": "0.0%", "cgst_amt": "0.00", "sgst_pct": "0.0%", "sgst_amt": "0.00", "amount": "0.00",
+                "sr": "1", "description": "-", "batch_no": "-", "mfg_date": "-", "exp_date": "-",
+                "hsn": "-", "qty": "0.00", "free": "0", "base_unit": "-",
+                "rate": "0.00", "disc": "0.0%", "cgst_pct": "0.0%", "sgst_pct": "0.0%", "amount": "0.00",
             }
         )
 
@@ -919,10 +949,13 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
 
     context = {
         "doc_title": "TAX INVOICE",
+        "show_batch_columns": True,
         "doc_number_label": "Invoice Number",
+        "doc_date_label": "Invoice Date",
         "doc_number": _safe_text(invoice.invoice_number),
         "doc_date": _format_date(invoice.invoice_date),
-        "due_date": _format_date(invoice.due_date) if invoice.due_date else "",
+        "due_date": _format_date(invoice.due_date),
+        "payment_terms": _get_payment_terms_label(customer),
         "order_currency": f"{currency} ({cs})",
         "company_logo": _resolve_logo_src(company),
         "company_name": _safe_text(company.name if company else None),
@@ -953,7 +986,7 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
         "total_in_words": _amount_in_words(int(invoice.total_amount or 0)),
         "notes": notes_text,
     }
-    return _render_pdf_with_pagination(context, INVOICE_TEMPLATE, rows, items_per_page=10)
+    return _render_pdf_with_pagination(context, INVOICE_TEMPLATE, rows, items_per_page=BILLING_PDF_ITEMS_PER_PAGE)
 
 
 def generate_quotation_pdf(db: Session, quotation_id: UUID) -> bytes:
@@ -996,7 +1029,8 @@ def generate_quotation_pdf(db: Session, quotation_id: UUID) -> bytes:
             sgst_paise = igst_paise - cgst_paise
 
         rate_val = f"{(int(item.unit_price or 0) / 100):,.2f}"
-        uom_abbr = _get_uom_abbr(db, product.uom_id) if product else "Pcs"
+        base_unit = _get_base_unit_label(product)
+        free_quantity = getattr(item, "free_quantity", 0)
 
         rows.append(
             {
@@ -1004,16 +1038,12 @@ def generate_quotation_pdf(db: Session, quotation_id: UUID) -> bytes:
                 "description": _safe_text((item.description or (product.name if product else ""))),
                 "hsn": _safe_text(product.hsn_code if product else None),
                 "qty": f"{float(item.quantity):.2f}",
-                "free": "0",
-                "uom": uom_abbr,
+                "free": _decimal_to_str(free_quantity),
+                "base_unit": base_unit,
                 "rate": rate_val,
                 "disc": f"{float(item.discount_percent or 0):.1f}%",
-                "taxable_amt": f"{(taxable_paise / 100):,.2f}",
-                "gst_pct": f"{gst_rate}%",
                 "cgst_pct": f"{half_rate:.1f}%",
-                "cgst_amt": f"{(cgst_paise / 100):,.2f}",
                 "sgst_pct": f"{half_rate:.1f}%",
-                "sgst_amt": f"{(sgst_paise / 100):,.2f}",
                 "amount": f"{(total_paise / 100):,.2f}",
             }
         )
@@ -1021,9 +1051,9 @@ def generate_quotation_pdf(db: Session, quotation_id: UUID) -> bytes:
     if not rows:
         rows.append(
             {
-                "sr": "1", "description": "-", "hsn": "-", "qty": "0.00", "free": "0", "uom": "Pcs",
-                "rate": "0.00", "disc": "0.0%", "taxable_amt": "0.00", "gst_pct": "0%",
-                "cgst_pct": "0.0%", "cgst_amt": "0.00", "sgst_pct": "0.0%", "sgst_amt": "0.00", "amount": "0.00",
+                "sr": "1", "description": "-",
+                "hsn": "-", "qty": "0.00", "free": "0", "base_unit": "-",
+                "rate": "0.00", "disc": "0.0%", "cgst_pct": "0.0%", "sgst_pct": "0.0%", "amount": "0.00",
             }
         )
 
@@ -1046,9 +1076,8 @@ def generate_quotation_pdf(db: Session, quotation_id: UUID) -> bytes:
     if not ship_to_address:
         ship_to_address = ", ".join([p.strip() for p in billing_parts if p and p.strip()])
 
-    valid_until_text = _format_date(quotation.valid_until) if quotation.valid_until else "-"
-    notes_text = _safe_text(quotation.notes) if quotation.notes else "-"
-    notes_text = f"Valid Until: {valid_until_text}\n{notes_text}" if notes_text != "-" else f"Valid Until: {valid_until_text}"
+    valid_until_text = _format_date(quotation.valid_until)
+    notes_text = _safe_text(quotation.notes)
 
     dominant_gst = 0.0
     for item in items:
@@ -1058,10 +1087,13 @@ def generate_quotation_pdf(db: Session, quotation_id: UUID) -> bytes:
 
     context = {
         "doc_title": "QUOTATION",
+        "show_batch_columns": False,
         "doc_number_label": "Quotation Number",
+        "doc_date_label": "Quotation Date",
         "doc_number": _safe_text(quotation.quotation_number),
         "doc_date": _format_date(quotation.quotation_date),
-        "due_date": "",
+        "due_date": valid_until_text,
+        "payment_terms": _get_payment_terms_label(customer),
         "order_currency": f"{currency} ({cs})",
         "company_logo": _resolve_logo_src(company),
         "company_name": _safe_text(company.name if company else None),
@@ -1092,4 +1124,4 @@ def generate_quotation_pdf(db: Session, quotation_id: UUID) -> bytes:
         "total_in_words": _amount_in_words(int(quotation.total_amount or 0)),
         "notes": notes_text,
     }
-    return _render_pdf_with_pagination(context, INVOICE_TEMPLATE, rows, items_per_page=10)
+    return _render_pdf_with_pagination(context, INVOICE_TEMPLATE, rows, items_per_page=BILLING_PDF_ITEMS_PER_PAGE)

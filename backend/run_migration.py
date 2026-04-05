@@ -43,6 +43,25 @@ def main() -> int:
         # Inventory/model compatibility
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS safety_stock INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS status VARCHAR(30) NOT NULL DEFAULT 'active'",
+        "ALTER TABLE products DROP CONSTRAINT IF EXISTS products_sku_key",
+        """
+        DO $$
+        DECLARE idx_name TEXT;
+        BEGIN
+            FOR idx_name IN
+                SELECT i.relname
+                FROM pg_class t
+                JOIN pg_index x ON t.oid = x.indrelid
+                JOIN pg_class i ON i.oid = x.indexrelid
+                JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(x.indkey)
+                WHERE t.relname = 'products'
+                  AND x.indisunique = TRUE
+                  AND a.attname = 'sku'
+            LOOP
+                EXECUTE format('DROP INDEX IF EXISTS %I', idx_name);
+            END LOOP;
+        END $$
+        """,
         "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS place_of_supply VARCHAR(255)",
         "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS company_director_name VARCHAR(255)",
         "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS company_director_contact VARCHAR(255)",

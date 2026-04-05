@@ -9,7 +9,7 @@ Production-ready with fixes for:
 - BUG-19: Sales return tax matches original invoice
 - BUG-25: Sales return adjusts invoice amount_due
 """
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from uuid import UUID
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
@@ -69,6 +69,14 @@ def _auto_expire_quotation(q: Quotation) -> None:
     """BUG-14: Auto-expire quotation if valid_until has passed."""
     if q.status in {"draft", "sent"} and q.valid_until and q.valid_until < date.today():
         q.status = "expired"
+
+
+def _calculate_invoice_due_date(invoice_date: date, customer: Customer) -> date:
+    """Auto-calculate due date with true calendar arithmetic (month-end/leap-year safe)."""
+    payment_terms_days = customer.payment_terms_days if customer.payment_terms_days is not None else 0
+    if payment_terms_days < 0:
+        payment_terms_days = 0
+    return invoice_date + timedelta(days=payment_terms_days)
 
 
 # ────────────────────────────── Quotations ───────────────────────────────────
@@ -688,6 +696,12 @@ async def convert_so_to_invoice(
     if so.status not in {"fulfilled", "partial"}:
         raise HTTPException(status_code=400, detail="Only partial or fulfilled sales orders can be converted to invoice")
 
+    customer = db.query(Customer).filter(Customer.id == so.customer_id, Customer.is_deleted == False).first()
+    if not customer:
+        raise HTTPException(status_code=400, detail="Invalid customer")
+
+    invoice_date = date.today()
+
     # BUG-02: Auto-detect IGST
     is_igst = determine_is_igst(db, "customer", so.customer_id)
 
@@ -696,8 +710,8 @@ async def convert_so_to_invoice(
         sales_order_id=so.id,
         quotation_id=so.quotation_id,
         customer_id=so.customer_id,
-        invoice_date=date.today(),
-        due_date=None,
+        invoice_date=invoice_date,
+        due_date=_calculate_invoice_due_date(invoice_date, customer),
         status="draft",
         sold_to_customer_id=so.sold_to_customer_id,
         bill_to_customer_id=so.bill_to_customer_id,
@@ -778,6 +792,8 @@ async def create_invoice(
     customer = db.query(Customer).filter(Customer.id == payload.customer_id, Customer.is_deleted == False).first()
     if not customer:
         raise HTTPException(status_code=400, detail="Invalid customer")
+
+    calculated_due_date = _calculate_invoice_due_date(payload.invoice_date, customer)
         
     if payload.sales_order_id:
         so = db.query(SalesOrder).filter(SalesOrder.id == payload.sales_order_id).first()
@@ -796,7 +812,7 @@ async def create_invoice(
         quotation_id=payload.quotation_id,
         customer_id=payload.customer_id,
         invoice_date=payload.invoice_date,
-        due_date=payload.due_date,
+        due_date=calculated_due_date,
         status="draft",
         sold_to_customer_id=payload.sold_to_customer_id or payload.customer_id,
         bill_to_customer_id=payload.bill_to_customer_id or payload.customer_id,
@@ -886,6 +902,12 @@ async def update_invoice(
     if invoice.status != "draft":
         raise HTTPException(status_code=400, detail="Only draft invoice can be edited")
 
+    customer = db.query(Customer).filter(Customer.id == payload.customer_id, Customer.is_deleted == False).first()
+    if not customer:
+        raise HTTPException(status_code=400, detail="Invalid customer")
+
+    calculated_due_date = _calculate_invoice_due_date(payload.invoice_date, customer)
+
     # BUG-02: Auto-detect IGST (initialize before conditional SO check)
     is_igst = determine_is_igst(db, "customer", payload.customer_id)
         
@@ -898,7 +920,7 @@ async def update_invoice(
     invoice.sales_order_id = payload.sales_order_id
     invoice.quotation_id = payload.quotation_id
     invoice.invoice_date = payload.invoice_date
-    invoice.due_date = payload.due_date
+    invoice.due_date = calculated_due_date
     invoice.sold_to_customer_id = payload.sold_to_customer_id or payload.customer_id
     invoice.bill_to_customer_id = payload.bill_to_customer_id or payload.customer_id
     invoice.ship_to_customer_id = payload.ship_to_customer_id or payload.customer_id

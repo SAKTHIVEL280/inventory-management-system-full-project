@@ -26,8 +26,6 @@ router = APIRouter(prefix="/api/v1/products", tags=["products"])
 
 def _to_integrity_http_error(exc: IntegrityError) -> HTTPException:
     message = str(getattr(exc, "orig", exc)).lower()
-    if "products_sku_key" in message or "key (sku)" in message:
-        return HTTPException(status_code=400, detail="SKU already exists. Please use a unique SKU.")
     if "products_product_code_key" in message or "key (product_code)" in message:
         return HTTPException(status_code=400, detail="Product code already exists. Please retry.")
     return HTTPException(status_code=400, detail="Unable to save product due to duplicate values.")
@@ -153,11 +151,6 @@ async def create_product(
         alternate_uom = db.query(UnitOfMeasure).filter(UnitOfMeasure.id == payload.alt_uom_id, UnitOfMeasure.is_active == True).first()
         if not alternate_uom:
             raise HTTPException(status_code=400, detail="Invalid alt_uom_id")
-
-    if payload.sku:
-        duplicate_sku = db.query(Product).filter(Product.sku == payload.sku).first()
-        if duplicate_sku:
-            raise HTTPException(status_code=400, detail="SKU already exists. Please use a unique SKU.")
 
     product = Product(
         **payload.model_dump(exclude={"product_code", "uom_id"}),
@@ -354,15 +347,6 @@ async def update_product(
         alternate_uom = db.query(UnitOfMeasure).filter(UnitOfMeasure.id == payload.alt_uom_id, UnitOfMeasure.is_active == True).first()
         if not alternate_uom:
             raise HTTPException(status_code=400, detail="Invalid alt_uom_id")
-
-    if payload.sku:
-        duplicate_sku = (
-            db.query(Product)
-            .filter(Product.sku == payload.sku, Product.id != product_id)
-            .first()
-        )
-        if duplicate_sku:
-            raise HTTPException(status_code=400, detail="SKU already exists. Please use a unique SKU.")
 
     update_data = payload.model_dump(exclude={"product_code", "uom_id"})
     update_data["uom_id"] = primary_uom.id

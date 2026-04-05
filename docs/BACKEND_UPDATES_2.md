@@ -2,6 +2,253 @@
 
 ---
 
+## BE-21: Migration Parity Verification - Runner and SQL Update File
+**Date**: April 5, 2026
+**Status**: ✅ Verified - No Backend Code Changes Needed
+**Test Case**: Migration Consistency Audit
+**Module**: Database Migration Runner
+**Type**: Verification
+
+### Overview
+Verified that schema alterations are covered in backend migration runner and matched against consolidated SQL updates.
+
+### Findings
+- `backend/run_migration.py` already contained the required compatibility ALTER statements.
+- No additional backend migration-runner code changes were required.
+
+### Files Verified
+- `backend/run_migration.py`
+
+---
+
+## BE-20: Product Master Data Seeding (10 Medicines) - No Backend Code Changes Required
+**Date**: April 5, 2026
+**Status**: ✅ Verified - No Code Changes Needed
+**Test Case**: Product Master Data Additions
+**Module**: Products
+**Type**: Data Update Support
+
+### Overview
+Validated backend product flow compatibility for adding 10 new medicine records with requested unit mapping.
+
+### Findings
+- No API/schema logic changes were required.
+- Existing product model supports base unit via `sku` and order unit via `alt_uom_id`.
+
+### Conclusion
+No backend code changes required for this task.
+
+---
+
+## BE-19: Quotation PDF - Removed Batch/MFG/EXP Columns
+**Date**: April 5, 2026
+**Status**: ✅ Completed
+**Test Case**: Quotation PDF Table Simplification
+**Module**: Quotations PDF
+**Type**: Feature
+
+### Overview
+Removed `Batch No`, `MFG Date`, and `EXP Date` columns from quotation PDF items table while keeping invoice PDF unchanged.
+
+### Changes Made
+- Updated shared invoice/quotation template with conditional column rendering based on document type.
+- Set quotation context to hide batch-related columns.
+- Kept invoice context to continue showing batch-related columns.
+- Removed obsolete quotation metadata fallback fetch logic that was only used for removed columns.
+
+### Files Modified
+- `backend/app/services/pdf_service.py`
+
+---
+
+## BE-18: Invoice Due Date - Calendar-Safe Auto Calculation Enforcement
+**Date**: April 5, 2026
+**Status**: ✅ Completed
+**Test Case**: Invoice Due Date Auto-Calculate (Month-End/Leap-Year)
+**Module**: Sales Invoices
+**Type**: Enhancement
+
+### Overview
+Strengthened invoice due-date auto-calculation to ensure it remains system-derived and calendar-correct.
+
+### Changes Made
+- Clarified due-date helper behavior as calendar-safe arithmetic.
+- Ensured SO-to-invoice conversion uses a single computed `invoice_date` value and derives due date from it.
+- Kept due-date derivation fully backend-controlled (not user-controlled input).
+
+### Files Modified
+- `backend/app/routers/sales.py`
+
+---
+
+## BE-17: Invoice Due Date Auto-Calculation from Customer Payment Terms
+**Date**: April 5, 2026
+**Status**: ✅ Completed
+**Test Case**: Invoice Due Date Auto-Calculate
+**Module**: Sales Invoices
+**Type**: Feature
+
+### Overview
+Implemented backend auto-calculation of invoice due date using invoice date and customer payment terms.
+
+### Changes Made
+- Added helper to compute due date as `invoice_date + customer.payment_terms_days`.
+- Enforced auto-calculated due date in invoice create API.
+- Enforced auto-calculated due date in invoice update API (draft invoices).
+- Enforced auto-calculated due date in Sales Order to Invoice conversion API.
+- Added customer existence validation where due date computation depends on customer terms.
+
+### Files Modified
+- `backend/app/routers/sales.py`
+
+---
+
+## BE-16: Invoice/Quotation PDF - Date Label Update
+**Date**: April 5, 2026
+**Status**: ✅ Completed
+**Test Case**: PDF Header Label Update
+**Module**: Tax Invoices, Quotations
+**Type**: Feature
+
+### Overview
+Updated invoice and quotation PDF header date labels as requested.
+
+### Changes Made
+- Replaced hardcoded `Date` label with dynamic `doc_date_label` in shared invoice/quotation template.
+- Set `doc_date_label` to `Invoice Date` for Tax Invoice PDFs.
+- Set `doc_date_label` to `Quotation Date` for Quotation PDFs.
+
+### Files Modified
+- `backend/app/services/pdf_service.py`
+
+---
+
+## BE-15: Tax Invoice & Quotation PDF - Header and Table Layout Update
+**Date**: April 5, 2026
+**Status**: ✅ Completed
+**Test Case**: Layout Change - Tax Invoice & Quotation PDF
+**Module**: Tax Invoices, Quotations
+**Type**: Feature
+
+### Overview
+Implemented requested invoice/quotation PDF layout updates in backend PDF rendering only (no DB schema changes).
+
+### Changes Made
+- Removed GSTIN from top-left meta header section.
+- Added `Payment Terms` in top-left header section.
+- Updated header rows to: Document Number, Date, Due Date, Payment Terms.
+- Updated shared invoice/quotation items table columns to:
+  - `Sr | Item & Description | Batch No | MFG Date | EXP Date | HSN | Qty | Free | Base Unit | Rate | Disc% | CGST % | SGST % | Amount`
+- Added dynamic row values:
+  - Batch No
+  - MFG Date
+  - EXP Date
+  - Base Unit
+- Updated line-row CGST/SGST display to percentage only (`CGST %`, `SGST %`).
+- Kept CGST/SGST tax amounts only in totals section.
+- Ensured line `Amount` continues to use final line total including tax.
+- For quotations, added metadata lookup helper to fetch latest batch/MFG/EXP/free values from linked invoice items (when available) while keeping DB schema unchanged.
+
+### Files Modified
+- `backend/app/services/pdf_service.py`
+
+---
+
+## BE-14: Billing PDF Packing/Order Unit - Remove Base Unit Qty Prefix
+**Date**: April 5, 2026
+**Status**: ✅ Completed
+**Test Case**: Billing PDF Packing/Order Unit Display
+**Module**: POs, Tax Invoices, Quotations
+**Type**: Bug Fix
+
+### Overview
+Fixed packing/order unit display logic in billing PDFs where values were shown as `10 BOX` by combining conversion qty with order unit.
+
+### Changes Made
+- Updated packing label resolver to return only Order Unit value from product `alt_uom_id`.
+- Removed concatenation of `alt_uom_conversion` with order unit in PDF display.
+- Output now shows `BOX` (or selected order unit), not `10 BOX`.
+
+### Files Modified
+- `backend/app/services/pdf_service.py`
+
+---
+
+## BE-13: Billing PDFs - Pagination Updated to 15 Items Per Page
+**Date**: April 5, 2026
+**Status**: ✅ Completed
+**Test Case**: Bill-03
+**Module**: POs, Tax Invoices, Quotations
+**Type**: Feature
+
+### Overview
+Updated billing PDF pagination to render a maximum of 15 line items per page for Purchase Order, Tax Invoice, and Quotation PDFs.
+
+### Changes Made
+- Added shared pagination constant `BILLING_PDF_ITEMS_PER_PAGE = 15`.
+- Updated PO PDF generation to use 15 items per page.
+- Updated Tax Invoice PDF generation to use 15 items per page.
+- Updated Quotation PDF generation to use 15 items per page.
+- Kept dynamic page numbering format `Page {current_page} of {total_pages}` unchanged.
+- Kept totals/tax summary/final amount rendering only on the last page (`is_last_page`).
+- Added `items_per_page` into page render context for template-aware layout control.
+- Added `page-break-inside: avoid` for table rows and adjusted spacer-row height logic to reduce row-break risk on paginated pages.
+
+### Files Modified
+- `backend/app/services/pdf_service.py`
+
+---
+
+## BE-12: Products - Allow Repeated Base Unit Values on Update
+**Date**: April 5, 2026
+**Status**: ✅ Completed
+**Test Case**: Product Update (Modify/Change Product)
+**Module**: Products
+**Type**: Bug Fix
+
+### Overview
+Fixed product update failure where editing a product with Base Unit values like `PCS` showed `SKU already exists`.
+
+### Root Cause
+- Base Unit is mapped to `products.sku` in the current project.
+- Backend still enforced uniqueness for `sku`, which is invalid for base units that are commonly shared across many products.
+
+### Changes Made
+- Removed SKU-specific duplicate validation from product create flow.
+- Removed SKU-specific duplicate validation from product update flow.
+- Kept product code uniqueness validation unchanged.
+- Removed obsolete global `SKU already exists` integrity-error mapping so responses are consistent with non-unique Base Unit behavior.
+
+### Files Modified
+- `backend/app/routers/products.py`
+- `backend/app/main.py`
+
+---
+
+## BE-11: Purchase Order PDF - Payment Terms and Product Unit Labels
+**Date**: April 5, 2026
+**Status**: ✅ Completed
+**Test Case**: Bill-02
+**Module**: POs, Tax Invoices, Quotations
+**Type**: Feature
+
+### Overview
+Updated Purchase Order PDF labels and bound unit values to product/supplier data so values are fetched from database fields instead of hardcoded text.
+
+### Changes Made
+- Changed PO metadata label from `Terms` to `Payment Terms`.
+- Changed items table header from `Packing` to `Packing / Order Unit`.
+- Changed items table header from `Unit` to `Base Unit`.
+- Updated `Packing / Order Unit` value source to product order-unit fields (`alt_uom_id` + `alt_uom_conversion`) via `_get_packing_label`.
+- Updated `Base Unit` value source to product base-unit field (`sku`) via new `_get_base_unit_label` helper.
+- Replaced hardcoded PO terms (`Net 30`) with supplier-driven payment terms from `supplier.payment_terms_days` via new `_get_payment_terms_label` helper.
+- Removed hardcoded base unit fallback (`Pcs`) from PO rows.
+
+### Files Modified
+- `backend/app/services/pdf_service.py`
+
+---
+
 ## BE-10: Billing PDFs - Complete Fix (Pagination, GST, Packing, UOM)
 **Date**: April 5, 2026
 **Status**: ✅ Completed

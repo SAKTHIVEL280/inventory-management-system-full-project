@@ -38,6 +38,19 @@ const InvoicesPage = () => {
   const [notes, setNotes] = useState('');
   const [items, setItems] = useState<SalesLineItem[]>([]);
 
+  const calculateInvoiceDueDate = (selectedCustomerId: string, selectedInvoiceDate: string) => {
+    if (!selectedCustomerId || !selectedInvoiceDate) {
+      return '';
+    }
+
+    const customer = customers.find((c) => c.id === selectedCustomerId);
+    const paymentTermsDays = typeof customer?.payment_terms_days === 'number' && customer.payment_terms_days > 0
+      ? customer.payment_terms_days
+      : 0;
+
+    return addDaysToDateInputValue(selectedInvoiceDate, paymentTermsDays);
+  };
+
   const fetchInvoices = async () => {
     try { setLoading(true); const res = await salesApi.listInvoices(statusFilter || undefined); setInvoices(res.data.items || []); } catch { setError('Failed to load'); } finally { setLoading(false); }
   };
@@ -76,13 +89,27 @@ const InvoicesPage = () => {
   // SAL-025: Auto-calculate due date from customer payment terms when customer changes
   const handleCustomerChange = (newCustomerId: string) => {
     setCustomerId(newCustomerId);
-    if (newCustomerId) {
-      const cust = customers.find(c => c.id === newCustomerId);
-      if (cust?.payment_terms_days && invoiceDate) {
-        setDueDate(addDaysToDateInputValue(invoiceDate, cust.payment_terms_days));
-      }
-    }
+    setDueDate(calculateInvoiceDueDate(newCustomerId, invoiceDate));
   };
+
+  useEffect(() => {
+    if (!customerId || !invoiceDate) {
+      if (dueDate) {
+        setDueDate('');
+      }
+      return;
+    }
+
+    // Wait until customer master is loaded to avoid transient blank due-date while editing.
+    if (!customers.some((c) => c.id === customerId)) {
+      return;
+    }
+
+    const calculatedDueDate = calculateInvoiceDueDate(customerId, invoiceDate);
+    if (calculatedDueDate !== dueDate) {
+      setDueDate(calculatedDueDate);
+    }
+  }, [customerId, invoiceDate, customers, dueDate]);
 
   const updateItem = (idx: number, field: keyof SalesLineItem, value: string | number) => {
     const updated = [...items]; (updated[idx] as unknown as Record<string, unknown>)[field] = value;
@@ -119,7 +146,7 @@ const InvoicesPage = () => {
     setSubmitting(true); setError('');
     try {
       const payload: CreateInvoicePayload = {
-        customer_id: customerId, sales_order_id: undefined, invoice_date: invoiceDate, due_date: dueDate || undefined,
+        customer_id: customerId, sales_order_id: undefined, invoice_date: invoiceDate,
         bill_to_customer_id: customerId, notes: notes || undefined,
         items: items.map(i => ({
           product_id: i.product_id,
@@ -310,8 +337,8 @@ const InvoicesPage = () => {
                 {/* SAL-025: Customer select triggers due date auto-calc */}
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Customer *</label><select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={customerId} onChange={e => handleCustomerChange(e.target.value)}><option value="">Select</option>{customers.map(c => <option key={c.id} value={c.id}>{c.company_name} ({c.customer_code})</option>)}</select></div>
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Invoice Date *</label><input type="date" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} /></div>
-                {/* SAL-025/026: Due Date auto-calculated from Customer Payment Terms, allows manual override */}
-                <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Due Date <span className="text-xs text-neutral-400">(auto from payment terms)</span></label><input type="date" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={dueDate} onChange={e => setDueDate(e.target.value)} /></div>
+                {/* SAL-029: Due Date is fully auto-calculated for invoices */}
+                <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Due Date <span className="text-xs text-neutral-400">(auto from payment terms)</span></label><input type="date" className="w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-600" value={dueDate} readOnly disabled /></div>
               </div>
               <div>
                 <div className="mb-2 flex items-center justify-between"><h3 className="text-sm font-semibold">Items</h3><button onClick={addItem} className="rounded bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary">+ Add</button></div>
