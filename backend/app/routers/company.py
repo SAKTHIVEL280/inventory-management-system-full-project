@@ -1,7 +1,7 @@
 """Company profile router."""
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
-import os
+from pathlib import Path
 
 from app.database import get_db
 from app.dependencies import get_current_user, require_permissions
@@ -10,6 +10,8 @@ from app.models.user import User
 from app.schemas.company import CompanyResponse, CompanyUpdate, CompanyLogoResponse
 
 router = APIRouter(prefix="/api/v1/company", tags=["company"])
+
+STATIC_DIR = Path(__file__).resolve().parents[2] / "static"
 
 
 @router.get("", response_model=CompanyResponse)
@@ -65,13 +67,14 @@ async def upload_company_logo(
             detail="Logo file size must be <= 2MB",
         )
 
-    # Save to static directory
-    os.makedirs("static", exist_ok=True)
-    file_path = "static/logo.png"
+    # Save to backend static directory using extension matching the uploaded MIME type.
+    STATIC_DIR.mkdir(parents=True, exist_ok=True)
+    file_name = "logo.png" if content_type == "image/png" else "logo.jpg"
+    file_path = STATIC_DIR / file_name
     with open(file_path, "wb") as f:
         f.write(file_bytes)
-        
-    logo_url = "/static/logo.png"
+
+    logo_url = f"/static/{file_name}"
 
     company = db.query(Company).first()
     if not company:

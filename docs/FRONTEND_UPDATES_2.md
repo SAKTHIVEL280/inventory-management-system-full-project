@@ -1,5 +1,25 @@
 # Frontend Updates Log
 
+## FE-25: Logo URL Resolution Fix for Deployed App
+**Date**: April 5, 2026
+**Status**: ✅ Completed
+**Test Case**: Company Logo Visibility in App
+**Module**: Company / App Layout
+**Type**: Bug Fix
+
+### Overview
+Fixed static logo URL construction in frontend so logo displays correctly when API base URL includes path prefixes or uses relative URLs.
+
+### Changes Made
+- Updated static URL helper to derive backend origin safely from `VITE_API_BASE_URL`.
+- Added support for absolute and relative API base URL configurations.
+- Prevented invalid static URLs like `/api/v1/static/...` when API is configured with path prefixes.
+
+### Files Modified
+- `frontend/src/utils/url_utils.ts`
+
+---
+
 ## FE-24: Migration Parity Audit - No Frontend Changes Required
 **Date**: April 5, 2026
 **Status**: ✅ Verified - No Changes Needed

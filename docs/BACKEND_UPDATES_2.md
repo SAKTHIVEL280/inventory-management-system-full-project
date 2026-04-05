@@ -2,6 +2,27 @@
 
 ---
 
+## BE-22: Company Logo Serving Fix for Deployment Environments
+**Date**: April 5, 2026
+**Status**: ✅ Completed
+**Test Case**: Company Logo Visibility in App
+**Module**: Company / Static Assets
+**Type**: Bug Fix
+
+### Overview
+Fixed backend static/logo handling so company logo serving is stable across different process working directories in deployed environments.
+
+### Changes Made
+- Replaced relative static mount path with absolute backend static directory path.
+- Replaced relative logo save path with absolute backend static directory path.
+- Saved uploaded logo with file extension matching uploaded MIME type (`.png`/`.jpg`).
+
+### Files Modified
+- `backend/app/main.py`
+- `backend/app/routers/company.py`
+
+---
+
 ## BE-21: Migration Parity Verification - Runner and SQL Update File
 **Date**: April 5, 2026
 **Status**: ✅ Verified - No Backend Code Changes Needed

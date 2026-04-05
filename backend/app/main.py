@@ -1,5 +1,6 @@
 """Main FastAPI application."""
 import logging
+from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -7,12 +8,14 @@ from sqlalchemy.exc import IntegrityError
 from app.config import settings
 from app.routers import auth, company, users, customers, suppliers, products, purchase, sales, payments, reports, stock, archive
 from fastapi.staticfiles import StaticFiles
-import os
 
 logger = logging.getLogger(__name__)
 
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+STATIC_DIR = BACKEND_DIR / "static"
+
 # Create static directory if it doesn't exist
-os.makedirs("static", exist_ok=True)
+STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(
     title=" Mecandria ERP",
@@ -21,7 +24,7 @@ app = FastAPI(
 )
 
 # Mount static files for company logo and assets
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # CORS configuration - MUST BE ADDED FIRST
 allowed_origins = list(
