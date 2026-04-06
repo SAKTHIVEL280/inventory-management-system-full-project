@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
@@ -55,6 +55,30 @@ const emptyCompany: Company = {
   grn_counter: 1,
 };
 
+const mapCompanyToFormValues = (company?: Company): CompanyForm => ({
+  name: company?.name ?? '',
+  legal_name: company?.legal_name ?? '',
+  gstin: company?.gstin ?? '',
+  gstin_status: company?.gstin_status ?? 'non-registered',
+  pan: company?.pan ?? '',
+  company_director_name: company?.company_director_name ?? '',
+  company_director_contact: company?.company_director_contact ?? '',
+  state_code: company?.state_code ?? '',
+  phone: company?.phone ?? '',
+  email: company?.email ?? '',
+  website: company?.website ?? '',
+  address_line1: company?.address_line1 ?? '',
+  address_line2: company?.address_line2 ?? '',
+  city: company?.city ?? '',
+  state: company?.state ?? '',
+  pincode: company?.pincode ?? '',
+  bank_name: company?.bank_name ?? '',
+  account_holder_name: company?.account_holder_name ?? '',
+  bank_account_no: company?.bank_account_no ?? '',
+  bank_ifsc: company?.bank_ifsc ?? '',
+  bank_branch: company?.bank_branch ?? '',
+});
+
 const CompanyPage = () => {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -64,31 +88,14 @@ const CompanyPage = () => {
     queryFn: companyApi.get,
   });
 
-  const { register, handleSubmit, reset, watch } = useForm<CompanyForm>({
-    values: {
-      name: data?.name ?? '',
-      legal_name: data?.legal_name ?? '',
-      gstin: data?.gstin ?? '',
-      gstin_status: data?.gstin_status ?? 'non-registered',
-      pan: data?.pan ?? '',
-      company_director_name: data?.company_director_name ?? '',
-      company_director_contact: data?.company_director_contact ?? '',
-      state_code: data?.state_code ?? '',
-      phone: data?.phone ?? '',
-      email: data?.email ?? '',
-      website: data?.website ?? '',
-      address_line1: data?.address_line1 ?? '',
-      address_line2: data?.address_line2 ?? '',
-      city: data?.city ?? '',
-      state: data?.state ?? '',
-      pincode: data?.pincode ?? '',
-      bank_name: data?.bank_name ?? '',
-      account_holder_name: data?.account_holder_name ?? '',
-      bank_account_no: data?.bank_account_no ?? '',
-      bank_ifsc: data?.bank_ifsc ?? '',
-      bank_branch: data?.bank_branch ?? '',
-    },
+  const { register, handleSubmit, reset, watch, formState: { isDirty } } = useForm<CompanyForm>({
+    defaultValues: mapCompanyToFormValues(),
   });
+
+  useEffect(() => {
+    if (!data || isDirty) return;
+    reset(mapCompanyToFormValues(data));
+  }, [data, isDirty, reset]);
 
   const gstin_status = watch('gstin_status');
 
@@ -100,29 +107,7 @@ const CompanyPage = () => {
         name: updated.name,
         logo_url: updated.logo_url ?? old?.logo_url ?? null,
       }));
-      reset({
-        name: updated.name,
-        legal_name: updated.legal_name ?? '',
-        gstin: updated.gstin ?? '',
-        gstin_status: updated.gstin_status ?? 'non-registered',
-        pan: updated.pan ?? '',
-        company_director_name: updated.company_director_name ?? '',
-        company_director_contact: updated.company_director_contact ?? '',
-        state_code: updated.state_code ?? '',
-        phone: updated.phone ?? '',
-        email: updated.email ?? '',
-        website: updated.website ?? '',
-        address_line1: updated.address_line1 ?? '',
-        address_line2: updated.address_line2 ?? '',
-        city: updated.city ?? '',
-        state: updated.state ?? '',
-        pincode: updated.pincode ?? '',
-        bank_name: updated.bank_name ?? '',
-        account_holder_name: updated.account_holder_name ?? '',
-        bank_account_no: updated.bank_account_no ?? '',
-        bank_ifsc: updated.bank_ifsc ?? '',
-        bank_branch: updated.bank_branch ?? '',
-      });
+      reset(mapCompanyToFormValues(updated));
       showSuccess('Company profile saved successfully');
     },
     onError: (error: unknown) => {

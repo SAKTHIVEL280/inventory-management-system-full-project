@@ -2,6 +2,44 @@
 
 ---
 
+## BE-30: Company Form Reinitialization Fix - No Backend Changes Required
+**Date**: April 6, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Test Case**: Page Appears to Refresh While Typing Company Input
+**Module**: Company Profile
+**Type**: Critical UX Bug Fix - Frontend Only
+
+### Overview
+Validated backend impact for company form reinitialization issue.
+
+### Findings
+- Issue was frontend form-state handling only.
+- No backend endpoint/model changes required.
+
+### Conclusion
+No backend changes required.
+
+---
+
+## BE-29: API Base Hardening Update - No Backend Changes Required
+**Date**: April 6, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Test Case**: Deployed UI Auto Refresh While Typing
+**Module**: Auth / API Runtime
+**Type**: Critical Bug Fix - Frontend Only
+
+### Overview
+Validated backend impact for frontend API base hardening update.
+
+### Findings
+- Change was confined to frontend URL normalization logic.
+- Backend endpoints and auth flow required no new backend code changes.
+
+### Conclusion
+No backend changes required.
+
+---
+
 ## BE-28: Auto-Refresh While Typing Fix - No Backend Changes Required
 **Date**: April 6, 2026
 **Status**: ✅ Verified - No Changes Needed

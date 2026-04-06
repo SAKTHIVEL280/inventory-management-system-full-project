@@ -22,12 +22,27 @@ const rawApiBaseUrl = import.meta.env.VITE_API_BASE_URL || defaultApiBaseUrl;
 
 const API_BASE_URL = (() => {
   const trimmed = String(rawApiBaseUrl || '').replace(/\/+$/, '');
-  if (!trimmed || trimmed === '/api') {
+  if (!trimmed) {
     return '';
   }
-  if (trimmed.endsWith('/api')) {
-    return trimmed.slice(0, -4);
+
+  // Endpoints in this app already include '/api/v1/...'.
+  // For any relative base like '/api' or '/api/v1', use same-origin empty base.
+  if (trimmed.startsWith('/')) {
+    return '';
   }
+
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    try {
+      const url = new URL(trimmed);
+      return url.origin;
+    } catch {
+      // Fallback for malformed absolute values.
+      const noApiV1 = trimmed.replace(/\/api\/v1$/i, '');
+      return noApiV1.replace(/\/api$/i, '');
+    }
+  }
+
   return trimmed;
 })();
 

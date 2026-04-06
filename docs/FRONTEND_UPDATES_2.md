@@ -1,5 +1,29 @@
 # Frontend Updates Log
 
+## FE-32: Company Form Reinitialization Fix (Typing-Time Refresh-Like Behavior)
+**Date**: April 6, 2026
+**Status**: ✅ Completed
+**Test Case**: Page Appears to Refresh While Typing Company Input
+**Module**: Company Profile Form
+**Type**: Critical UX Bug Fix
+
+### Overview
+Identified and fixed form reinitialization behavior that could reset inputs during typing and appear as auto page refresh.
+
+### Root Cause
+- Company form used React Hook Form `values` prop bound to query data object.
+- `values` mode can reapply incoming values frequently, causing in-progress typing to be overridden.
+
+### Changes Made
+- Replaced `values` usage with `defaultValues` initialization.
+- Added guarded reset effect to apply fetched data only when form is not dirty.
+- Centralized company-to-form mapping in a helper for consistent reset behavior.
+
+### Files Modified
+- `frontend/src/pages/CompanyPage.tsx`
+
+---
+
 ## FE-31: Auto-Refresh While Typing Fix (API Base Normalization)
 **Date**: April 6, 2026
 **Status**: ✅ Completed
@@ -20,10 +44,16 @@ Fixed production runtime issue where API base URL composition could generate inv
 - Added safe handling for these base URL variants:
   - empty/same-origin
   - `/api`
+  - `/api/v1`
   - absolute URLs ending with `/api`
+  - absolute URLs ending with `/api/v1`
   - standard absolute URLs
 - Added explicit `AUTH_REFRESH_URL` resolver in both clients.
 - Kept localhost behavior on `:8001` for local development.
+
+### Hardening Update
+- Added explicit relative-path guard (`trimmed.startsWith('/') => ''`) so any relative `VITE_API_BASE_URL` in server build cannot produce duplicated API prefixes.
+- Added absolute URL parsing via `new URL(...).origin` to guarantee stable base origin.
 
 ### Files Modified
 - `frontend/src/api/auth.ts`

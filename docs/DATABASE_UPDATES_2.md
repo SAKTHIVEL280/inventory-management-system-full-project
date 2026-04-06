@@ -2,6 +2,44 @@
 
 ---
 
+## DB-27: Company Form Reinitialization Fix - No Database Changes Required
+**Date**: April 6, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Test Case**: Page Appears to Refresh While Typing Company Input
+**Module**: Company Profile Form
+**Type**: Critical UX Bug Fix - Frontend Logic Only
+
+### Overview
+Validated schema impact for company form reinitialization fix.
+
+### Findings
+- Change is frontend form-state behavior only.
+- No table/column/data migration required.
+
+### Conclusion
+No database changes required.
+
+---
+
+## DB-26: API Base Hardening Update - No Database Changes Required
+**Date**: April 6, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Test Case**: Deployed UI Auto Refresh While Typing
+**Module**: Auth / API Runtime
+**Type**: Critical Bug Fix - Frontend Logic Only
+
+### Overview
+Validated schema impact for frontend API base hardening update.
+
+### Findings
+- Fix is frontend URL normalization behavior only.
+- No table/column/data migration required.
+
+### Conclusion
+No database changes required.
+
+---
+
 ## DB-25: Auto-Refresh While Typing Fix - No Database Changes Required
 **Date**: April 6, 2026
 **Status**: ✅ Verified - No Changes Needed
