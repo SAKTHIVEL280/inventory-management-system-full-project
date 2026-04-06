@@ -2,6 +2,25 @@
 
 ---
 
+## BE-28: Production Auto-Refresh Auth Issue - No Backend Changes Required
+**Date**: April 6, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Test Case**: Page Auto-Refreshing While Typing in Deployed App
+**Module**: Auth / Deployment
+**Type**: Bug Fix - Frontend Only
+
+### Overview
+Validated backend impact for production auto-refresh symptom.
+
+### Findings
+- Root issue originated from frontend auth client API base URL and redirect behavior.
+- No backend endpoint or schema changes were required for this step.
+
+### Conclusion
+No backend changes required.
+
+---
+
 ## BE-27: Branding API Inline Logo Fallback for Server UI Reliability
 **Date**: April 5, 2026
 **Status**: ✅ Completed

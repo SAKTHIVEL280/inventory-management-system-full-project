@@ -1,5 +1,31 @@
 # Frontend Updates Log
 
+## FE-31: Production Auth Client Base URL and Redirect Loop Guard Fix
+**Date**: April 6, 2026
+**Status**: ✅ Completed
+**Test Case**: Page Auto-Refreshing While Typing in Deployed App
+**Module**: Auth API Client
+**Type**: Bug Fix
+
+### Overview
+Fixed production-only auth client misconfiguration that could cause repeated auth failures and login redirects appearing like page auto-refresh.
+
+### Root Cause
+- `frontend/src/api/auth.ts` still defaulted to `:8001` in all environments.
+- In Ubuntu/Nginx deployments, API is typically exposed through same-origin `/api`.
+- Failed auth refresh/login checks could trigger repeated redirect behavior.
+
+### Changes Made
+- Updated auth client default API base URL to:
+  - localhost/127.0.0.1 -> `:8001`
+  - non-localhost -> `/api`
+- Added one-time login redirect guard to prevent repeated redirect loops.
+
+### Files Modified
+- `frontend/src/api/auth.ts`
+
+---
+
 ## FE-30: Sidebar Uses Inline Branding Logo Fallback
 **Date**: April 5, 2026
 **Status**: ✅ Completed

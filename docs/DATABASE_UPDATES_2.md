@@ -2,6 +2,25 @@
 
 ---
 
+## DB-25: Production Auto-Refresh Auth Issue - No Database Changes Required
+**Date**: April 6, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Test Case**: Page Auto-Refreshing While Typing in Deployed App
+**Module**: Auth / Deployment
+**Type**: Bug Fix - Frontend Logic Only
+
+### Overview
+Validated schema impact for production auto-refresh symptom fix.
+
+### Findings
+- Fix is in frontend auth client URL/redirect handling.
+- No table/column/data changes required.
+
+### Conclusion
+No database changes required.
+
+---
+
 ## DB-24: Branding Inline Logo Fallback - No Database Changes Required
 **Date**: April 5, 2026
 **Status**: ✅ Verified - No Changes Needed
