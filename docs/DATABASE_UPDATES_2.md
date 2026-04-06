@@ -2,6 +2,25 @@
 
 ---
 
+## DB-25: Auto-Refresh While Typing Fix - No Database Changes Required
+**Date**: April 6, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Test Case**: Deployed App Auto Refreshes During Data Entry
+**Module**: Auth / API Runtime
+**Type**: Critical Bug Fix - Frontend Logic Only
+
+### Overview
+Validated schema impact for deployed auto-refresh fix.
+
+### Findings
+- Fix is URL/runtime logic in frontend API clients.
+- No table/column/data migration required.
+
+### Conclusion
+No database changes required.
+
+---
+
 ## DB-24: Branding Inline Logo Fallback - No Database Changes Required
 **Date**: April 5, 2026
 **Status**: ✅ Verified - No Changes Needed

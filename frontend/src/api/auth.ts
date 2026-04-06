@@ -13,10 +13,27 @@ import { toast } from 'sonner';
 
 const defaultApiBaseUrl =
   typeof window !== 'undefined'
-    ? `${window.location.protocol}//${window.location.hostname}:8001`
+    ? (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? `${window.location.protocol}//${window.location.hostname}:8001`
+        : '')
     : 'http://localhost:8001';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || defaultApiBaseUrl;
+const rawApiBaseUrl = import.meta.env.VITE_API_BASE_URL || defaultApiBaseUrl;
+
+const API_BASE_URL = (() => {
+  const trimmed = String(rawApiBaseUrl || '').replace(/\/+$/, '');
+  if (!trimmed || trimmed === '/api') {
+    return '';
+  }
+  if (trimmed.endsWith('/api')) {
+    return trimmed.slice(0, -4);
+  }
+  return trimmed;
+})();
+
+const AUTH_REFRESH_URL = API_BASE_URL.startsWith('http')
+  ? `${API_BASE_URL}/api/v1/auth/refresh`
+  : '/api/v1/auth/refresh';
 
 const authErrorToastHistory = new Map<string, number>();
 
@@ -104,7 +121,7 @@ class AuthApiClient {
             }
 
             const response = await axios.post(
-              `${API_BASE_URL}/api/v1/auth/refresh`,
+              AUTH_REFRESH_URL,
               { refresh_token: refreshToken }
             );
 
@@ -123,7 +140,6 @@ class AuthApiClient {
             if (shouldShowToast('Session expired. Please login again.')) {
               toast.error('Session expired. Please login again.');
             }
-            window.location.href = '/login';
             return Promise.reject(refreshError);
           }
         }

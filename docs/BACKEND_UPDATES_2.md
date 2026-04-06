@@ -2,6 +2,25 @@
 
 ---
 
+## BE-28: Auto-Refresh While Typing Fix - No Backend Changes Required
+**Date**: April 6, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Test Case**: Deployed App Auto Refreshes During Data Entry
+**Module**: API / Auth
+**Type**: Critical Bug Fix - Frontend Only
+
+### Overview
+Validated backend impact for auto-refresh behavior seen on deployed UI.
+
+### Findings
+- Root issue was frontend API base URL and refresh URL composition.
+- Backend endpoints required no code change for this fix.
+
+### Conclusion
+No backend changes required.
+
+---
+
 ## BE-27: Branding API Inline Logo Fallback for Server UI Reliability
 **Date**: April 5, 2026
 **Status**: ✅ Completed

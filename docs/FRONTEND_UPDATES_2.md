@@ -1,5 +1,36 @@
 # Frontend Updates Log
 
+## FE-31: Auto-Refresh While Typing Fix (API Base Normalization)
+**Date**: April 6, 2026
+**Status**: ✅ Completed
+**Test Case**: Deployed App Auto Refreshes During Data Entry
+**Module**: Auth API / Global API Client
+**Type**: Critical Bug Fix
+
+### Overview
+Fixed production runtime issue where API base URL composition could generate invalid paths (such as `/api/api/v1/...`) and trigger repeated auth failures during normal form usage.
+
+### Root Cause
+- Mixed API base assumptions (`/api` + hardcoded `/api/v1/...` paths) caused duplicate API prefixes.
+- Refresh-token endpoint URL was also composed with the same duplication risk.
+- Resulted in repeated request failures and session-flow instability perceived as automatic page refresh.
+
+### Changes Made
+- Normalized API base URL in both auth and global API clients.
+- Added safe handling for these base URL variants:
+  - empty/same-origin
+  - `/api`
+  - absolute URLs ending with `/api`
+  - standard absolute URLs
+- Added explicit `AUTH_REFRESH_URL` resolver in both clients.
+- Kept localhost behavior on `:8001` for local development.
+
+### Files Modified
+- `frontend/src/api/auth.ts`
+- `frontend/src/api/client.ts`
+
+---
+
 ## FE-30: Sidebar Uses Inline Branding Logo Fallback
 **Date**: April 5, 2026
 **Status**: ✅ Completed
