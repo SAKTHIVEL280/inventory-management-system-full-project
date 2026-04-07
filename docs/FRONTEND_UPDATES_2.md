@@ -1,5 +1,204 @@
 # Frontend Updates Log
 
+## FE-45: Phone Input Split Refinement and Supplier Prefill Removal
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Customer, Supplier
+**Type**: Bug Fix / UX Alignment
+
+### Overview
+Adjusted phone input UX and supplier default-load behavior based on retest feedback.
+
+### Changes Made
+- Customer:
+  - Kept typeahead for phone country code only.
+  - Replaced phone number typeahead with standard phone input field.
+  - Removed edit fallback that auto-filled missing billing/shipping country with `India`.
+- Supplier:
+  - Kept typeahead for phone country code only.
+  - Replaced phone number typeahead with standard phone input field.
+  - Removed new-form prefill for country and payment terms (`billing_country` and `payment_terms_days` now load empty).
+  - Updated payment terms validation parsing to support empty initial load state.
+
+### Files Modified
+- `frontend/src/pages/CustomersPage.tsx`
+- `frontend/src/pages/SuppliersPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors after implementation.
+
+---
+
+## FE-44: CUS-017/CUS-018 and SUP-011 Customer/Supplier UI Updates
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Test Cases**: CUS-017, CUS-018, SUP-011
+**Module**: Customer, Supplier
+**Type**: Bug / Error + Enhancement
+
+### Overview
+Implemented Customer Master fixes to remove unintended auto-fill behavior and enhanced Supplier Master with currency + typeahead controls consistent with Customer Master.
+
+### Changes Made
+- Customer:
+  - Removed company-driven address prefill in new customer form.
+  - Updated defaults so billing/shipping address fields start empty.
+  - Updated Payment Terms behavior so field is empty on new customer load (no prefilled value).
+- Supplier:
+  - Added Currency field in Supplier Master form.
+  - Added typeahead for Currency, State, and Country.
+  - Added phone split UI with country-code typeahead + local number typeahead.
+  - Added supplier customization-options fetch and query invalidation on create/update.
+
+### Files Modified
+- `frontend/src/pages/CustomersPage.tsx`
+- `frontend/src/pages/SuppliersPage.tsx`
+- `frontend/src/api/suppliers.ts`
+- `frontend/src/types/index.ts`
+
+### Validation
+- Verified no TypeScript/IDE errors after implementation.
+
+---
+
+## FE-43: Customer State Code Allows N/A
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Customer
+**Type**: Bug Fix / Input Rule Update
+
+### Overview
+Updated Customer Master state-code handling so `N/A` can be entered for billing/shipping state code fields.
+
+### Changes Made
+- Increased Billing State Code input limit from `2` to `5` characters.
+- Increased Shipping State Code input limit from `2` to `5` characters.
+- Updated placeholders to include `N/A` example.
+- Added state-code payload normalization to uppercase before submit, so values like `n/a` are stored as `N/A`.
+
+### Files Modified
+- `frontend/src/pages/CustomersPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors after implementation.
+
+---
+
+## FE-42: Customer Phone Parse Fix for Non-Default Country Codes
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Customer
+**Type**: Bug Fix
+
+### Overview
+Fixed modify/change parsing issue where saved international numbers could split into incorrect country code and local number (example: `+44 7911123456` reloaded as `+447` and `911123456`).
+
+### Changes Made
+- Added `+44` to default phone country code suggestions.
+- Added known country calling-code matching list and updated phone split logic to resolve country code using longest valid known prefix.
+- Updated edit-mode parsing path so saved phone values are rehydrated correctly into `country code` and `phone number` fields.
+
+### Files Modified
+- `frontend/src/pages/CustomersPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors after implementation.
+
+---
+
+## FE-41: Customer Edit UI Cleanup and Phone Code Suggestion Visibility Fix
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Customer
+**Type**: Bug Fix / UX Improvement
+
+### Overview
+Refined Customer Master modify/change experience by removing redundant internal identifier display and fixing phone country-code suggestion visibility after updates.
+
+### Changes Made
+- Removed `Customer Record ID (Read-only)` (UUID) from customer edit UI.
+- Kept only business-visible `Customer ID (Read-only)` in modify/change mode.
+- Enhanced reusable `TypeaheadInput` with `showAllWhenFocused` support.
+- Applied `showAllWhenFocused` to phone country-code field so all available code options are visible on focus, including newly updated/saved codes.
+
+### Files Modified
+- `frontend/src/pages/CustomersPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors after implementation.
+
+---
+
+## FE-40: Customer Phone Validation Message Alignment
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Customer
+**Type**: Bug Fix
+
+### Overview
+Removed leftover India-specific phone validation from Customer Master form schema so it matches the new international phone flow.
+
+### Changes Made
+- Replaced old schema rule `^[6-9]\d{9}$` and message `Must be a valid 10-digit Indian mobile number`.
+- Added generic validation for required phone input and digit-only local number.
+- Kept international validation logic on submit (country code + total 6-15 digits) unchanged.
+
+### Files Modified
+- `frontend/src/pages/CustomersPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors after implementation.
+
+---
+
+## FE-39: Customer Phone and Country Code Typeahead in Customer Master
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Customer
+**Type**: Enhancement / UX Improvement
+
+### Overview
+Extended Customer Master phone controls to use the same custom typeahead interaction pattern used for currency, country, and state inputs.
+
+### Changes Made
+- Replaced phone country code dropdown with the reusable `TypeaheadInput` component.
+- Replaced plain phone number input with `TypeaheadInput` and retained form registration through hidden field binding.
+- Added phone country code suggestions merged from defaults and existing saved customer phone prefixes.
+- Added phone number suggestions derived from existing customer phone data (local-number portion).
+- Added country code normalization on edit/submit paths to keep outgoing phone format consistent.
+
+### Files Modified
+- `frontend/src/pages/CustomersPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors after implementation.
+
+---
+
+## FE-38: CUS-016 Customer Phone Prefix Selector and Flexible Number Input
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Test Case**: CUS-016
+**Module**: Customer
+**Type**: Bug / Error Fix
+
+### Overview
+Updated customer phone entry UX to support international numbers and explicit country prefix selection.
+
+### Changes Made
+- Removed strict 10-digit Indian phone input restrictions in Customer form.
+- Added country code prefix selector with available options: `+91`, `+66`, `+65`.
+- Added phone parsing helper for edit mode to split stored value into prefix + local number.
+- Updated submit logic to combine prefix + local number and validate international digit limits (6-15 digits including country code).
+
+### Files Modified
+- `frontend/src/pages/CustomersPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors after implementation.
+
+---
+
 ## FE-37: Customer Customization Dropdown Refresh After Save
 **Date**: April 7, 2026
 **Status**: ✅ Completed

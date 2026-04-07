@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 GSTIN_REGEX = r"^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$"
 PAN_REGEX = r"^[A-Z]{5}\d{4}[A-Z]$"
-PHONE_REGEX = r"^[6-9]\d{9}$"
+PHONE_REGEX = r"^\+?[0-9]{6,15}$"
 
 
 class CustomerBase(BaseModel):
@@ -17,8 +17,8 @@ class CustomerBase(BaseModel):
     customer_type: str = "regular"  # REQUIRED: Must be one of ["regular", "dealer", "distributor", "retail"]
 
     # === Contact Information ===
-    phone: str  # REQUIRED: 10-digit Indian mobile number starting with 6-9
-    alternate_phone: Optional[str] = None  # Optional secondary phone number
+    phone: str  # REQUIRED: phone number with optional country code (e.g. +919876543210, +66812345678)
+    alternate_phone: Optional[str] = None  # Optional secondary phone number (same format)
     email: Optional[str] = None  # Optional: Must be valid email format if provided
 
     # === Tax Identifiers ===
@@ -59,11 +59,17 @@ class CustomerBase(BaseModel):
         if not value:
             return value
         import re
-        if not re.match(PHONE_REGEX, value):
+
+        cleaned = re.sub(r"[\s\-()]", "", value)
+        normalized = cleaned
+        if cleaned.startswith("+"):
+            normalized = "+" + cleaned[1:]
+
+        if not re.match(PHONE_REGEX, normalized):
             raise ValueError(
-                "Invalid phone number. Must be 10 digits starting with 6-9 (e.g., 9000000001)"
+                "Invalid phone number. Use 6-15 digits with optional country code prefix (e.g., +919876543210, +66812345678, 812345678)"
             )
-        return value
+        return normalized
 
     @field_validator("email")
     @classmethod

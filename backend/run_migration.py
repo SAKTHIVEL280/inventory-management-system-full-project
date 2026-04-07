@@ -71,6 +71,7 @@ def main() -> int:
         "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS gstin_status VARCHAR(20) NOT NULL DEFAULT 'non-registered'",
         "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS business_type VARCHAR(20) NOT NULL DEFAULT 'domestic'",
         "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS billing_country VARCHAR(100)",
+        "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS currency_code VARCHAR(10) NOT NULL DEFAULT 'INR'",
         "ALTER TABLE company ADD COLUMN IF NOT EXISTS gstin_status VARCHAR(20) NOT NULL DEFAULT 'non-registered'",
         "ALTER TABLE company ADD COLUMN IF NOT EXISTS company_director_name VARCHAR(255)",
         "ALTER TABLE company ADD COLUMN IF NOT EXISTS company_director_contact VARCHAR(255)",
@@ -167,6 +168,10 @@ def main() -> int:
                     ('customer', 'state', 'Delhi', 'Delhi', 29, TRUE)
                 ON CONFLICT (module, field_name, option_value) DO NOTHING
                 """,
+
+            # Customer international phone support
+            "ALTER TABLE customers ALTER COLUMN phone TYPE VARCHAR(20)",
+            "ALTER TABLE customers ALTER COLUMN alternate_phone TYPE VARCHAR(20)",
     ]
 
     with engine.begin() as conn:

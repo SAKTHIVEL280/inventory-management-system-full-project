@@ -179,11 +179,18 @@ export interface Supplier {
   bank_ifsc?: string | null;
   place_of_supply?: string | null;
   payment_terms_days: number;
+  currency_code: string;
   opening_balance: number;
   opening_balance_type: 'dr' | 'cr';
   is_active: boolean;
   created_at?: string | null;
   updated_at?: string | null;
+}
+
+export interface SupplierCustomizationOptions {
+  countries: string[];
+  currencies: string[];
+  states: string[];
 }
 
 export interface ProductCategory {

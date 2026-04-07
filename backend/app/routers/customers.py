@@ -9,7 +9,6 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import require_permissions
-from app.models.company import Company
 from app.models.customer import Customer
 from app.models.customization_option import CustomizationOption
 from app.models.user import User
@@ -141,20 +140,6 @@ def _generate_customer_code(db: Session, payload: CustomerCreateRequest | Custom
             max_seq = max(max_seq, int(match.group(1)))
 
     return f"{prefix}-{str(max_seq + 1).zfill(5)}"
-
-
-def _apply_company_billing_defaults(db: Session, payload: CustomerCreateRequest | CustomerUpdateRequest) -> None:
-    company = db.query(Company).first()
-    if not company:
-        return
-
-    payload.billing_address_line1 = payload.billing_address_line1 or company.address_line1
-    payload.billing_address_line2 = payload.billing_address_line2 or company.address_line2
-    payload.billing_city = payload.billing_city or company.city
-    payload.billing_state = payload.billing_state or company.state
-    payload.billing_state_code = payload.billing_state_code or company.state_code
-    payload.billing_pincode = payload.billing_pincode or company.pincode
-    payload.billing_country = payload.billing_country or "India"
 
 
 def _apply_gstin_policy(payload: CustomerCreateRequest | CustomerUpdateRequest) -> None:
@@ -415,7 +400,6 @@ async def create_customer(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("customers_write")),
 ):
-    _apply_company_billing_defaults(db, payload)
     _apply_gstin_policy(payload)
     _normalize_customer_currency(payload)
 

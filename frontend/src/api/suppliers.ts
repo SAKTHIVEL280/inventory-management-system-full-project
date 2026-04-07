@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import { Supplier, PaginatedResponse } from '../types';
+import { Supplier, SupplierCustomizationOptions, PaginatedResponse } from '../types';
 
 type CreateSupplierPayload = {
   supplier_code?: string | null;
@@ -26,6 +26,7 @@ type CreateSupplierPayload = {
   bank_ifsc?: string | null;
   place_of_supply?: string | null;
   payment_terms_days: number;
+  currency_code: string;
   opening_balance: number;
   opening_balance_type: 'dr' | 'cr';
   is_active: boolean;
@@ -46,6 +47,11 @@ export const suppliersApi = {
 
   get: async (id: string): Promise<Supplier> => {
     const response = await apiClient.get<Supplier>(`/api/v1/suppliers/${id}`);
+    return response.data;
+  },
+
+  getCustomizationOptions: async (): Promise<SupplierCustomizationOptions> => {
+    const response = await apiClient.get<SupplierCustomizationOptions>('/api/v1/suppliers/customization-options');
     return response.data;
   },
 

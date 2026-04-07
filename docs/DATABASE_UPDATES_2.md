@@ -2,6 +2,103 @@
 
 ---
 
+## DB-35: Retired Redundant Standalone SQL Scripts
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Scope**: Migration cleanup (CUS-012 onward)
+**Module**: Database Migration Packaging
+**Type**: Maintenance / Cleanup
+
+### Overview
+Removed redundant standalone SQL scripts that were already fully represented in consolidated migration packs and migration runner statements.
+
+### Removed Files
+- `database/04_customer_customization_options.sql`
+- `database/05_customer_phone_international_length.sql`
+- `database/06_supplier_currency_code.sql`
+- `database/PRODUCT_BASE_UNIT_NON_UNIQUE.sql`
+
+### Notes
+- Equivalent statements remain available in `database/ALL_UPDATES_2.sql`, `database/ALL_UPDATES_03.sql`, and `backend/run_migration.py`.
+
+---
+
+## DB-34: Consolidated SQL Pack Created in ALL_UPDATES_03.sql
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Scope**: CUS-012 onward (DB-30, DB-31, DB-32, DB-33)
+**Module**: Database Migration Packaging
+**Type**: Maintenance / Consolidation
+
+### Overview
+Created `ALL_UPDATES_03.sql` to consolidate database updates from CUS-012 phase onward into a single idempotent SQL pack.
+
+### Changes Made
+- Added new consolidated migration file: `database/ALL_UPDATES_03.sql`.
+- Included CUS-012 note (no DB changes required).
+- Included customer customization options migration + seeds (country/currency/state).
+- Included customer phone column length update for international numbers.
+- Included supplier currency column addition.
+
+### Files Modified
+- `database/ALL_UPDATES_03.sql`
+
+---
+
+## DB-33: SUP-011 Supplier Currency Field Addition
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Test Case**: SUP-011
+**Module**: Supplier
+**Type**: Enhancement
+
+### Overview
+Added supplier currency field support for Supplier Master and aligned migration coverage for both fresh and existing databases.
+
+### Database Check
+- Verified `suppliers.currency_code` did not exist in current supplier table definition, so a new column migration was required.
+
+### Changes Made
+- Added `currency_code VARCHAR(10) NOT NULL DEFAULT 'INR'` to suppliers table in base schema.
+- Added same `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statement to consolidated `ALL_UPDATES_2.sql`.
+- Added same compatibility statement to `backend/run_migration.py`.
+- Included same statement in `database/ALL_UPDATES_03.sql`.
+
+### Files Modified
+- `database/01_schema.sql`
+- `database/ALL_UPDATES_2.sql`
+- `database/ALL_UPDATES_03.sql`
+- `backend/run_migration.py`
+
+---
+
+## DB-32: CUS-016 Customer Phone Column Length Update for International Prefixes
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Test Case**: CUS-016
+**Module**: Customer
+**Type**: Bug / Error Fix
+
+### Overview
+Adjusted customer phone column length to safely store international-prefixed values.
+
+### Database Check
+- Verified existing customer phone fields already existed (`phone`, `alternate_phone`); no new field was created.
+
+### Changes Made
+- Increased `customers.phone` and `customers.alternate_phone` type from `VARCHAR(15)` to `VARCHAR(20)`.
+- Added same alteration statements to consolidated `ALL_UPDATES_2.sql`.
+- Added same alteration statements to `backend/run_migration.py` for existing DB compatibility.
+- Included same alterations in `database/ALL_UPDATES_03.sql`.
+
+### Files Modified
+- `database/01_schema.sql`
+- `database/ALL_UPDATES_2.sql`
+- `database/ALL_UPDATES_03.sql`
+- `backend/run_migration.py`
+
+---
+
 ## DB-31: Customer Customization Options - Added State Seed Values
 **Date**: April 7, 2026
 **Status**: ✅ Completed
@@ -14,13 +111,13 @@ Extended customization option seed data to include customer state values so stat
 ### Changes Made
 - Added default customer state option inserts to base schema.
 - Added same state inserts to consolidated `ALL_UPDATES_2.sql`.
-- Added same state inserts to dedicated migration file `04_customer_customization_options.sql`.
 - Added same state inserts to `backend/run_migration.py` for existing DB compatibility.
+- Included same state inserts in `database/ALL_UPDATES_03.sql`.
 
 ### Files Modified
 - `database/01_schema.sql`
 - `database/ALL_UPDATES_2.sql`
-- `database/04_customer_customization_options.sql`
+- `database/ALL_UPDATES_03.sql`
 - `backend/run_migration.py`
 
 ---
@@ -41,16 +138,16 @@ Added centralized customization table support to store customer country/currency
 ### Changes Made
 - Added `customization_options` table in base schema.
 - Seeded default customer options (currencies and countries).
-- Added new migration SQL file for this feature.
 - Added same migration statements to consolidated `ALL_UPDATES_2.sql`.
+- Included same migration statements in `database/ALL_UPDATES_03.sql`.
 
 ### Files Modified
 - `database/01_schema.sql`
-- `database/04_customer_customization_options.sql`
 - `database/ALL_UPDATES_2.sql`
+- `database/ALL_UPDATES_03.sql`
 
 ### Notes
-- For existing databases, apply `backend/run_migration.py` or execute `database/04_customer_customization_options.sql`.
+- For existing databases, apply `backend/run_migration.py` or execute `database/ALL_UPDATES_03.sql`.
 
 ---
 
@@ -528,7 +625,6 @@ Fixed database constraint mismatch where product Base Unit values (stored in `pr
 - Updated compatibility migration runner to apply the fix on existing databases.
 
 ### Files Modified
-- `database/PRODUCT_BASE_UNIT_NON_UNIQUE.sql` - Migration script (NEW)
 - `database/ALL_UPDATES_2.sql` - Added non-unique SKU migration section
 - `backend/run_migration.py` - Added idempotent migration statements
 - `database/01_schema.sql` - Removed `UNIQUE` from `sku` in schema reference

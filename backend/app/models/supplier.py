@@ -38,6 +38,7 @@ class Supplier(Base):
     bank_ifsc = Column(String(20), nullable=True)
 
     payment_terms_days = Column(Integer, nullable=False, default=30)
+    currency_code = Column(String(10), nullable=False, default="INR")
     opening_balance = Column(Integer, nullable=False, default=0)
     opening_balance_type = Column(String(2), nullable=False, default="cr")
 

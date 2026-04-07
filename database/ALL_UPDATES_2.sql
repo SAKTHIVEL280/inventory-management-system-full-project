@@ -247,4 +247,21 @@ VALUES
 ON CONFLICT (module, field_name, option_value) DO NOTHING;
 
 -- ============================================================================
+-- 11. Customer International Phone Length Support
+-- ============================================================================
+
+ALTER TABLE customers
+ALTER COLUMN phone TYPE VARCHAR(20);
+
+ALTER TABLE customers
+ALTER COLUMN alternate_phone TYPE VARCHAR(20);
+
+-- ============================================================================
+-- 12. Supplier Currency Field Support
+-- ============================================================================
+
+ALTER TABLE suppliers
+ADD COLUMN IF NOT EXISTS currency_code VARCHAR(10) NOT NULL DEFAULT 'INR';
+
+-- ============================================================================
 COMMIT;

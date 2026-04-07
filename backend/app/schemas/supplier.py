@@ -35,6 +35,7 @@ class SupplierBase(BaseModel):
     bank_ifsc: Optional[str] = None
 
     payment_terms_days: int = 30
+    currency_code: str = "INR"
     opening_balance: int = 0
     opening_balance_type: str = "cr"
     is_active: bool = True
@@ -109,3 +110,9 @@ class SuppliersListResponse(BaseModel):
     page: int
     page_size: int
     has_more: bool
+
+
+class SupplierCustomizationOptionsResponse(BaseModel):
+    countries: List[str]
+    currencies: List[str]
+    states: List[str]

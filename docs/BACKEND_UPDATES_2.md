@@ -2,6 +2,92 @@
 
 ---
 
+## BE-38: Standardized Migration Runner to run_migration.py
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Migration Runner
+**Type**: Maintenance
+
+### Overview
+Removed temporary `run_migrate.py` alias and standardized migration execution back to `run_migration.py` as the single runner.
+
+### Changes Made
+- Deleted `backend/run_migrate.py`.
+- Confirmed `backend/run_migration.py` remains the canonical migration entrypoint.
+
+### Files Modified
+- `backend/run_migration.py` (canonical runner retained)
+- `docs/BACKEND_UPDATES_2.md`
+
+---
+
+## BE-37: Added run_migrate.py Compatibility Entrypoint
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Migration Runner
+**Type**: Maintenance
+
+### Overview
+Added `run_migrate.py` as an explicit migration entrypoint alias so migration execution stays aligned with requested filename while reusing current compatibility migration logic.
+
+### Note
+This temporary alias was later retired in **BE-38** and project standard was restored to `run_migration.py`.
+
+### Changes Made
+- Created `backend/run_migrate.py` to invoke `run_migration.main()`.
+- Ensures all existing compatibility statements (including CUS-012 onward updates) run through the new entrypoint.
+
+### Files Modified
+- `backend/run_migrate.py`
+
+---
+
+## BE-36: CUS-017/CUS-018 and SUP-011 Backend Alignment
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Test Cases**: CUS-017, CUS-018, SUP-011
+**Module**: Customer, Supplier
+**Type**: Bug / Error + Enhancement
+
+### Overview
+Implemented backend updates to stop customer address auto-fill behavior and added supplier currency/customization support required for Supplier Master typeaheads.
+
+### Changes Made
+- Removed customer create-time company-address defaulting logic so billing address fields are no longer auto-filled server-side.
+- Added supplier `currency_code` field to model and schema.
+- Added supplier currency normalization in create/update flows.
+- Added supplier customization options endpoint: `GET /api/v1/suppliers/customization-options`.
+- Added supplier customization option persistence for typed currency/country/state values.
+
+### Files Modified
+- `backend/app/routers/customers.py`
+- `backend/app/models/supplier.py`
+- `backend/app/schemas/supplier.py`
+- `backend/app/routers/suppliers.py`
+
+---
+
+## BE-35: CUS-016 Customer Phone Validation Internationalization
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Test Case**: CUS-016
+**Module**: Customer
+**Type**: Bug / Error Fix
+
+### Overview
+Removed India-only phone validation and enabled international phone format support for customer records.
+
+### Changes Made
+- Replaced strict India-only regex validation with flexible international validation (6-15 digits with optional `+` country prefix).
+- Added normalization to accept user input with spaces/hyphens/parentheses and persist normalized format.
+- Updated customer model phone column metadata to support longer prefixed numbers.
+
+### Files Modified
+- `backend/app/schemas/customer.py`
+- `backend/app/models/customer.py`
+
+---
+
 ## BE-34: Customer Customization Options - Added State Suggestions Support
 **Date**: April 7, 2026
 **Status**: ✅ Completed

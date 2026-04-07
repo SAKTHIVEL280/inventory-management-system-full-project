@@ -47,11 +47,31 @@ const STATE_OPTIONS = Object.entries(STATE_ABBREVIATIONS)
   .map(([state, code]) => ({ state, code }))
   .sort((left, right) => left.state.localeCompare(right.state));
 
-const COUNTRIES = ['India', 'United States', 'United Arab Emirates', 'United Kingdom', 'Singapore', 'Australia'];
+const toTitleCase = (value: string): string =>
+  value.replace(/\b\w/g, (char) => char.toUpperCase());
+
+const DEFAULT_COUNTRIES = ['India', 'United States', 'United Arab Emirates', 'United Kingdom', 'Singapore', 'Australia'];
+const DEFAULT_CURRENCIES = ['INR', 'USD', 'EUR', 'GBP'];
+const DEFAULT_STATES = STATE_OPTIONS.map(({ state }) => toTitleCase(state));
+const DEFAULT_PHONE_COUNTRY_CODES = ['+91', '+66', '+65', '+44'];
+const KNOWN_PHONE_COUNTRY_CODE_DIGITS = [
+  '1', '7', '20', '27', '30', '31', '32', '33', '34', '36', '39', '40', '41', '43', '44', '45', '46', '47', '48', '49',
+  '51', '52', '53', '54', '55', '56', '57', '58', '60', '61', '62', '63', '64', '65', '66', '81', '82', '84', '86', '90',
+  '91', '92', '93', '94', '95', '98', '211', '212', '213', '216', '218', '220', '221', '222', '223', '224', '225', '226',
+  '227', '228', '229', '230', '231', '232', '233', '234', '235', '236', '237', '238', '239', '240', '241', '242', '243',
+  '244', '245', '246', '247', '248', '249', '250', '251', '252', '253', '254', '255', '256', '257', '258', '260', '261',
+  '262', '263', '264', '265', '266', '267', '268', '269', '290', '291', '297', '298', '299', '350', '351', '352', '353',
+  '354', '355', '356', '357', '358', '359', '370', '371', '372', '373', '374', '375', '376', '377', '378', '380', '381',
+  '382', '383', '385', '386', '387', '389', '420', '421', '423', '500', '501', '502', '503', '504', '505', '506', '507',
+  '508', '509', '590', '591', '592', '593', '594', '595', '596', '597', '598', '599', '670', '672', '673', '674', '675',
+  '676', '677', '678', '679', '680', '681', '682', '683', '685', '686', '687', '688', '689', '690', '691', '692', '850',
+  '852', '853', '855', '856', '880', '886', '960', '961', '962', '963', '964', '965', '966', '967', '968', '970', '971',
+  '972', '973', '974', '975', '976', '977', '992', '993', '994', '995', '996', '998',
+].sort((left, right) => right.length - left.length || left.localeCompare(right));
 
 const schema = z.object({
   company_name: z.string().min(1, 'Company name required'),
-  phone: z.string().regex(/^[6-9]\d{9}$/, 'Must be a valid 10-digit Indian mobile number'),
+  phone: z.string().min(1, 'Phone number required').regex(/^\d+$/, 'Phone number must contain digits only'),
   company_director_name: z.string().optional(),
   company_director_contact: z.string().optional(),
   contact_person: z.string().optional(),
@@ -67,7 +87,14 @@ const schema = z.object({
   billing_country: z.string().optional(),
   pincode: z.string().optional(),
   place_of_supply: z.string().optional(),
-  payment_terms_days: z.coerce.number().min(0).default(30),
+  payment_terms_days: z.preprocess(
+    (value) => {
+      if (value === '' || value === null || value === undefined) return undefined;
+      return Number(value);
+    },
+    z.number().min(0).optional()
+  ),
+  currency_code: z.string().default('INR'),
 }).superRefine((value, ctx) => {
   if (value.gstin_status === 'registered') {
     if (!value.gstin || !value.gstin.trim()) {
@@ -92,6 +119,80 @@ const formatDisplayDate = (value?: string | null): string => {
 
 const normalizeOptional = (value?: string): string | null => value?.trim() || null;
 
+const normalizeStateCodeOptional = (value?: string): string | null => {
+  const trimmed = (value || '').trim();
+  return trimmed ? trimmed.toUpperCase() : null;
+};
+
+const normalizePhoneDigits = (value?: string): string => (value || '').replace(/\D/g, '');
+
+const normalizePhoneCountryCode = (value?: string): string => {
+  const digits = normalizePhoneDigits(value);
+  return digits ? `+${digits}` : '+';
+};
+
+const parsePhoneForEditing = (storedPhone?: string | null): { code: string; localNumber: string } => {
+  const normalized = (storedPhone || '').replace(/\s+/g, '');
+  if (!normalized) {
+    return { code: '+91', localNumber: '' };
+  }
+
+  if (normalized.startsWith('+')) {
+    const digits = normalizePhoneDigits(normalized.slice(1));
+    const matchedCode = KNOWN_PHONE_COUNTRY_CODE_DIGITS.find((code) => digits.startsWith(code));
+    if (matchedCode) {
+      return {
+        code: `+${matchedCode}`,
+        localNumber: digits.slice(matchedCode.length),
+      };
+    }
+  }
+
+  for (const code of DEFAULT_PHONE_COUNTRY_CODES) {
+    if (normalized.startsWith(code)) {
+      return {
+        code,
+        localNumber: normalizePhoneDigits(normalized.slice(code.length)),
+      };
+    }
+  }
+
+  const fallback = /^\+(\d{1,3})(\d+)$/u.exec(normalized);
+  if (fallback) {
+    return {
+      code: `+${fallback[1]}`,
+      localNumber: fallback[2],
+    };
+  }
+
+  return {
+    code: '+91',
+    localNumber: normalizePhoneDigits(normalized),
+  };
+};
+
+const buildDefaultValues = (): SupplierForm => ({
+  company_name: '',
+  company_director_name: '',
+  company_director_contact: '',
+  phone: '',
+  contact_person: '',
+  email: '',
+  gstin_status: 'non-registered',
+  gstin: '',
+  business_type: 'domestic',
+  address_line1: '',
+  address_line2: '',
+  city: '',
+  state: '',
+  state_code: '',
+  billing_country: '',
+  pincode: '',
+  place_of_supply: '',
+  payment_terms_days: undefined,
+  currency_code: 'INR',
+});
+
 const toSupplierCodePreview = (businessType: 'domestic' | 'international', state?: string, stateCode?: string, country?: string): string => {
   const isInternational = businessType === 'international' || !!(country && country.trim().toLowerCase() !== 'india');
   if (isInternational) {
@@ -103,6 +204,92 @@ const toSupplierCodePreview = (businessType: 'domestic' | 'international', state
   const codeFromInput = (stateCode || '').trim().replace(/[^a-zA-Z]/g, '').toUpperCase();
   const finalCode = codeFromState || (codeFromInput.length >= 2 ? codeFromInput.slice(0, 2) : 'NA');
   return `SUPP-${finalCode}-XXXXX`;
+};
+
+type TypeaheadInputProps = {
+  id: string;
+  value: string;
+  options: string[];
+  placeholder: string;
+  onChange: (nextValue: string) => void;
+  className?: string;
+  showAllWhenFocused?: boolean;
+};
+
+const TypeaheadInput = ({
+  id,
+  value,
+  options,
+  placeholder,
+  onChange,
+  className = 'hms-input',
+  showAllWhenFocused = false,
+}: TypeaheadInputProps) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [hasTypedSinceFocus, setHasTypedSinceFocus] = useState(false);
+
+  const filteredOptions = useMemo(() => {
+    const needle = showAllWhenFocused && !hasTypedSinceFocus
+      ? ''
+      : value.trim().toLowerCase();
+    const base = options
+      .map((option) => option.trim())
+      .filter((option) => option.length > 0);
+
+    if (!needle) {
+      return [...new Set(base)].slice(0, 10);
+    }
+
+    const startsWithMatches = base.filter((option) => option.toLowerCase().startsWith(needle));
+    const includesMatches = base.filter(
+      (option) => !option.toLowerCase().startsWith(needle) && option.toLowerCase().includes(needle)
+    );
+
+    return [...new Set([...startsWithMatches, ...includesMatches])].slice(0, 10);
+  }, [hasTypedSinceFocus, options, showAllWhenFocused, value]);
+
+  return (
+    <div className="relative">
+      <input
+        id={id}
+        className={className}
+        value={value}
+        placeholder={placeholder}
+        onFocus={() => {
+          setHasTypedSinceFocus(false);
+          setIsOpen(true);
+        }}
+        onBlur={() => {
+          window.setTimeout(() => setIsOpen(false), 120);
+          setHasTypedSinceFocus(false);
+        }}
+        onChange={(event) => {
+          setHasTypedSinceFocus(true);
+          onChange(event.target.value);
+          setIsOpen(true);
+        }}
+      />
+      {isOpen && filteredOptions.length > 0 && (
+        <div className="absolute z-20 mt-1 max-h-52 w-full overflow-auto rounded-lg border border-neutral-200 bg-white shadow-lg">
+          {filteredOptions.map((option) => (
+            <button
+              key={`${id}-${option}`}
+              type="button"
+              className="block w-full px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                onChange(option);
+                setHasTypedSinceFocus(false);
+                setIsOpen(false);
+              }}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 };
 
 const SuppliersPage = () => {
@@ -118,39 +305,33 @@ const SuppliersPage = () => {
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [createdFrom, setCreatedFrom] = useState('');
   const [createdTo, setCreatedTo] = useState('');
+  const [phoneCountryCode, setPhoneCountryCode] = useState('+91');
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['suppliers'],
     queryFn: () => suppliersApi.list({ page: 1, page_size: 500 }),
   });
 
-  const { register, handleSubmit, reset, setValue, watch } = useForm<SupplierForm>({
-    defaultValues: {
-      company_name: '',
-      company_director_name: '',
-      company_director_contact: '',
-      phone: '',
-      contact_person: '',
-      email: '',
-      gstin_status: 'non-registered',
-      gstin: '',
-      business_type: 'domestic',
-      address_line1: '',
-      address_line2: '',
-      city: '',
-      state: '',
-      state_code: '',
-      billing_country: 'India',
-      pincode: '',
-      place_of_supply: '',
-      payment_terms_days: 30,
+  const { data: customizationOptions } = useQuery({
+    queryKey: ['supplier-customization-options'],
+    queryFn: async () => {
+      try {
+        return await suppliersApi.getCustomizationOptions();
+      } catch {
+        return { countries: DEFAULT_COUNTRIES, currencies: DEFAULT_CURRENCIES, states: DEFAULT_STATES };
+      }
     },
+  });
+
+  const { register, handleSubmit, reset, setValue, watch } = useForm<SupplierForm>({
+    defaultValues: buildDefaultValues(),
   });
 
   const createMutation = useMutation({
     mutationFn: suppliersApi.create,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['suppliers'] });
+      queryClient.invalidateQueries({ queryKey: ['supplier-customization-options'] });
       showSuccess('Supplier created successfully');
       resetForm();
     },
@@ -164,6 +345,7 @@ const SuppliersPage = () => {
     mutationFn: ({ id, payload }: { id: string; payload: Partial<Supplier> }) => suppliersApi.update(id, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['suppliers'] });
+      queryClient.invalidateQueries({ queryKey: ['supplier-customization-options'] });
       showSuccess('Supplier updated successfully');
       resetForm();
     },
@@ -206,35 +388,19 @@ const SuppliersPage = () => {
   const resetForm = () => {
     setEditingItem(null);
     setIsFormOpen(false);
-    reset({
-      company_name: '',
-      company_director_name: '',
-      company_director_contact: '',
-      phone: '',
-      contact_person: '',
-      email: '',
-      gstin_status: 'non-registered',
-      gstin: '',
-      business_type: 'domestic',
-      address_line1: '',
-      address_line2: '',
-      city: '',
-      state: '',
-      state_code: '',
-      billing_country: 'India',
-      pincode: '',
-      place_of_supply: '',
-      payment_terms_days: 30,
-    });
+    setPhoneCountryCode('+91');
+    reset(buildDefaultValues());
   };
 
   const startEdit = (item: Supplier) => {
+    const parsedPhone = parsePhoneForEditing(item.phone);
+    setPhoneCountryCode(normalizePhoneCountryCode(parsedPhone.code));
     setEditingItem(item);
     setIsFormOpen(true);
     setValue('company_name', item.company_name);
     setValue('company_director_name', item.company_director_name ?? '');
     setValue('company_director_contact', item.company_director_contact ?? '');
-    setValue('phone', item.phone);
+    setValue('phone', parsedPhone.localNumber);
     setValue('contact_person', item.contact_person ?? '');
     setValue('email', item.email ?? '');
     setValue('gstin_status', item.gstin_status ?? 'non-registered');
@@ -245,10 +411,11 @@ const SuppliersPage = () => {
     setValue('city', item.city ?? '');
     setValue('state', item.state ?? '');
     setValue('state_code', item.state_code ?? '');
-    setValue('billing_country', item.billing_country ?? 'India');
+    setValue('billing_country', item.billing_country ?? '');
     setValue('pincode', item.pincode ?? '');
     setValue('place_of_supply', item.place_of_supply ?? '');
-    setValue('payment_terms_days', item.payment_terms_days ?? 30);
+    setValue('payment_terms_days', item.payment_terms_days ?? undefined);
+    setValue('currency_code', item.currency_code ?? 'INR');
   };
 
   const onSubmit = (values: SupplierForm): void => {
@@ -258,13 +425,28 @@ const SuppliersPage = () => {
       return;
     }
 
+    const normalizedPhone = normalizePhoneDigits(parsed.data.phone);
+    const normalizedCode = normalizePhoneCountryCode(phoneCountryCode);
+    const countryCodeDigits = normalizePhoneDigits(normalizedCode);
+    if (!countryCodeDigits) {
+      showError('Country code is required.');
+      return;
+    }
+    const totalDigits = countryCodeDigits.length + normalizedPhone.length;
+    if (totalDigits < 6 || totalDigits > 15) {
+      showError('Phone number must contain 6 to 15 digits including country code.');
+      return;
+    }
+
+    const finalPhone = `${normalizedCode}${normalizedPhone}`;
+
     const payload = {
       company_name: parsed.data.company_name.trim(),
       company_director_name: normalizeOptional(parsed.data.company_director_name),
       company_director_contact: normalizeOptional(parsed.data.company_director_contact),
       contact_person: normalizeOptional(parsed.data.contact_person),
       email: normalizeOptional(parsed.data.email),
-      phone: parsed.data.phone.trim(),
+      phone: finalPhone,
       alternate_phone: null,
       gstin_status: parsed.data.gstin_status,
       gstin: parsed.data.gstin_status === 'registered' ? (normalizeOptional(parsed.data.gstin)?.toUpperCase() ?? null) : null,
@@ -274,14 +456,15 @@ const SuppliersPage = () => {
       address_line2: normalizeOptional(parsed.data.address_line2),
       city: normalizeOptional(parsed.data.city),
       state: normalizeOptional(parsed.data.state),
-      state_code: normalizeOptional(parsed.data.state_code),
+      state_code: normalizeStateCodeOptional(parsed.data.state_code),
       billing_country: normalizeOptional(parsed.data.billing_country),
       pincode: normalizeOptional(parsed.data.pincode),
       bank_name: null,
       bank_account_no: null,
       bank_ifsc: null,
       place_of_supply: normalizeOptional(parsed.data.place_of_supply),
-      payment_terms_days: parsed.data.payment_terms_days,
+      payment_terms_days: parsed.data.payment_terms_days ?? editingItem?.payment_terms_days ?? 0,
+      currency_code: parsed.data.currency_code.trim().toUpperCase() || 'INR',
       opening_balance: editingItem?.opening_balance ?? 0,
       opening_balance_type: editingItem?.opening_balance_type ?? 'cr' as const,
       is_active: editingItem?.is_active ?? true,
@@ -380,10 +563,12 @@ const SuppliersPage = () => {
   const isDeleting = deleteMutation.isPending;
   const businessType = watch('business_type');
   const gstinStatus = watch('gstin_status');
-  const state = watch('state');
+  const phoneValue = watch('phone') ?? '';
+  const state = watch('state') ?? '';
   const stateCode = watch('state_code');
-  const country = watch('billing_country');
-  const isIndiaCountry = (country || '').trim().toLowerCase() === 'india';
+  const country = watch('billing_country') ?? '';
+  const currencyCodeValue = watch('currency_code') ?? 'INR';
+  const isIndiaCountry = country.trim().toLowerCase() === 'india';
   const supplierCodePreview = toSupplierCodePreview(businessType, state, stateCode, country);
   const supplierCodeDisplay = editingItem?.supplier_code || supplierCodePreview;
 
@@ -397,6 +582,39 @@ const SuppliersPage = () => {
     setCreatedFrom('');
     setCreatedTo('');
   };
+
+  const countryOptions = useMemo(() => {
+    const merged = [...DEFAULT_COUNTRIES, ...(customizationOptions?.countries ?? [])]
+      .map((countryValue) => countryValue.trim())
+      .filter((countryValue) => countryValue.length > 0);
+    return [...new Set(merged)].sort((left, right) => left.localeCompare(right));
+  }, [customizationOptions]);
+
+  const currencyOptions = useMemo(() => {
+    const merged = [...DEFAULT_CURRENCIES, ...(customizationOptions?.currencies ?? [])]
+      .map((currency) => currency.trim().toUpperCase())
+      .filter((currency) => currency.length > 0);
+    return [...new Set(merged)].sort((left, right) => left.localeCompare(right));
+  }, [customizationOptions]);
+
+  const stateOptions = useMemo(() => {
+    const merged = [...DEFAULT_STATES, ...(customizationOptions?.states ?? [])]
+      .map((stateValue) => stateValue.trim())
+      .filter((stateValue) => stateValue.length > 0);
+    return [...new Set(merged)].sort((left, right) => left.localeCompare(right));
+  }, [customizationOptions]);
+
+  const phoneCountryCodeOptions = useMemo(() => {
+    const merged = [
+      ...DEFAULT_PHONE_COUNTRY_CODES,
+      ...items.map((item) => parsePhoneForEditing(item.phone).code),
+      phoneCountryCode,
+    ]
+      .map((code) => normalizePhoneCountryCode(code))
+      .filter((code) => code !== '+');
+
+    return [...new Set(merged)].sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
+  }, [items, phoneCountryCode]);
 
   useEffect(() => {
     if (!isIndiaCountry) {
@@ -426,26 +644,8 @@ const SuppliersPage = () => {
                     type="button"
                     onClick={() => {
                       setEditingItem(null);
-                      reset({
-                        company_name: '',
-                        company_director_name: '',
-                        company_director_contact: '',
-                        phone: '',
-                        contact_person: '',
-                        email: '',
-                        gstin_status: 'non-registered',
-                        gstin: '',
-                        business_type: 'domestic',
-                        address_line1: '',
-                        address_line2: '',
-                        city: '',
-                        state: '',
-                        state_code: '',
-                        billing_country: 'India',
-                        pincode: '',
-                        place_of_supply: '',
-                        payment_terms_days: 30,
-                      });
+                      reset(buildDefaultValues());
+                      setPhoneCountryCode('+91');
                       setIsFormOpen(true);
                     }}
                     className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary/90"
@@ -551,8 +751,33 @@ const SuppliersPage = () => {
                   <input id="supplier_contact" className="hms-input" placeholder="Contact person" {...register('contact_person')} />
                 </div>
                 <div>
-                  <label htmlFor="supplier_phone" className="hms-label">Phone</label>
-                  <input id="supplier_phone" className="hms-input" placeholder="Phone" autoComplete="tel" {...register('phone')} />
+                  <label className="hms-label">Phone</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label htmlFor="supplier_phone_country_code" className="sr-only">Country code</label>
+                      <TypeaheadInput
+                        id="supplier_phone_country_code"
+                        value={phoneCountryCode}
+                        options={phoneCountryCodeOptions}
+                        placeholder="Type country code"
+                        showAllWhenFocused
+                        onChange={(nextValue) => {
+                          setPhoneCountryCode(normalizePhoneCountryCode(nextValue));
+                        }}
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label htmlFor="supplier_phone" className="sr-only">Phone number</label>
+                      <input
+                        id="supplier_phone"
+                        type="tel"
+                        className="hms-input"
+                        placeholder="Enter phone number"
+                        autoComplete="tel"
+                        {...register('phone')}
+                      />
+                    </div>
+                  </div>
                 </div>
                 <div>
                   <label htmlFor="supplier_email" className="hms-label">Email</label>
@@ -598,18 +823,16 @@ const SuppliersPage = () => {
                   </div>
                   <div>
                     <label htmlFor="supplier_state" className="hms-label">State</label>
-                    {isIndiaCountry ? (
-                      <select id="supplier_state" className="hms-input" {...register('state')}>
-                        <option value="">Select state</option>
-                        {STATE_OPTIONS.map(({ state: stateValue, code }) => (
-                          <option key={stateValue} value={stateValue}>
-                            {stateValue.replace(/\b\w/g, (char) => char.toUpperCase())} ({code})
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input id="supplier_state" className="hms-input" placeholder="State / Province" {...register('state')} />
-                    )}
+                    <input type="hidden" {...register('state')} />
+                    <TypeaheadInput
+                      id="supplier_state"
+                      value={state}
+                      options={stateOptions}
+                      placeholder="Type or select state"
+                      onChange={(nextValue) => {
+                        setValue('state', nextValue, { shouldDirty: true });
+                      }}
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
@@ -630,19 +853,39 @@ const SuppliersPage = () => {
                 </div>
                 <div>
                   <label htmlFor="supplier_country" className="hms-label">Country</label>
-                  <select id="supplier_country" className="hms-input" {...register('billing_country')}>
-                    {COUNTRIES.map((countryValue) => (
-                      <option key={countryValue} value={countryValue}>{countryValue}</option>
-                    ))}
-                  </select>
+                  <input type="hidden" {...register('billing_country')} />
+                  <TypeaheadInput
+                    id="supplier_country"
+                    value={country}
+                    options={countryOptions}
+                    placeholder="Type or select country"
+                    onChange={(nextValue) => {
+                      setValue('billing_country', nextValue, { shouldDirty: true });
+                    }}
+                  />
                 </div>
                 <div>
                   <label htmlFor="supplier_pos" className="hms-label">Place of Supply</label>
                   <input id="supplier_pos" className="hms-input" placeholder="e.g. Tamil Nadu" {...register('place_of_supply')} />
                 </div>
-                <div>
-                  <label htmlFor="supplier_payment_terms" className="hms-label">Payment Terms (Days)</label>
-                  <input id="supplier_payment_terms" type="number" min="0" className="hms-input" placeholder="e.g. 30" {...register('payment_terms_days')} />
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label htmlFor="supplier_payment_terms" className="hms-label">Payment Terms (Days)</label>
+                    <input id="supplier_payment_terms" type="number" min="0" className="hms-input" placeholder="e.g. 30" {...register('payment_terms_days')} />
+                  </div>
+                  <div>
+                    <label htmlFor="supplier_currency_code" className="hms-label">Currency</label>
+                    <input type="hidden" {...register('currency_code')} />
+                    <TypeaheadInput
+                      id="supplier_currency_code"
+                      value={currencyCodeValue}
+                      options={currencyOptions}
+                      placeholder="Type currency code (e.g. INR)"
+                      onChange={(nextValue) => {
+                        setValue('currency_code', nextValue.toUpperCase(), { shouldDirty: true });
+                      }}
+                    />
+                  </div>
                 </div>
                 <button type="submit" disabled={isSaving} className="w-full rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-primary/20 transition hover:bg-primary/90 disabled:opacity-60">
                   {isSaving ? 'Saving...' : editingItem ? 'Update Supplier' : 'Create Supplier'}
