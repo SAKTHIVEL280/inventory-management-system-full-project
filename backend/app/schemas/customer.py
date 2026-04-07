@@ -177,3 +177,9 @@ class CustomersListResponse(BaseModel):
     page: int
     page_size: int
     has_more: bool
+
+
+class CustomerCustomizationOptionsResponse(BaseModel):
+    countries: List[str]
+    currencies: List[str]
+    states: List[str]

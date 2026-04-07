@@ -2,6 +2,104 @@
 
 ---
 
+## BE-34: Customer Customization Options - Added State Suggestions Support
+**Date**: April 7, 2026
+**Status**: ✅ Completed
+**Module**: Customer Master
+**Type**: Enhancement / UX Fix
+
+### Overview
+Extended customer customization options backend to include state suggestions and auto-persist typed states.
+
+### Changes Made
+- Extended customization options response to include `states` list.
+- Updated `GET /api/v1/customers/customization-options` to return `country`, `currency`, and `state` values.
+- Added default state fallback list in backend.
+- Added auto-upsert for `billing_state` and `shipping_state` values into `customization_options` during customer create/update.
+
+### Files Modified
+- `backend/app/schemas/customer.py`
+- `backend/app/routers/customers.py`
+
+---
+
+## BE-33: Customer Country/Currency Customization Options Backend
+**Date**: April 7, 2026
+**Status**: ✅ Completed
+**Module**: Customer Master
+**Type**: Enhancement
+
+### Overview
+Implemented backend support for configurable customer country/currency options using a centralized customization table.
+
+### Changes Made
+- Added new model `CustomizationOption` for module-field scoped option storage.
+- Added `GET /api/v1/customers/customization-options` to return active country and currency options for Customer UI.
+- Added customer create/update logic to normalize currency and auto-upsert new currency/country values into customization options.
+- Added schema response model for customization options.
+- Updated compatibility migration runner to create and seed customization options for existing databases.
+
+### Files Modified
+- `backend/app/models/customization_option.py`
+- `backend/app/models/__init__.py`
+- `backend/app/schemas/customer.py`
+- `backend/app/routers/customers.py`
+- `backend/run_migration.py`
+
+---
+
+## BE-32: Customer CUS-012 UI Enhancements - No Backend Changes Required
+**Date**: April 7, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Test Case**: CUS-012 (Credit label rename, conditional shipping field visibility)
+**Module**: Customer Master
+**Type**: Enhancement - Frontend Behavior
+
+### Overview
+Validated backend impact for Customer Master UI enhancement requests.
+
+### Findings
+- Backend already supports `same_as_billing` and separate shipping address fields.
+- Customer create/update normalization logic already copies billing to shipping only when `same_as_billing` is true.
+- No backend endpoint/model/schema code changes were required.
+
+### Conclusion
+No backend changes required.
+
+---
+
+## BE-31: Full Project Architecture Baseline Review - No Backend Changes Required
+**Date**: April 7, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Module**: Backend Architecture / Workflows / Standards
+**Type**: Baseline Verification
+
+### Overview
+Completed a full backend architecture and workflow alignment review before starting new implementation tasks.
+
+### Files Reviewed
+- `backend/app/main.py`
+- `backend/app/config.py`
+- `backend/app/dependencies.py`
+- `backend/app/services/auth_service.py`
+- `backend/app/services/gst_service.py`
+- `backend/app/services/stock_service.py`
+- `backend/app/services/order_number_service.py`
+- `backend/app/routers/purchase.py`
+- `backend/app/routers/sales.py`
+- `docs/workflows/WF_03_PURCHASE.md`
+- `docs/workflows/WF_04_SALES.md`
+- `docs/guides/CODING_STANDARDS.md`
+
+### Findings
+- Backend routing, auth dependencies, stock ledger refresh flow, and purchase/sales status transitions are in place.
+- No backend code updates were required for this onboarding task.
+
+### Conclusion
+No backend changes required.
+
+---
+
 ## BE-30: Company Form Reinitialization Fix - No Backend Changes Required
 **Date**: April 6, 2026
 **Status**: ✅ Verified - No Changes Needed

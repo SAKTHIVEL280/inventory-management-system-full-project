@@ -1,5 +1,136 @@
 # Frontend Updates Log
 
+## FE-37: Customer Customization Dropdown Refresh After Save
+**Date**: April 7, 2026
+**Status**: ✅ Completed
+**Module**: Customer
+**Type**: Bug Fix
+
+### Overview
+Fixed issue where newly added customer country/currency/state values were persisted but did not appear immediately in typeahead dropdown suggestions.
+
+### Changes Made
+- Invalidated `customer-customization-options` query after successful customer create.
+- Invalidated `customer-customization-options` query after successful customer update.
+- This forces immediate refetch so newly added values appear in suggestion lists.
+
+### Files Modified
+- `frontend/src/pages/CustomersPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors after implementation.
+
+---
+
+## FE-36: Customer Typeahead Dropdowns for Currency/Country/State
+**Date**: April 7, 2026
+**Status**: ✅ Completed
+**Module**: Customer
+**Type**: Enhancement / UX Fix
+
+### Overview
+Replaced browser-dependent datalist behavior with a custom typeahead dropdown component to ensure suggestions are visible while typing.
+
+### Changes Made
+- Added reusable in-page `TypeaheadInput` component with filtered suggestion list and click-to-select behavior.
+- Replaced Currency input with typeahead suggestions.
+- Replaced Billing/Shipping Country inputs with typeahead suggestions.
+- Implemented same typeahead behavior for Billing/Shipping State fields.
+- Added state options fallback and merged options handling from customization API.
+
+### Files Modified
+- `frontend/src/pages/CustomersPage.tsx`
+- `frontend/src/types/index.ts`
+
+### Validation
+- Verified no TypeScript/IDE errors after implementation.
+
+---
+
+## FE-35: Customer Country/Currency Editable Inputs with Customization Options
+**Date**: April 7, 2026
+**Status**: ✅ Completed
+**Module**: Customer
+**Type**: Enhancement
+
+### Overview
+Updated Customer Master country and currency controls to be editable while still offering suggestions from backend customization options.
+
+### Changes Made
+- Added customer API method to fetch customization options.
+- Added frontend type for customization options response.
+- Replaced fixed Currency dropdown with editable input + datalist suggestions.
+- Replaced fixed Billing/Shipping Country dropdowns with editable inputs + datalist suggestions.
+- Added fallback defaults when customization options API is unavailable.
+- Normalized submitted currency to uppercase before API submit.
+
+### Files Modified
+- `frontend/src/api/customers.ts`
+- `frontend/src/types/index.ts`
+- `frontend/src/pages/CustomersPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors after implementation.
+
+---
+
+## FE-34: Customer Master CUS-012 - Credit Label Rename and Conditional Shipping Address
+**Date**: April 7, 2026
+**Status**: ✅ Completed
+**Test Case**: CUS-012
+**Module**: Customer
+**Type**: Enhancement
+
+### Overview
+Implemented Customer Master form updates for the requested label rename and conditional shipping-address input visibility.
+
+### Changes Made
+- Renamed form label from `Credit Limit` to `Credit Limit in Currency`.
+- Added separate shipping address form inputs that render only when `Shipping same as billing` is unchecked.
+- Included shipping fields in customer form schema/default values and edit-mode prefill mapping.
+- Updated create/update payload mapping to:
+  - send shipping fields as `null` when `same_as_billing` is true
+  - send entered shipping values when `same_as_billing` is false
+
+### Files Modified
+- `frontend/src/pages/CustomersPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors after change.
+- Confirmed expected behavior: unchecking shipping checkbox shows separate shipping address section.
+
+---
+
+## FE-33: Full Project Architecture Baseline Review - No Frontend Changes Required
+**Date**: April 7, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Module**: Frontend Architecture / Routing / API Layer
+**Type**: Baseline Verification
+
+### Overview
+Completed a full frontend architecture and workflow alignment review before starting new implementation tasks.
+
+### Files Reviewed
+- `frontend/src/App.tsx`
+- `frontend/src/main.tsx`
+- `frontend/src/api/client.ts`
+- `frontend/src/api/auth.ts`
+- `frontend/src/store/auth.ts`
+- `frontend/src/routes/ProtectedRoute.tsx`
+- `docs/design/DESIGN_SYSTEM_MASTER.md`
+- `docs/workflows/WF_03_PURCHASE.md`
+- `docs/workflows/WF_04_SALES.md`
+- `docs/guides/CODING_STANDARDS.md`
+
+### Findings
+- Frontend route protection, auth bootstrap/refresh behavior, and API error handling patterns are correctly implemented.
+- No frontend code updates were required for this onboarding task.
+
+### Conclusion
+No frontend changes required.
+
+---
+
 ## FE-32: Company Form Reinitialization Fix (Typing-Time Refresh-Like Behavior)
 **Date**: April 6, 2026
 **Status**: ✅ Completed

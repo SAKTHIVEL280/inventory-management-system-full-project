@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import { Customer, PaginatedResponse } from '../types';
+import { Customer, CustomerCustomizationOptions, PaginatedResponse } from '../types';
 
 type CreateCustomerPayload = {
   customer_code?: string | null;
@@ -52,6 +52,11 @@ export const customersApi = {
 
   get: async (id: string): Promise<Customer> => {
     const response = await apiClient.get<Customer>(`/api/v1/customers/${id}`);
+    return response.data;
+  },
+
+  getCustomizationOptions: async (): Promise<CustomerCustomizationOptions> => {
+    const response = await apiClient.get<CustomerCustomizationOptions>('/api/v1/customers/customization-options');
     return response.data;
   },
 

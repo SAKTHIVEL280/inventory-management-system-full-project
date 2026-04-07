@@ -48,7 +48,12 @@ const STATE_OPTIONS = Object.entries(STATE_ABBREVIATIONS)
   .map(([state, code]) => ({ state, code }))
   .sort((left, right) => left.state.localeCompare(right.state));
 
-const COUNTRIES = ['India', 'United States', 'United Arab Emirates', 'United Kingdom', 'Singapore', 'Australia'];
+const toTitleCase = (value: string): string =>
+  value.replace(/\b\w/g, (char) => char.toUpperCase());
+
+const DEFAULT_COUNTRIES = ['India', 'United States', 'United Arab Emirates', 'United Kingdom', 'Singapore', 'Australia'];
+const DEFAULT_CURRENCIES = ['INR', 'USD', 'EUR', 'GBP'];
+const DEFAULT_STATES = STATE_OPTIONS.map(({ state }) => toTitleCase(state));
 
 const schema = z.object({
   company_name: z.string().min(1, 'Company name required'),
@@ -69,6 +74,13 @@ const schema = z.object({
   billing_country: z.string().optional(),
   billing_pincode: z.string().optional(),
   same_as_billing: z.boolean().default(true),
+  shipping_address_line1: z.string().optional(),
+  shipping_address_line2: z.string().optional(),
+  shipping_city: z.string().optional(),
+  shipping_state: z.string().optional(),
+  shipping_state_code: z.string().optional(),
+  shipping_country: z.string().optional(),
+  shipping_pincode: z.string().optional(),
   payment_terms_days: z.coerce.number().min(0, 'Cannot be negative').default(30),
   credit_limit: z.coerce.number().min(0, 'Cannot be negative').default(0),
   currency_code: z.string().default('INR'),
@@ -115,6 +127,13 @@ const buildDefaultValues = (company?: { address_line1?: string | null; address_l
   billing_country: 'India',
   billing_pincode: company?.pincode ?? '',
   same_as_billing: true,
+  shipping_address_line1: '',
+  shipping_address_line2: '',
+  shipping_city: '',
+  shipping_state: '',
+  shipping_state_code: '',
+  shipping_country: 'India',
+  shipping_pincode: '',
   payment_terms_days: 30,
   credit_limit: 0,
   currency_code: 'INR',
@@ -139,6 +158,81 @@ const clearZeroOnFocus = (event: FocusEvent<HTMLInputElement>) => {
   }
 };
 
+type TypeaheadInputProps = {
+  id: string;
+  value: string;
+  options: string[];
+  placeholder: string;
+  onChange: (nextValue: string) => void;
+  className?: string;
+};
+
+const TypeaheadInput = ({
+  id,
+  value,
+  options,
+  placeholder,
+  onChange,
+  className = 'hms-input',
+}: TypeaheadInputProps) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const filteredOptions = useMemo(() => {
+    const needle = value.trim().toLowerCase();
+    const base = options
+      .map((option) => option.trim())
+      .filter((option) => option.length > 0);
+
+    if (!needle) {
+      return [...new Set(base)].slice(0, 10);
+    }
+
+    const startsWithMatches = base.filter((option) => option.toLowerCase().startsWith(needle));
+    const includesMatches = base.filter(
+      (option) => !option.toLowerCase().startsWith(needle) && option.toLowerCase().includes(needle)
+    );
+
+    return [...new Set([...startsWithMatches, ...includesMatches])].slice(0, 10);
+  }, [options, value]);
+
+  return (
+    <div className="relative">
+      <input
+        id={id}
+        className={className}
+        value={value}
+        placeholder={placeholder}
+        onFocus={() => setIsOpen(true)}
+        onBlur={() => {
+          window.setTimeout(() => setIsOpen(false), 120);
+        }}
+        onChange={(event) => {
+          onChange(event.target.value);
+          setIsOpen(true);
+        }}
+      />
+      {isOpen && filteredOptions.length > 0 && (
+        <div className="absolute z-20 mt-1 max-h-52 w-full overflow-auto rounded-lg border border-neutral-200 bg-white shadow-lg">
+          {filteredOptions.map((option) => (
+            <button
+              key={`${id}-${option}`}
+              type="button"
+              className="block w-full px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                onChange(option);
+                setIsOpen(false);
+              }}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const CustomersPage = () => {
   const queryClient = useQueryClient();
   const [editingItem, setEditingItem] = useState<Customer | null>(null);
@@ -156,6 +250,17 @@ const CustomersPage = () => {
   const { data, isLoading, isError } = useQuery({
     queryKey: ['customers'],
     queryFn: () => customersApi.list({ page: 1, page_size: 500 }),
+  });
+
+  const { data: customizationOptions } = useQuery({
+    queryKey: ['customer-customization-options'],
+    queryFn: async () => {
+      try {
+        return await customersApi.getCustomizationOptions();
+      } catch {
+        return { countries: DEFAULT_COUNTRIES, currencies: DEFAULT_CURRENCIES, states: DEFAULT_STATES };
+      }
+    },
   });
 
   const { data: companyData } = useQuery({
@@ -178,6 +283,7 @@ const CustomersPage = () => {
     mutationFn: customersApi.create,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
+      queryClient.invalidateQueries({ queryKey: ['customer-customization-options'] });
       resetForm();
       showSuccess('Customer created successfully');
     },
@@ -192,6 +298,7 @@ const CustomersPage = () => {
     mutationFn: ({ id, payload }: { id: string; payload: Partial<Customer> }) => customersApi.update(id, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
+      queryClient.invalidateQueries({ queryKey: ['customer-customization-options'] });
       resetForm();
       showSuccess('Customer updated successfully');
     },
@@ -257,6 +364,13 @@ const CustomersPage = () => {
     setValue('billing_country', item.billing_country ?? 'India');
     setValue('billing_pincode', item.billing_pincode ?? '');
     setValue('same_as_billing', item.same_as_billing ?? true);
+    setValue('shipping_address_line1', item.shipping_address_line1 ?? '');
+    setValue('shipping_address_line2', item.shipping_address_line2 ?? '');
+    setValue('shipping_city', item.shipping_city ?? '');
+    setValue('shipping_state', item.shipping_state ?? '');
+    setValue('shipping_state_code', item.shipping_state_code ?? '');
+    setValue('shipping_country', item.shipping_country ?? 'India');
+    setValue('shipping_pincode', item.shipping_pincode ?? '');
     setValue('payment_terms_days', item.payment_terms_days ?? 30);
     setValue('credit_limit', item.credit_limit ?? 0);
     setValue('currency_code', item.currency_code ?? 'INR');
@@ -290,17 +404,17 @@ const CustomersPage = () => {
       billing_state_code: normalizeOptional(parsed.data.billing_state_code),
       billing_country: normalizeOptional(parsed.data.billing_country),
       billing_pincode: normalizeOptional(parsed.data.billing_pincode),
-      shipping_address_line1: null,
-      shipping_address_line2: null,
-      shipping_city: null,
-      shipping_state: null,
-      shipping_state_code: null,
-      shipping_country: null,
-      shipping_pincode: null,
       same_as_billing: parsed.data.same_as_billing ?? true,
+      shipping_address_line1: parsed.data.same_as_billing ? null : normalizeOptional(parsed.data.shipping_address_line1),
+      shipping_address_line2: parsed.data.same_as_billing ? null : normalizeOptional(parsed.data.shipping_address_line2),
+      shipping_city: parsed.data.same_as_billing ? null : normalizeOptional(parsed.data.shipping_city),
+      shipping_state: parsed.data.same_as_billing ? null : normalizeOptional(parsed.data.shipping_state),
+      shipping_state_code: parsed.data.same_as_billing ? null : normalizeOptional(parsed.data.shipping_state_code),
+      shipping_country: parsed.data.same_as_billing ? null : normalizeOptional(parsed.data.shipping_country),
+      shipping_pincode: parsed.data.same_as_billing ? null : normalizeOptional(parsed.data.shipping_pincode),
       credit_limit: parsed.data.credit_limit,
       payment_terms_days: parsed.data.payment_terms_days,
-      currency_code: parsed.data.currency_code,
+      currency_code: parsed.data.currency_code.trim().toUpperCase() || 'INR',
       opening_balance: editingItem?.opening_balance ?? 0,
       opening_balance_type: editingItem?.opening_balance_type ?? 'dr' as const,
       is_active: editingItem?.is_active ?? true,
@@ -404,11 +518,14 @@ const CustomersPage = () => {
   const isSaving = createMutation.isPending || updateMutation.isPending;
   const businessType = watch('business_type');
   const gstinStatus = watch('gstin_status');
-  const billingState = watch('billing_state');
+  const currencyCodeValue = watch('currency_code') ?? 'INR';
+  const billingStateValue = watch('billing_state') ?? '';
+  const shippingStateValue = watch('shipping_state') ?? '';
   const billingStateCode = watch('billing_state_code');
-  const billingCountry = watch('billing_country');
-  const isIndiaBillingCountry = (billingCountry || '').trim().toLowerCase() === 'india';
-  const customerCodePreview = toCustomerCodePreview(businessType, billingState, billingStateCode, billingCountry);
+  const billingCountryValue = watch('billing_country') ?? '';
+  const sameAsBilling = watch('same_as_billing');
+  const shippingCountryValue = watch('shipping_country') ?? '';
+  const customerCodePreview = toCustomerCodePreview(businessType, billingStateValue, billingStateCode, billingCountryValue);
   const customerCodeDisplay = editingItem?.customer_code || customerCodePreview;
 
   const clearListFilters = () => {
@@ -421,6 +538,27 @@ const CustomersPage = () => {
     setCreatedFrom('');
     setCreatedTo('');
   };
+
+  const countryOptions = useMemo(() => {
+    const merged = [...DEFAULT_COUNTRIES, ...(customizationOptions?.countries ?? [])]
+      .map((country) => country.trim())
+      .filter((country) => country.length > 0);
+    return [...new Set(merged)].sort((left, right) => left.localeCompare(right));
+  }, [customizationOptions]);
+
+  const currencyOptions = useMemo(() => {
+    const merged = [...DEFAULT_CURRENCIES, ...(customizationOptions?.currencies ?? [])]
+      .map((currency) => currency.trim().toUpperCase())
+      .filter((currency) => currency.length > 0);
+    return [...new Set(merged)].sort((left, right) => left.localeCompare(right));
+  }, [customizationOptions]);
+
+  const stateOptions = useMemo(() => {
+    const merged = [...DEFAULT_STATES, ...(customizationOptions?.states ?? [])]
+      .map((state) => state.trim())
+      .filter((state) => state.length > 0);
+    return [...new Set(merged)].sort((left, right) => left.localeCompare(right));
+  }, [customizationOptions]);
 
   return (
     <AppLayout title="Customer Master">
@@ -590,8 +728,21 @@ const CustomersPage = () => {
 
                 <div className="grid grid-cols-3 gap-2">
                     <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Payment Terms (Days)</label><input type="number" min="0" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" {...register('payment_terms_days')} onFocus={clearZeroOnFocus} /></div>
-                    <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Credit Limit</label><input type="number" min="0" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" {...register('credit_limit')} onFocus={clearZeroOnFocus} /></div>
-                    <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Currency</label><select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" {...register('currency_code')}><option value="INR">INR (₹)</option><option value="USD">USD ($)</option><option value="EUR">EUR (€)</option><option value="GBP">GBP (£)</option></select></div>
+                  <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Credit Limit in Currency</label><input type="number" min="0" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" {...register('credit_limit')} onFocus={clearZeroOnFocus} /></div>
+                    <div>
+                      <label htmlFor="currency_code" className="mb-1 block text-sm font-semibold text-neutral-700">Currency</label>
+                      <input type="hidden" {...register('currency_code')} />
+                      <TypeaheadInput
+                        id="currency_code"
+                        value={currencyCodeValue}
+                        options={currencyOptions}
+                        placeholder="Type currency code (e.g. INR)"
+                        className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm"
+                        onChange={(nextValue) => {
+                          setValue('currency_code', nextValue.toUpperCase(), { shouldDirty: true });
+                        }}
+                      />
+                    </div>
                 </div>
 
                 {/* BUG-30: Address fields */}
@@ -613,23 +764,16 @@ const CustomersPage = () => {
                   </div>
                   <div>
                     <label htmlFor="billing_state" className="hms-label">State</label>
-                    {isIndiaBillingCountry ? (
-                      <select id="billing_state" className="hms-input" {...register('billing_state')}>
-                        <option value="">Select state</option>
-                        {STATE_OPTIONS.map(({ state, code }) => (
-                          <option key={state} value={state}>
-                            {state.replace(/\b\w/g, (char) => char.toUpperCase())} ({code})
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        id="billing_state"
-                        className="hms-input"
-                        placeholder="State / Province"
-                        {...register('billing_state')}
-                      />
-                    )}
+                    <input type="hidden" {...register('billing_state')} />
+                    <TypeaheadInput
+                      id="billing_state"
+                      value={billingStateValue}
+                      options={stateOptions}
+                      placeholder="Type or select state"
+                      onChange={(nextValue) => {
+                        setValue('billing_state', nextValue, { shouldDirty: true });
+                      }}
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
@@ -644,16 +788,78 @@ const CustomersPage = () => {
                 </div>
                 <div>
                   <label htmlFor="billing_country" className="hms-label">Country</label>
-                  <select id="billing_country" className="hms-input" {...register('billing_country')}>
-                    {COUNTRIES.map((country) => (
-                      <option key={country} value={country}>{country}</option>
-                    ))}
-                  </select>
+                  <input type="hidden" {...register('billing_country')} />
+                  <TypeaheadInput
+                    id="billing_country"
+                    value={billingCountryValue}
+                    options={countryOptions}
+                    placeholder="Type or select country"
+                    onChange={(nextValue) => {
+                      setValue('billing_country', nextValue, { shouldDirty: true });
+                    }}
+                  />
                 </div>
                 <div className="flex items-center gap-2">
                   <input id="same_as_billing" type="checkbox" className="rounded border-neutral-300" {...register('same_as_billing')} />
                   <label htmlFor="same_as_billing" className="text-sm text-neutral-600">Shipping same as billing</label>
                 </div>
+                {!sameAsBilling && (
+                  <>
+                    <div className="pt-2 border-t border-neutral-100">
+                      <p className="text-xs font-bold uppercase tracking-wider text-neutral-500 mb-2">Shipping Address</p>
+                    </div>
+                    <div>
+                      <label htmlFor="shipping_address_line1" className="hms-label">Address</label>
+                      <input id="shipping_address_line1" className="hms-input" placeholder="Shipping address line 1" {...register('shipping_address_line1')} />
+                    </div>
+                    <div>
+                      <label htmlFor="shipping_address_line2" className="hms-label">Address line 2</label>
+                      <input id="shipping_address_line2" className="hms-input" placeholder="Shipping address line 2" {...register('shipping_address_line2')} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label htmlFor="shipping_city" className="hms-label">City</label>
+                        <input id="shipping_city" className="hms-input" placeholder="City" {...register('shipping_city')} />
+                      </div>
+                      <div>
+                        <label htmlFor="shipping_state" className="hms-label">State</label>
+                        <input type="hidden" {...register('shipping_state')} />
+                        <TypeaheadInput
+                          id="shipping_state"
+                          value={shippingStateValue}
+                          options={stateOptions}
+                          placeholder="Type or select state"
+                          onChange={(nextValue) => {
+                            setValue('shipping_state', nextValue, { shouldDirty: true });
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label htmlFor="shipping_state_code" className="hms-label">State Code</label>
+                        <input id="shipping_state_code" className="hms-input" placeholder="e.g. 29" maxLength={2} {...register('shipping_state_code')} />
+                      </div>
+                      <div>
+                        <label htmlFor="shipping_pincode" className="hms-label">Pincode</label>
+                        <input id="shipping_pincode" className="hms-input" placeholder="Pincode" {...register('shipping_pincode')} />
+                      </div>
+                    </div>
+                    <div>
+                      <label htmlFor="shipping_country" className="hms-label">Country</label>
+                      <input type="hidden" {...register('shipping_country')} />
+                      <TypeaheadInput
+                        id="shipping_country"
+                        value={shippingCountryValue}
+                        options={countryOptions}
+                        placeholder="Type or select country"
+                        onChange={(nextValue) => {
+                          setValue('shipping_country', nextValue, { shouldDirty: true });
+                        }}
+                      />
+                    </div>
+                  </>
+                )}
                 <div className="flex justify-end gap-3 mt-6">
                 <button type="submit" disabled={isSaving} className="w-full rounded-lg bg-primary px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-primary/20 transition hover:bg-primary/90 disabled:opacity-60">
                   {isSaving ? 'Saving...' : editingItem ? 'Update Customer' : 'Create Customer'}

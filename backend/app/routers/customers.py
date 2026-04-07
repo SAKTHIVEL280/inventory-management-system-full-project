@@ -11,6 +11,7 @@ from app.database import get_db
 from app.dependencies import require_permissions
 from app.models.company import Company
 from app.models.customer import Customer
+from app.models.customization_option import CustomizationOption
 from app.models.user import User
 from app.schemas.customer import (
     CustomerCreateRequest,
@@ -18,6 +19,7 @@ from app.schemas.customer import (
     CustomerResponse,
     CustomersListResponse,
     CustomerBalanceResponse,
+    CustomerCustomizationOptionsResponse,
 )
 
 router = APIRouter(prefix="/api/v1/customers", tags=["customers"])
@@ -54,6 +56,48 @@ STATE_ABBREVIATIONS = {
     "west bengal": "WB",
     "delhi": "DL",
 }
+
+DEFAULT_CUSTOMER_COUNTRIES = [
+    "India",
+    "United States",
+    "United Arab Emirates",
+    "United Kingdom",
+    "Singapore",
+    "Australia",
+]
+
+DEFAULT_CUSTOMER_CURRENCIES = ["INR", "USD", "EUR", "GBP"]
+DEFAULT_CUSTOMER_STATES = [
+    "Andhra Pradesh",
+    "Arunachal Pradesh",
+    "Assam",
+    "Bihar",
+    "Chhattisgarh",
+    "Goa",
+    "Gujarat",
+    "Haryana",
+    "Himachal Pradesh",
+    "Jharkhand",
+    "Karnataka",
+    "Kerala",
+    "Madhya Pradesh",
+    "Maharashtra",
+    "Manipur",
+    "Meghalaya",
+    "Mizoram",
+    "Nagaland",
+    "Odisha",
+    "Punjab",
+    "Rajasthan",
+    "Sikkim",
+    "Tamil Nadu",
+    "Telangana",
+    "Tripura",
+    "Uttar Pradesh",
+    "Uttarakhand",
+    "West Bengal",
+    "Delhi",
+]
 
 
 def _state_code_from_payload(payload: CustomerCreateRequest | CustomerUpdateRequest) -> str:
@@ -136,6 +180,108 @@ def _normalize_shipping(payload: CustomerCreateRequest | CustomerUpdateRequest) 
         payload.shipping_pincode = payload.billing_pincode
 
 
+def _normalize_customer_currency(payload: CustomerCreateRequest | CustomerUpdateRequest) -> None:
+    currency = (payload.currency_code or "").strip().upper()
+    payload.currency_code = currency or "INR"
+
+
+def _normalize_country(value: str | None) -> str | None:
+    cleaned = (value or "").strip()
+    return cleaned or None
+
+
+def _normalize_state(value: str | None) -> str | None:
+    cleaned = (value or "").strip()
+    return cleaned or None
+
+
+def _upsert_customer_customization_option(
+    db: Session,
+    *,
+    field_name: str,
+    option_value: str,
+    created_by: UUID | None,
+) -> None:
+    existing = (
+        db.query(CustomizationOption)
+        .filter(
+            CustomizationOption.module == "customer",
+            CustomizationOption.field_name == field_name,
+            func.lower(CustomizationOption.option_value) == option_value.lower(),
+            CustomizationOption.is_deleted == False,
+        )
+        .first()
+    )
+    if existing:
+        if not existing.is_active:
+            existing.is_active = True
+        return
+
+    db.add(
+        CustomizationOption(
+            module="customer",
+            field_name=field_name,
+            option_value=option_value,
+            display_label=option_value,
+            is_active=True,
+            created_by=created_by,
+        )
+    )
+
+
+def _persist_customer_customization_values(
+    db: Session,
+    payload: CustomerCreateRequest | CustomerUpdateRequest,
+    created_by: UUID | None,
+) -> None:
+    currency = (payload.currency_code or "").strip().upper()
+    if currency:
+        _upsert_customer_customization_option(
+            db,
+            field_name="currency",
+            option_value=currency,
+            created_by=created_by,
+        )
+
+    billing_country = _normalize_country(payload.billing_country)
+    if billing_country:
+        _upsert_customer_customization_option(
+            db,
+            field_name="country",
+            option_value=billing_country,
+            created_by=created_by,
+        )
+
+    if not payload.same_as_billing:
+        shipping_country = _normalize_country(payload.shipping_country)
+        if shipping_country:
+            _upsert_customer_customization_option(
+                db,
+                field_name="country",
+                option_value=shipping_country,
+                created_by=created_by,
+            )
+
+    billing_state = _normalize_state(payload.billing_state)
+    if billing_state:
+        _upsert_customer_customization_option(
+            db,
+            field_name="state",
+            option_value=billing_state,
+            created_by=created_by,
+        )
+
+    if not payload.same_as_billing:
+        shipping_state = _normalize_state(payload.shipping_state)
+        if shipping_state:
+            _upsert_customer_customization_option(
+                db,
+                field_name="state",
+                option_value=shipping_state,
+                created_by=created_by,
+            )
+
+
 def _customer_balance(db: Session, customer_id: UUID) -> CustomerBalanceResponse:
     """Calculate customer balance from issued invoices and cleared payments.
     
@@ -212,6 +358,57 @@ async def list_customers(
     )
 
 
+@router.get("/customization-options", response_model=CustomerCustomizationOptionsResponse)
+async def get_customer_customization_options(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("customers_read")),
+):
+    rows = (
+        db.query(CustomizationOption)
+        .filter(
+            CustomizationOption.module == "customer",
+            CustomizationOption.field_name.in_(["country", "currency", "state"]),
+            CustomizationOption.is_active == True,
+            CustomizationOption.is_deleted == False,
+        )
+        .order_by(CustomizationOption.field_name.asc(), CustomizationOption.sort_order.asc(), CustomizationOption.option_value.asc())
+        .all()
+    )
+
+    countries = sorted(
+        {
+            _normalize_country(row.option_value)
+            for row in rows
+            if row.field_name == "country" and _normalize_country(row.option_value)
+        },
+        key=lambda value: value.lower(),
+    )
+    currencies = sorted(
+        {
+            (row.option_value or "").strip().upper()
+            for row in rows
+            if row.field_name == "currency" and (row.option_value or "").strip()
+        }
+    )
+    states = sorted(
+        {
+            _normalize_state(row.option_value)
+            for row in rows
+            if row.field_name == "state" and _normalize_state(row.option_value)
+        },
+        key=lambda value: value.lower(),
+    )
+
+    if not countries:
+        countries = DEFAULT_CUSTOMER_COUNTRIES.copy()
+    if not currencies:
+        currencies = DEFAULT_CUSTOMER_CURRENCIES.copy()
+    if not states:
+        states = DEFAULT_CUSTOMER_STATES.copy()
+
+    return CustomerCustomizationOptionsResponse(countries=countries, currencies=currencies, states=states)
+
+
 @router.post("", response_model=CustomerResponse, status_code=201)
 async def create_customer(
     payload: CustomerCreateRequest,
@@ -220,6 +417,7 @@ async def create_customer(
 ):
     _apply_company_billing_defaults(db, payload)
     _apply_gstin_policy(payload)
+    _normalize_customer_currency(payload)
 
     if payload.gstin:
         duplicate = db.query(Customer).filter(Customer.gstin == payload.gstin, Customer.is_deleted == False).first()
@@ -231,6 +429,7 @@ async def create_customer(
 
     _apply_gstin_state_code(payload)
     _normalize_shipping(payload)
+    _persist_customer_customization_values(db, payload, current_user.id)
 
     customer = Customer(
         **payload.model_dump(exclude={"customer_code"}),
@@ -267,6 +466,7 @@ async def update_customer(
         raise HTTPException(status_code=404, detail="Customer not found")
 
     _apply_gstin_policy(payload)
+    _normalize_customer_currency(payload)
 
     if payload.gstin:
         duplicate = (
@@ -282,6 +482,7 @@ async def update_customer(
 
     _apply_gstin_state_code(payload)
     _normalize_shipping(payload)
+    _persist_customer_customization_values(db, payload, current_user.id)
 
     for field, value in payload.model_dump(exclude={"customer_code"}).items():
         setattr(customer, field, value)

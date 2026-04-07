@@ -147,6 +147,12 @@ export interface Customer {
   updated_at?: string | null;
 }
 
+export interface CustomerCustomizationOptions {
+  countries: string[];
+  currencies: string[];
+  states: string[];
+}
+
 export interface Supplier {
   id: string;
   supplier_code?: string;

@@ -2,6 +2,108 @@
 
 ---
 
+## DB-31: Customer Customization Options - Added State Seed Values
+**Date**: April 7, 2026
+**Status**: ✅ Completed
+**Module**: Customer Master
+**Type**: Enhancement / UX Fix Support
+
+### Overview
+Extended customization option seed data to include customer state values so state typeahead suggestions are available immediately.
+
+### Changes Made
+- Added default customer state option inserts to base schema.
+- Added same state inserts to consolidated `ALL_UPDATES_2.sql`.
+- Added same state inserts to dedicated migration file `04_customer_customization_options.sql`.
+- Added same state inserts to `backend/run_migration.py` for existing DB compatibility.
+
+### Files Modified
+- `database/01_schema.sql`
+- `database/ALL_UPDATES_2.sql`
+- `database/04_customer_customization_options.sql`
+- `backend/run_migration.py`
+
+---
+
+## DB-30: Customer Country/Currency Customization Table and Seed Options
+**Date**: April 7, 2026
+**Status**: ✅ Completed
+**Module**: Customer Master
+**Type**: Enhancement
+
+### Overview
+Added centralized customization table support to store customer country/currency option values instead of relying on hardcoded frontend lists.
+
+### Database Checks
+- Verified customer fields already existed (`currency_code`, `billing_country`, `shipping_country`), so no new customer columns were created.
+- Implemented new dedicated customization table for configurable option values.
+
+### Changes Made
+- Added `customization_options` table in base schema.
+- Seeded default customer options (currencies and countries).
+- Added new migration SQL file for this feature.
+- Added same migration statements to consolidated `ALL_UPDATES_2.sql`.
+
+### Files Modified
+- `database/01_schema.sql`
+- `database/04_customer_customization_options.sql`
+- `database/ALL_UPDATES_2.sql`
+
+### Notes
+- For existing databases, apply `backend/run_migration.py` or execute `database/04_customer_customization_options.sql`.
+
+---
+
+## DB-29: Customer CUS-012 UI Enhancements - No Database Changes Required
+**Date**: April 7, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Test Case**: CUS-012 (Credit label rename, conditional shipping field visibility)
+**Module**: Customer Master
+**Type**: Enhancement - Frontend Behavior
+
+### Overview
+Validated database impact before implementing Customer Master UI enhancements.
+
+### Findings
+- Required fields already exist in schema/model:
+	- `customers.same_as_billing`
+	- `customers.shipping_address_line1` and other shipping columns
+	- `customers.credit_limit`
+- No new table/column was needed, so no migration SQL file was created.
+- `database/ALL_UPDATES_2.sql` update not required for this task.
+
+### Conclusion
+No database changes required.
+
+---
+
+## DB-28: Full Project Architecture Baseline Review - No Database Changes Required
+**Date**: April 7, 2026
+**Status**: ✅ Verified - No Changes Needed
+**Module**: Schema / Migration / Data Consistency Standards
+**Type**: Baseline Verification
+
+### Overview
+Completed a full schema and migration strategy review before starting new implementation tasks.
+
+### Files Reviewed
+- `database/01_schema.sql`
+- `database/ALL_UPDATES_2.sql`
+- `backend/run_migration.py`
+- `docs/guides/DATABASE.md`
+- `docs/workflows/WF_03_PURCHASE.md`
+- `docs/workflows/WF_04_SALES.md`
+
+### Findings
+- Core schema and compatibility migration strategy are in place and idempotent.
+- Required DB safety rule is confirmed: check existing fields first, then use `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` when missing.
+- No schema/data changes were required for this onboarding task.
+
+### Conclusion
+No database changes required.
+
+---
+
 ## DB-27: Company Form Reinitialization Fix - No Database Changes Required
 **Date**: April 6, 2026
 **Status**: ✅ Verified - No Changes Needed

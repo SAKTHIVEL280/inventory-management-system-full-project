@@ -24,6 +24,7 @@ from app.models.sales import (
 	SalesReturnItem,
 )
 from app.models.payment import Payment, PaymentAllocation
+from app.models.customization_option import CustomizationOption
 
 __all__ = [
 	"Base",
@@ -51,4 +52,5 @@ __all__ = [
 	"SalesReturnItem",
 	"Payment",
 	"PaymentAllocation",
+	"CustomizationOption",
 ]
