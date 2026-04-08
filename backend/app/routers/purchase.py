@@ -485,24 +485,26 @@ async def create_grn(
 
     subtotal = total_discount = total_taxable = total_cgst = total_sgst = total_igst = 0
     for idx, item in enumerate(payload.items, start=1):
+        resolved_po_item_id = item.purchase_order_item_id
+
         # Validate product exists
         product = db.query(Product).filter(Product.id == item.product_id, Product.is_deleted == False).first()
         if not product:
             raise HTTPException(status_code=400, detail=f"Invalid product: {item.product_id}")
 
-        # Validate manufacture date is not in the future
+        # GRN-007: MFG date must be a past date only
         from datetime import date
-        if item.manufacture_date and item.manufacture_date > date.today():
+        if item.manufacture_date and item.manufacture_date >= date.today():
             raise HTTPException(
                 status_code=400,
-                detail="MFG Date cannot be a future date",
+                detail="MFG Date must be a past date",
             )
 
-        # Validate expiry date is not in the past
-        if item.expiry_date and item.expiry_date < date.today():
+        # GRN-008: Expiry date must be a future date only
+        if item.expiry_date and item.expiry_date <= date.today():
             raise HTTPException(
                 status_code=400,
-                detail=f"Line item {idx}: expiry date must be today or a future date",
+                detail=f"Line item {idx}: expiry date must be a future date",
             )
 
         if item.manufacture_date and item.expiry_date and item.expiry_date < item.manufacture_date:
@@ -531,6 +533,8 @@ async def create_grn(
             if not po_item:
                 raise HTTPException(status_code=400, detail="Unable to map GRN line item to purchase order line item")
 
+            resolved_po_item_id = po_item.id
+
             ordered_qty = float(po_item.quantity or 0)
             previously_received_qty = float(po_item.received_quantity or 0)
             current_receipt_qty = float(item.quantity or 0)
@@ -554,7 +558,7 @@ async def create_grn(
         db.add(GRNItem(
             grn_id=grn.id,
             product_id=item.product_id,
-            purchase_order_item_id=item.purchase_order_item_id,
+            purchase_order_item_id=resolved_po_item_id,
             batch_no=item.batch_no,
             manufacture_date=item.manufacture_date,
             expiry_date=item.expiry_date,
@@ -689,23 +693,25 @@ async def update_grn(
 
     subtotal = total_discount = total_taxable = total_cgst = total_sgst = total_igst = 0
     for idx, item in enumerate(payload.items, start=1):
+        resolved_po_item_id = item.purchase_order_item_id
+
         product = db.query(Product).filter(Product.id == item.product_id, Product.is_deleted == False).first()
         if not product:
             raise HTTPException(status_code=400, detail=f"Invalid product: {item.product_id}")
 
-        # Validate manufacture date is not in the future
+        # GRN-007: MFG date must be a past date only
         from datetime import date
-        if item.manufacture_date and item.manufacture_date > date.today():
+        if item.manufacture_date and item.manufacture_date >= date.today():
             raise HTTPException(
                 status_code=400,
-                detail="MFG Date cannot be a future date",
+                detail="MFG Date must be a past date",
             )
         
-        # Validate expiry date is not in the past
-        if item.expiry_date and item.expiry_date < date.today():
+        # GRN-008: Expiry date must be a future date only
+        if item.expiry_date and item.expiry_date <= date.today():
             raise HTTPException(
                 status_code=400,
-                detail=f"Line item {idx}: expiry date must be today or a future date",
+                detail=f"Line item {idx}: expiry date must be a future date",
             )
         
         if item.manufacture_date and item.expiry_date and item.expiry_date < item.manufacture_date:
@@ -733,6 +739,8 @@ async def update_grn(
             if not po_item:
                 raise HTTPException(status_code=400, detail="Unable to map GRN line item to purchase order line item")
 
+            resolved_po_item_id = po_item.id
+
             ordered_qty = float(po_item.quantity or 0)
             previously_received_qty = float(po_item.received_quantity or 0)
             current_receipt_qty = float(item.quantity or 0)
@@ -756,7 +764,7 @@ async def update_grn(
         db.add(GRNItem(
             grn_id=grn.id,
             product_id=item.product_id,
-            purchase_order_item_id=item.purchase_order_item_id,
+            purchase_order_item_id=resolved_po_item_id,
             batch_no=item.batch_no,
             manufacture_date=item.manufacture_date,
             expiry_date=item.expiry_date,

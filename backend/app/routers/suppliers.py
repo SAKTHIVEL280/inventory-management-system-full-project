@@ -104,11 +104,6 @@ def _state_code_from_payload(payload: SupplierCreateRequest | SupplierUpdateRequ
     if state and state in STATE_ABBREVIATIONS:
         return STATE_ABBREVIATIONS[state]
 
-    raw_state_code = (payload.state_code or "").strip().upper()
-    alpha_state_code = "".join(ch for ch in raw_state_code if ch.isalpha())
-    if len(alpha_state_code) >= 2:
-        return alpha_state_code[:2]
-
     if state:
         cleaned = "".join(ch for ch in state if ch.isalpha())
         if len(cleaned) >= 2:
@@ -147,11 +142,6 @@ def _apply_gstin_policy(payload: SupplierCreateRequest | SupplierUpdateRequest) 
         payload.gstin = None
 
 
-def _apply_gstin_state_code(payload: SupplierCreateRequest | SupplierUpdateRequest) -> None:
-    if payload.gstin and len(payload.gstin) >= 2 and not payload.state_code:
-        payload.state_code = payload.gstin[:2]
-
-
 def _normalize_supplier_currency(payload: SupplierCreateRequest | SupplierUpdateRequest) -> None:
     currency = (payload.currency_code or "").strip().upper()
     payload.currency_code = currency or "INR"
@@ -180,13 +170,17 @@ def _upsert_supplier_customization_option(
             CustomizationOption.module == "supplier",
             CustomizationOption.field_name == field_name,
             func.lower(CustomizationOption.option_value) == option_value.lower(),
-            CustomizationOption.is_deleted == False,
         )
         .first()
     )
     if existing:
+        if existing.is_deleted:
+            existing.is_deleted = False
+            existing.deleted_at = None
         if not existing.is_active:
             existing.is_active = True
+        if not existing.display_label:
+            existing.display_label = existing.option_value
         return
 
     db.add(
@@ -373,12 +367,12 @@ async def create_supplier(
                 detail={"error_code": "DUPLICATE_GSTIN", "message": "GSTIN already exists"},
             )
 
-    _apply_gstin_state_code(payload)
     _persist_supplier_customization_values(db, payload, current_user.id)
 
     supplier = Supplier(
         **payload.model_dump(exclude={"supplier_code"}),
         supplier_code=payload.supplier_code or _generate_supplier_code(db, payload),
+        state_code=_state_code_from_payload(payload),
         created_by=current_user.id,
     )
     db.add(supplier)
@@ -425,11 +419,11 @@ async def update_supplier(
                 detail={"error_code": "DUPLICATE_GSTIN", "message": "GSTIN already exists"},
             )
 
-    _apply_gstin_state_code(payload)
     _persist_supplier_customization_values(db, payload, current_user.id)
 
     for field, value in payload.model_dump(exclude={"supplier_code"}).items():
         setattr(supplier, field, value)
+    supplier.state_code = _state_code_from_payload(payload)
 
     db.commit()
     db.refresh(supplier)

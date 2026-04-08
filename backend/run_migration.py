@@ -170,6 +170,12 @@ def main() -> int:
                 "CREATE UNIQUE INDEX IF NOT EXISTS uq_customization_option_scope ON customization_options (module, field_name, option_value)",
                 "CREATE INDEX IF NOT EXISTS ix_customization_options_module ON customization_options (module)",
                 "CREATE INDEX IF NOT EXISTS ix_customization_options_field_name ON customization_options (field_name)",
+                "ALTER TABLE customization_options ALTER COLUMN id SET DEFAULT gen_random_uuid()",
+                "ALTER TABLE customization_options ALTER COLUMN sort_order SET DEFAULT 0",
+                "ALTER TABLE customization_options ALTER COLUMN is_active SET DEFAULT TRUE",
+                "ALTER TABLE customization_options ALTER COLUMN is_deleted SET DEFAULT FALSE",
+                "ALTER TABLE customization_options ALTER COLUMN created_at SET DEFAULT NOW()",
+                "ALTER TABLE customization_options ALTER COLUMN updated_at SET DEFAULT NOW()",
                 """
                 INSERT INTO customization_options (module, field_name, option_value, display_label, sort_order, is_active)
                 VALUES

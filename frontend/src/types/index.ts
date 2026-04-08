@@ -172,7 +172,6 @@ export interface Supplier {
   address_line2?: string | null;
   city?: string | null;
   state?: string | null;
-  state_code?: string | null;
   billing_country?: string | null;
   pincode?: string | null;
   bank_name?: string | null;

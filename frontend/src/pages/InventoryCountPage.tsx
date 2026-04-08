@@ -41,7 +41,7 @@ const InventoryCountPage = () => {
     queryFn: productsApi.listAll,
   });
 
-  const products = productsResponse?.items || [];
+  const products = useMemo(() => productsResponse?.items ?? [], [productsResponse?.items]);
 
   const previewMutation = useMutation({
     mutationFn: (dateValue: string) => stockApi.getInventoryCountNumberPreview(dateValue),

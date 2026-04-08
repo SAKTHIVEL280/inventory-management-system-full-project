@@ -3,7 +3,6 @@
  * 
  * Handles all sales workflow operations:
  * - Quotations
- * - Sales Orders (SO)
  * - Sales Invoices
  * - Sales Returns
  */
@@ -50,38 +49,8 @@ export interface UpdateQuotationStatusPayload {
   status: string;
 }
 
-export interface ConvertQuotationToSOPayload {
-  sold_to_customer_id?: string;
-  bill_to_customer_id?: string;
-  ship_to_customer_id?: string;
-  expected_delivery_date?: string;
-}
-
-export interface CreateSalesOrderPayload {
-  customer_id: string;
-  quotation_id?: string;
-  order_date: string;
-  expected_delivery_date?: string;
-  sold_to_customer_id?: string;
-  bill_to_customer_id?: string;
-  ship_to_customer_id?: string;
-  notes?: string;
-  terms_conditions?: string;
-  status?: string;
-  currency_code?: string;
-  exchange_rate?: number;
-  items: SalesLineItem[];
-}
-
-export interface UpdateSalesOrderPayload extends Partial<CreateSalesOrderPayload> {}
-
-export interface UpdateSalesOrderStatusPayload {
-  status: string;
-}
-
 export interface CreateInvoicePayload {
   customer_id: string;
-  sales_order_id?: string;
   quotation_id?: string;
   invoice_date: string;
   due_date?: string;
@@ -135,32 +104,6 @@ export interface Quotation {
   total_igst: number;
   total_gst: number;
   total_amount: number;
-  notes?: string;
-  terms_conditions?: string;
-  created_at: string;
-}
-
-export interface SalesOrder {
-  id: string;
-  so_number: string;
-  quotation_id?: string;
-  customer_id: string;
-  order_date: string;
-  expected_delivery_date?: string;
-  status: string;
-  sold_to_customer_id?: string;
-  bill_to_customer_id?: string;
-  ship_to_customer_id?: string;
-  subtotal: number;
-  total_discount: number;
-  total_taxable_amount: number;
-  total_cgst: number;
-  total_sgst: number;
-  total_igst: number;
-  total_gst: number;
-  total_amount: number;
-  currency_code?: string;
-  exchange_rate?: number;
   notes?: string;
   terms_conditions?: string;
   created_at: string;
@@ -229,17 +172,6 @@ export interface InvoiceBatchOptionsResponse {
   items: InvoiceBatchOption[];
 }
 
-export interface SalesOrderItemResponse {
-  id?: string;
-  product_id: string;
-  description?: string;
-  quantity: number;
-  unit_price: number;
-  discount_percent?: number;
-  gst_rate: number;
-  total_amount?: number;
-}
-
 export interface InvoiceDetailResponse {
   invoice: SalesInvoice;
   items: SalesInvoiceItem[];
@@ -303,10 +235,6 @@ class SalesApiClient {
     return apiClient.patch<Quotation>(`/api/v1/quotations/${id}/restore`, {});
   }
 
-  async convertQuotationToSO(id: string, payload?: ConvertQuotationToSOPayload) {
-    return apiClient.post<SalesOrder>(`/api/v1/quotations/${id}/convert-to-so`, payload || {});
-  }
-
   async downloadQuotationPdf(id: string) {
     return apiClient.get(`/api/v1/quotations/${id}/pdf`, {
       responseType: 'blob',
@@ -315,54 +243,6 @@ class SalesApiClient {
 
   async sendQuotationEmail(id: string, email?: string) {
     return apiClient.post(`/api/v1/quotations/${id}/send-email`, { email });
-  }
-
-  // ========== Sales Orders ==========
-
-  async listSalesOrders(
-    status?: string,
-    page = 1,
-    page_size = 20,
-    options?: { archived_only?: boolean; include_archived?: boolean }
-  ) {
-    const params: Record<string, string | number | boolean> = { page, page_size };
-    if (status) params.status = status;
-    if (options?.archived_only) params.archived_only = true;
-    if (options?.include_archived) params.include_archived = true;
-    return apiClient.get<{ items: SalesOrder[]; total: number }>('/api/v1/sales-orders', { params });
-  }
-
-  async getSalesOrder(id: string) {
-    return apiClient.get<{ sales_order: SalesOrder; items: SalesOrderItemResponse[] }>(`/api/v1/sales-orders/${id}`);
-  }
-
-  async searchSalesOrderByNumber(soNumber: string) {
-    return apiClient.get<{ sales_order: SalesOrder; items: SalesOrderItemResponse[] }>(`/api/v1/sales-orders/search/${soNumber}`);
-  }
-
-  async createSalesOrder(payload: CreateSalesOrderPayload) {
-    return apiClient.post<SalesOrder>('/api/v1/sales-orders', payload);
-  }
-
-  async updateSalesOrder(id: string, payload: UpdateSalesOrderPayload) {
-    return apiClient.put<SalesOrder>(`/api/v1/sales-orders/${id}`, payload);
-  }
-
-  async updateSalesOrderStatus(id: string, status: string) {
-    return apiClient.patch<SalesOrder>(`/api/v1/sales-orders/${id}/status`, { status });
-  }
-
-  async archiveSalesOrder(id: string) {
-    return apiClient.patch<SalesOrder>(`/api/v1/sales-orders/${id}/archive`, {});
-  }
-
-  async restoreSalesOrder(id: string) {
-    return apiClient.patch<SalesOrder>(`/api/v1/sales-orders/${id}/restore`, {});
-  }
-
-  // BUG-05: Convert Sales Order to Invoice
-  async convertSOToInvoice(soId: string) {
-    return apiClient.post<SalesInvoice>(`/api/v1/sales-orders/${soId}/convert-to-invoice`, {});
   }
 
   // ========== Sales Invoices ==========

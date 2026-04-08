@@ -22,6 +22,8 @@ import { showError, showSuccess, confirmWithToast } from '../utils/toastHelper';
 
 interface SupplierOption { id: string; company_name: string; }
 
+const CLEARED_STATUSES = new Set(['cleared', 'advance_payment_cleared', 'advance_cleared', 'full_payment_cleared']);
+
 const PayablesPage = () => {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -56,8 +58,6 @@ const PayablesPage = () => {
   const [referenceNumber, setReferenceNumber] = useState('');
   const [notes, setNotes] = useState('');
   const [allocations, setAllocations] = useState<Record<string, number>>({});
-
-  const CLEARED_STATUSES = new Set(['cleared', 'advance_payment_cleared', 'advance_cleared', 'full_payment_cleared']);
 
   const fetchPayments = async () => {
     try {

@@ -73,6 +73,9 @@ class ProductBase(BaseModel):
 class ProductCreateRequest(ProductBase):
     @model_validator(mode="after")
     def validate_price_hierarchy(self):
+        if not self.sku or not self.sku.strip():
+            raise ValueError("Base Unit is required")
+        self.sku = self.sku.strip()
         if self.purchase_price >= self.selling_price:
             raise ValueError("Purchase price must be less than Selling Price")
         if self.selling_price >= self.mrp:
@@ -83,6 +86,9 @@ class ProductCreateRequest(ProductBase):
 class ProductUpdateRequest(ProductBase):
     @model_validator(mode="after")
     def validate_price_hierarchy(self):
+        if not self.sku or not self.sku.strip():
+            raise ValueError("Base Unit is required")
+        self.sku = self.sku.strip()
         if self.purchase_price >= self.selling_price:
             raise ValueError("Purchase price must be less than Selling Price")
         if self.selling_price >= self.mrp:

@@ -13,7 +13,7 @@ import { showError, showSuccess } from '../utils/toastHelper';
 const productSchema = z.object({
   name: z.string().min(1, 'Product name required'),
   description: z.string().optional(),
-  sku: z.string().min(1, 'Base Unit is required'),
+  sku: z.string().trim().min(1, 'Base Unit is required'),
   hsn_code: z.string().min(6, 'HSN must be 6-8 digits').max(8, 'HSN must be 6-8 digits'),
   gst_rate: z.enum(['0', '5', '12', '18', '28']),
   unit_price: z.coerce.number().positive('Price must be greater than 0'),
@@ -412,9 +412,9 @@ const ProductsPage = () => {
     }
   };
 
-  const products = productsQuery.data?.items ?? [];
-  const categories = categoriesQuery.data ?? [];
-  const uoms = uomQuery.data ?? [];
+  const products = useMemo(() => productsQuery.data?.items ?? [], [productsQuery.data?.items]);
+  const categories = useMemo(() => categoriesQuery.data ?? [], [categoriesQuery.data]);
+  const uoms = useMemo(() => uomQuery.data ?? [], [uomQuery.data]);
   const basicUnitOptions = useMemo(() => {
     const unitCandidates = [
       ...DEFAULT_BASIC_UNITS,

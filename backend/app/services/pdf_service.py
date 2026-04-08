@@ -463,7 +463,7 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
             <th style="width: {{ col_disc }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Disc%</th>
             {% if not export_invoice %}
                 {% if show_igst %}
-            <th style="width: {{ col_cgst + col_sgst }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">IGST %</th>
+            <th style="width: {{ col_cgst + col_sgst }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">IGST</th>
                 {% else %}
             <th style="width: {{ col_cgst }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">{{ tax_col_1_label }}</th>
             <th style="width: {{ col_sgst }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">{{ tax_col_2_label }}</th>
@@ -1122,6 +1122,7 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
         customer.billing_city if customer else None,
         customer.billing_state if customer else None,
         customer.billing_pincode if customer else None,
+        customer.billing_country if customer else None,
     ]
     shipping_parts = [
         customer.shipping_address_line1 if customer else None,
@@ -1129,6 +1130,7 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
         customer.shipping_city if customer else None,
         customer.shipping_state if customer else None,
         customer.shipping_pincode if customer else None,
+        customer.shipping_country if customer else None,
     ]
 
     ship_to_address = ", ".join([p.strip() for p in shipping_parts if p and p.strip()])
@@ -1137,8 +1139,8 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
 
     notes_text = _safe_text(invoice.notes if invoice.notes else (f"Sales Order: {sales_order.so_number}" if sales_order else "-"))
 
-    tax_col_1_label = "CGST %"
-    tax_col_2_label = "UTGST %" if show_utgst else "SGST %"
+    tax_col_1_label = "CGST"
+    tax_col_2_label = "UTGST" if show_utgst else "SGST"
     tax_secondary_prefix = "UTGST" if show_utgst else "SGST"
 
     context = {
@@ -1219,8 +1221,8 @@ def generate_quotation_pdf(db: Session, quotation_id: UUID) -> bytes:
     quotation_invoice_type = determine_default_invoice_type(db, quotation.customer_id) if customer else "within_state"
     show_igst = quotation_invoice_type == "other_states"
     show_utgst = quotation_invoice_type == "union_territory"
-    tax_col_1_label = "CGST %"
-    tax_col_2_label = "UTGST %" if show_utgst else "SGST %"
+    tax_col_1_label = "CGST"
+    tax_col_2_label = "UTGST" if show_utgst else "SGST"
     tax_secondary_label = "UTGST" if show_utgst else "SGST"
 
     for idx, item in enumerate(items, start=1):

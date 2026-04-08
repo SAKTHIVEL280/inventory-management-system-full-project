@@ -1,9 +1,10 @@
-import { type FocusEvent, useMemo, useState } from 'react';
+import { type FocusEvent, useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import { customersApi } from '../api/customers';
-import { Customer } from '../types';
+import { companyApi } from '../api/company';
+import { Company, Customer } from '../types';
 import { AppLayout } from '../components/AppLayout';
 import { PageEmpty, PageError, PageLoading } from '../components/PageState';
 import { showError, showSuccess, confirmWithToast } from '../utils/toastHelper';
@@ -180,7 +181,7 @@ const parsePhoneForEditing = (storedPhone?: string | null): { code: string; loca
   };
 };
 
-const buildDefaultValues = (): CustomerForm => ({
+const buildDefaultValues = (companyProfile?: Company): CustomerForm => ({
   company_name: '',
   phone: '',
   customer_type: 'regular',
@@ -191,13 +192,13 @@ const buildDefaultValues = (): CustomerForm => ({
   email: '',
   gstin_status: 'non-registered',
   gstin: '',
-  billing_address_line1: '',
-  billing_address_line2: '',
-  billing_city: '',
-  billing_state: '',
-  billing_state_code: '',
-  billing_country: '',
-  billing_pincode: '',
+  billing_address_line1: companyProfile?.address_line1 ?? '',
+  billing_address_line2: companyProfile?.address_line2 ?? '',
+  billing_city: companyProfile?.city ?? '',
+  billing_state: companyProfile?.state ?? '',
+  billing_state_code: companyProfile?.state_code ?? '',
+  billing_country: 'India',
+  billing_pincode: companyProfile?.pincode ?? '',
   same_as_billing: true,
   shipping_address_line1: '',
   shipping_address_line2: '',
@@ -346,9 +347,26 @@ const CustomersPage = () => {
     },
   });
 
+  const { data: companyProfile } = useQuery({
+    queryKey: ['company-profile'],
+    queryFn: async () => {
+      try {
+        return await companyApi.get();
+      } catch {
+        return null;
+      }
+    },
+  });
+
   const { register, handleSubmit, reset, setValue, watch } = useForm<CustomerForm>({
     defaultValues: buildDefaultValues(),
   });
+
+  useEffect(() => {
+    if (!editingItem && !isFormOpen) {
+      reset(buildDefaultValues(companyProfile ?? undefined));
+    }
+  }, [companyProfile, editingItem, isFormOpen, reset]);
 
   const createMutation = useMutation({
     mutationFn: customersApi.create,
@@ -409,7 +427,7 @@ const CustomersPage = () => {
 
   const resetForm = () => {
     setEditingItem(null);
-    reset(buildDefaultValues());
+    reset(buildDefaultValues(companyProfile ?? undefined));
     setPhoneCountryCode('+91');
     setIsFormOpen(false);
   };
@@ -521,7 +539,7 @@ const CustomersPage = () => {
     }
   };
 
-  const items = data?.items ?? [];
+  const items = useMemo(() => data?.items ?? [], [data?.items]);
   const filteredItems = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
     const fromTime = createdFrom ? new Date(`${createdFrom}T00:00:00`).getTime() : null;
@@ -678,7 +696,7 @@ const CustomersPage = () => {
                     type="button"
                     onClick={() => {
                       setEditingItem(null);
-                      reset(buildDefaultValues());
+                      reset(buildDefaultValues(companyProfile ?? undefined));
                       setPhoneCountryCode('+91');
                       setIsFormOpen(true);
                     }}

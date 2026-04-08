@@ -25,7 +25,6 @@ class SupplierBase(BaseModel):
     address_line2: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
-    state_code: Optional[str] = None
     billing_country: Optional[str] = None
     pincode: Optional[str] = None
     place_of_supply: Optional[str] = None

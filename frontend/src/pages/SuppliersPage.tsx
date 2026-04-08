@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
@@ -83,7 +83,6 @@ const schema = z.object({
   address_line2: z.string().optional(),
   city: z.string().optional(),
   state: z.string().optional(),
-  state_code: z.string().optional(),
   billing_country: z.string().optional(),
   pincode: z.string().optional(),
   place_of_supply: z.string().optional(),
@@ -118,11 +117,6 @@ const formatDisplayDate = (value?: string | null): string => {
 };
 
 const normalizeOptional = (value?: string): string | null => value?.trim() || null;
-
-const normalizeStateCodeOptional = (value?: string): string | null => {
-  const trimmed = (value || '').trim();
-  return trimmed ? trimmed.toUpperCase() : null;
-};
 
 const normalizePhoneDigits = (value?: string): string => (value || '').replace(/\D/g, '');
 
@@ -185,7 +179,6 @@ const buildDefaultValues = (): SupplierForm => ({
   address_line2: '',
   city: '',
   state: '',
-  state_code: '',
   billing_country: 'India',
   pincode: '',
   place_of_supply: '',
@@ -193,7 +186,7 @@ const buildDefaultValues = (): SupplierForm => ({
   currency_code: 'INR',
 });
 
-const toSupplierCodePreview = (businessType: 'domestic' | 'international', state?: string, stateCode?: string, country?: string): string => {
+const toSupplierCodePreview = (businessType: 'domestic' | 'international', state?: string, country?: string): string => {
   const isInternational = businessType === 'international' || !!(country && country.trim().toLowerCase() !== 'india');
   if (isInternational) {
     return 'SUPP-INT-XXXXX';
@@ -201,8 +194,8 @@ const toSupplierCodePreview = (businessType: 'domestic' | 'international', state
 
   const normalizedState = (state || '').trim().toLowerCase();
   const codeFromState = STATE_ABBREVIATIONS[normalizedState];
-  const codeFromInput = (stateCode || '').trim().replace(/[^a-zA-Z]/g, '').toUpperCase();
-  const finalCode = codeFromState || (codeFromInput.length >= 2 ? codeFromInput.slice(0, 2) : 'NA');
+  const fallbackCode = normalizedState.replace(/[^a-z]/g, '').toUpperCase();
+  const finalCode = codeFromState || (fallbackCode.length >= 2 ? fallbackCode.slice(0, 2) : 'NA');
   return `SUPP-${finalCode}-XXXXX`;
 };
 
@@ -410,7 +403,6 @@ const SuppliersPage = () => {
     setValue('address_line2', item.address_line2 ?? '');
     setValue('city', item.city ?? '');
     setValue('state', item.state ?? '');
-    setValue('state_code', item.state_code ?? '');
     setValue('billing_country', item.billing_country ?? (item.business_type === 'domestic' ? 'India' : ''));
     setValue('pincode', item.pincode ?? '');
     setValue('place_of_supply', item.place_of_supply ?? '');
@@ -456,7 +448,6 @@ const SuppliersPage = () => {
       address_line2: normalizeOptional(parsed.data.address_line2),
       city: normalizeOptional(parsed.data.city),
       state: normalizeOptional(parsed.data.state),
-      state_code: normalizeStateCodeOptional(parsed.data.state_code),
       billing_country: normalizeOptional(parsed.data.billing_country) ?? (parsed.data.business_type === 'domestic' ? 'India' : null),
       pincode: normalizeOptional(parsed.data.pincode),
       bank_name: null,
@@ -477,7 +468,7 @@ const SuppliersPage = () => {
     }
   };
 
-  const items = data?.items ?? [];
+  const items = useMemo(() => data?.items ?? [], [data?.items]);
   const filteredItems = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
     const fromTime = createdFrom ? new Date(`${createdFrom}T00:00:00`).getTime() : null;
@@ -564,11 +555,9 @@ const SuppliersPage = () => {
   const businessType = watch('business_type');
   const gstinStatus = watch('gstin_status');
   const state = watch('state') ?? '';
-  const stateCode = watch('state_code');
   const country = watch('billing_country') ?? '';
   const currencyCodeValue = watch('currency_code') ?? 'INR';
-  const isIndiaCountry = country.trim().toLowerCase() === 'india';
-  const supplierCodePreview = toSupplierCodePreview(businessType, state, stateCode, country);
+  const supplierCodePreview = toSupplierCodePreview(businessType, state, country);
   const supplierCodeDisplay = editingItem?.supplier_code || supplierCodePreview;
 
   const clearListFilters = () => {
@@ -614,16 +603,6 @@ const SuppliersPage = () => {
 
     return [...new Set(merged)].sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
   }, [items, phoneCountryCode]);
-
-  useEffect(() => {
-    if (!isIndiaCountry) {
-      return;
-    }
-
-    const normalizedState = (state || '').trim().toLowerCase();
-    const derivedStateCode = STATE_ABBREVIATIONS[normalizedState] ?? '';
-    setValue('state_code', derivedStateCode);
-  }, [isIndiaCountry, state, setValue]);
 
   return (
     <AppLayout title="Supplier Master">
@@ -834,21 +813,9 @@ const SuppliersPage = () => {
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label htmlFor="supplier_state_code" className="hms-label">State Code</label>
-                    <input
-                      id="supplier_state_code"
-                      className={isIndiaCountry ? 'hms-input bg-neutral-100' : 'hms-input'}
-                      placeholder={isIndiaCountry ? 'Auto' : 'State code'}
-                      readOnly={isIndiaCountry}
-                      {...register('state_code')}
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="supplier_pincode" className="hms-label">Pincode</label>
-                    <input id="supplier_pincode" className="hms-input" placeholder="Pincode" {...register('pincode')} />
-                  </div>
+                <div>
+                  <label htmlFor="supplier_pincode" className="hms-label">Pincode</label>
+                  <input id="supplier_pincode" className="hms-input" placeholder="Pincode" {...register('pincode')} />
                 </div>
                 <div>
                   <label htmlFor="supplier_country" className="hms-label">Country</label>

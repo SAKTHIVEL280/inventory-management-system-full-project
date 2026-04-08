@@ -239,6 +239,19 @@ def _reverse_invoice_allocation(db: Session, invoice_id: UUID, amount: int) -> N
         invoice.status = "partial_paid"
 
 
+def _get_customer_open_invoices(db: Session, customer_id: UUID) -> list[SalesInvoice]:
+    return (
+        db.query(SalesInvoice)
+        .filter(
+            SalesInvoice.customer_id == customer_id,
+            SalesInvoice.is_deleted == False,
+            SalesInvoice.amount_due > 0,
+            SalesInvoice.status.in_(["issued", "partial_paid"]),
+        )
+        .all()
+    )
+
+
 # BUG-15: Supplier GRN allocation tracking
 def _apply_grn_allocation(db: Session, grn_id: UUID, amount: int) -> None:
     """Track payment allocation against a GRN for supplier balance tracking."""
@@ -316,6 +329,7 @@ async def list_payments(
 
         allocation_po_ids: set[str] = set()
         allocation_po_numbers: set[str] = set()
+        allocation_grn_totals: dict[str, int] = {}
         status_token = _derive_payment_status_token(db, p)
 
         p_dict = {
@@ -334,6 +348,7 @@ async def list_payments(
             "status_display": _payment_status_display(status_token),
             "purchase_order_id": str(po_id_from_notes) if po_id_from_notes else None,
             "po_number": po_number_from_notes,
+            "grn_value": None,
             "allocations": []
         }
         for a in p.allocations:
@@ -346,7 +361,10 @@ async def list_payments(
                 alloc_dict["invoice_number"] = a.invoice.invoice_number
             if a.grn:
                 alloc_dict["grn_number"] = a.grn.grn_number
-                alloc_dict["grn_total_amount"] = int(a.grn.total_amount or 0)
+                grn_total_amount = int(a.grn.total_amount or 0)
+                alloc_dict["grn_total_amount"] = grn_total_amount
+                grn_key = str(a.grn.id)
+                allocation_grn_totals[grn_key] = grn_total_amount
                 if a.grn.purchase_order_id:
                     po_row = db.query(PurchaseOrder).filter(PurchaseOrder.id == a.grn.purchase_order_id).first()
                     if po_row:
@@ -360,6 +378,8 @@ async def list_payments(
             p_dict["purchase_order_id"] = next(iter(allocation_po_ids))
         if not p_dict["po_number"] and len(allocation_po_numbers) == 1:
             p_dict["po_number"] = next(iter(allocation_po_numbers))
+        if allocation_grn_totals:
+            p_dict["grn_value"] = sum(allocation_grn_totals.values())
 
         items_out.append(p_dict)
         
@@ -379,6 +399,23 @@ async def create_payment(
         raise HTTPException(status_code=400, detail="customer_id is required for customer payments")
     if payload.party_type == "supplier" and not payload.supplier_id:
         raise HTTPException(status_code=400, detail="supplier_id is required for supplier payments")
+
+    if payload.party_type == "customer" and payload.customer_id:
+        open_invoices = _get_customer_open_invoices(db, payload.customer_id)
+        if not open_invoices:
+            raise HTTPException(status_code=400, detail="No Open Invoice")
+
+        open_invoice_ids = {invoice.id for invoice in open_invoices}
+        for allocation in payload.allocations:
+            if allocation.purchase_grn_id:
+                raise HTTPException(status_code=400, detail="GRN allocations are not allowed for customer payments")
+            if not allocation.invoice_id:
+                raise HTTPException(status_code=400, detail="invoice_id is required for customer payment allocations")
+            if allocation.invoice_id not in open_invoice_ids:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Selected invoice is not an open invoice for this customer",
+                )
 
     selected_po = None
     if payload.party_type == "supplier" and payload.purchase_order_id:

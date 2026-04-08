@@ -1,0 +1,99 @@
+TC_ID,Status,Module,Description,Expected
+DAS-002,Fail,Dashboard,Cash In Flow Graph – Daily view,Graph shows daily cash in flow data
+DAS-003,Fail,Dashboard,Cash In Flow Graph – Weekly view,Graph shows weekly cash in flow data
+DAS-004,Fail,Dashboard,Cash In Flow Graph – Monthly view,Graph shows monthly cash in flow data
+CUS-005,Pending,Customer,New Country field on Customer,Country field present and selectable
+CUS-006,Pending,Customer,Country flows to Tax Invoice billing address,Billing address on invoice includes correct Country
+CUS-010,Pending,Customer,Billing address auto-copies from Company Profile on creation,Billing address auto-populated from Company Profile
+SUP-005,Pending,Supplier,Billing Address field on Supplier (same structure as Customer),Billing address fields present with same structure as Customer module
+PRO-004,Pending,Products Master,Rename 'Unit of Measure' to 'Order Unit/Packing' (optional),Field is labelled 'Order Unit/Packing' and is optional
+PRO-005,Pending,Products Master,Add Order Unit to Base Unit mapping (e.g. 1 case = 10 Bottles),Conversion mapping saved and displayed correctly
+STO-002,Pending,Stock Master,'Low Stock' blinking animation when qty ≤ Min Safety Stock,'Low Stock' badge/label has blinking animation
+STO-004,Pending,Stock Master,BUG FIX: Batch number not updating after GRN posting,Batch number correctly updated after GRN posting
+GRN-004,Pending,GRN,Payment Terms field auto-fills from Supplier Master,Payment Terms auto-filled from supplier master
+GRN-005,Pending,GRN,Payment Due Date = Goods Received Date + Payment Terms,Payment Due Date = 01-May-2026
+GRN-007,Pending,GRN,Manufacturing Date: must be a past date only,System blocks today/future Mfg Date with error
+SAL-010,Pending,Sales,Quotation: Send PDF option,Send PDF button present and sends the PDF
+SAL-017,Pending,Sales,Sales Invoice: MFG Date field,MFG Date column present
+SAL-018,Pending,Sales,Sales Invoice: EXP Date field,EXP Date column present
+SAL-020,Pending,Sales,Sales Invoice: MRP auto-fills from Product Master (renamed from Price),MRP auto-filled from Product Master; column labelled 'MRP'
+SAL-026,Fail,Sales,Sales Invoice: Due Date allows manual override,Due Date can be manually edited
+PAY-002,Pending,Payables,Add GRN Value field in Payables,GRN Value field visible and correctly populated
+PAY-006,Pending,Payables,Total Record Payments cannot exceed GRN Value,System blocks payment exceeding GRN Value with error
+CUS-012,changed,Customer,Rename 'Credit Limit' to 'Credit Limit in Currency',Field is labelled 'Credit Limit in Currency'
+CUS-013,changed,Customer,"If Shipping checkbox is unchecked, new address field should appear for shipping address",Separate shipping address field appears when Shipping checkbox is unchecked
+CUS-014,changed,Customer,Currency field – make it editable and include in customizing table,Currency field is editable and appears in customizing table
+CUS-015,changed,Customer,Country dropdown – make it editable (currently limited options) and include in customizing table,Country dropdown is editable with full list; included in customizing table
+CUS-016,changed,Customer,"Remove phone number validation (e.g. Thailand = 9 digits not accepted) and add country code prefix (+91, +66, +65)","Phone number saved without validation error; country code prefix (+91, +66, etc.) available"
+CUS-017,changed,Customer,Auto-filling of customer address should be removed,Address fields do NOT auto-fill incorrectly
+CUS-018,changed,Customer,Payment Terms should not auto-fill,Payment Terms field is empty on new customer; no auto-fill
+SUP-010,,Supplier,Remove State Code field from Supplier module,State Code field is NOT present in Supplier module
+SUP-011,changed,Supplier,Add Currency field to Supplier master,Currency field is present in Supplier master
+SAL-029,changed,Sales,"Split Sales Invoice into: Export Invoice, Sales Invoice – Within State, Sales Invoice – Other States, Sales Invoice – Union Territory","Four invoice types available: Export Invoice, Within State, Other States, Union Territory"
+SAL-030,changed,Sales,Export Invoice: GST not applicable – add 'Import & Export Code' field (optional); copy tax invoice format with 'Export Invoice' label and print Import & Export Number from company profile,Import & Export Code field present; GST = 0%; PDF labelled 'Export Invoice'; Import & Export Number printed from company profile
+SAL-031,changed,Sales,"Auto-calculate GST based on Place of Supply: Within State = CGST+SGST, Other State = IGST, Union Territory = UTGST, Export = 0%",GST components auto-calculated correctly based on Place of Supply
+PUR-003,changed,Purchase Order,Add 'Under Delivery Tolerance' and 'Over Delivery Tolerance' fields in Purchase Order; these should flow to GRN,Under and Over Delivery Tolerance fields present in PO and reflected in GRN
+PUR-004,changed,Purchase Order,Watermark 'Approved' should appear only when PO is approved; Draft PDF should show 'Not Approved' watermark,Draft PDF shows 'Not Approved' watermark; Approved PO PDF shows 'Approved' watermark
+PUR-005,changed,Purchase Order,PDF: Print CGST and SGST values only – remove '%' suffix near footer above 'Total Amount',CGST and SGST values shown without '%' suffix
+PUR-006,changed,Purchase Order,GST is auto-filling before product is selected,GST field remains empty until a product is selected
+GRN-012,changed,GRN,Add S.No / Line Item number in GRN and enable search box for items,S.No column present in GRN; search box available for items
+GRN-013,changed,GRN,Received Qty must be ≤ PO Quantity (currently allows higher values); should accept as per Delivery Tolerance,System blocks Received Qty > PO Qty; allows within Delivery Tolerance only
+STO-005,changed,Stock Master,Multiple batches of the same product must display as separate line items in Stock Master (e.g. Dolo 500: Batch-1: 50 Qty | Batch-2: 25 Qty),Each batch of the same product shown as a separate line item in Stock Master
+STO-006,changed,Stock Master,"Add Inventory Count module: auto-generate Inventory Count Number (INV-MONTH-001), Count Date, Count Performed By; input fields: Serial Number, Product ID, Product Description, Quantity, Batch Number, Mfg Date, Exp Date; enable Confirm button after entry",Inventory Count Number auto-generated in correct format; all input fields present; Confirm button enabled after entry
+STO-007,changed,Stock Master,Add 'Inventory Count Difference' module (admin only): input Inventory Count Number (INV-APR-001); display all product stock details showing count vs existing stock vs difference value,Module accessible to admin only; displays count vs existing stock vs difference per product
+PRO-014,changed,Products Master,Remove 'Opening Stock' field from Products Master,'Opening Stock' field is NOT present in Products Master
+SAL-032,changed,Sales,Batch should auto-fill or show as dropdown when product is selected in Sales Invoice,Batch auto-fills or shows as dropdown linked to selected product
+SAL-033,changed,Sales,Exp Date and Mfg Date must auto-fill based on selected Batch in Sales Invoice,Exp Date and Mfg Date auto-filled from selected Batch
+SAL-034,changed,Sales,Add Packing Unit field in Sales Invoice,Packing Unit field present in Sales Invoice
+SAL-035,changed,Sales,Shipping address must be validated / checked before invoice creation,System validates shipping address before allowing invoice creation
+SAL-036,changed,Sales,Mfg Date and Exp Date validation not working – wrong dates and wrong batch accepted; invoice still creates and stock reduces,System blocks invoice creation with invalid Mfg/Exp dates or wrong batch; stock should NOT reduce
+CUS-019,Changed | Already Covered,Customer,Rename 'Credit Limit' field to 'Credit Limit in Currency',Field label reads 'Credit Limit in Currency'
+CUS-020,Changed | Already Covered,Customer,Show new shipping address field when Shipping checkbox is unchecked,A new address input field appears for shipping address
+CUS-021,Changed | Already Covered,Customer,Make Currency field editable and include in customizing table,Currency field is editable and appears in customizing table
+CUS-022,Changed | Already Covered,Customer,Make Country dropdown editable with expanded options and include in customizing table,Country dropdown has expanded options and is included in customizing table
+CUS-023,Changed | Already Covered,Customer,"Remove phone number validation; add country code prefix (+91, +66, +65)",Phone number saves without validation error; country code prefix accepted
+CUS-024,Changed | Already Covered,Customer,Auto-filling of customer address should be removed,Address does not auto-fill on new customer creation
+CUS-025,Changed | Already Covered,Customer,Payment Terms should not auto-fill on new customer creation,Payment Terms field is blank by default and does not auto-fill
+SUP-012,,Supplier,Remove State Code field from Supplier module,State Code field is not present in Supplier module
+SUP-013,Changed | Already Covered,Supplier,Add Currency field to Supplier Master,Currency field is present and functional in Supplier Master
+SAL-037,Changed | Already Covered,Sales,"Split Sales Invoice into four types: Export, Within State, Other States, Union Territory",All four invoice type options are available for selection
+SAL-038,Changed | Already Covered,Sales,Export Invoice: GST not applicable; add optional 'Import & Export Code' field; update print label,GST is 0%; IEC field present; label shows 'Export Invoice'; IEC from company profile printed
+SAL-039,Changed | Already Covered,Sales,Auto-calculate GST based on Place of Supply (CGST+SGST / IGST / UTGST / 0%),GST auto-calculated correctly per Place of Supply rules
+PUR-007,Changed | Already Covered,Purchase Order,Add 'Delivery Tolerance' and 'Over Delivery Tolerance' fields in PO; values must flow to GRN,Both tolerance fields present in PO and values carry over to GRN
+PUR-008,Changed | Already Covered,Purchase Order,Watermark 'Approved' on approved PO PDF; 'Not Approved' on Draft PDF,Draft PDF shows 'Not Approved'; Approved PDF shows 'Approved' watermark
+PUR-009,Changed | Already Covered,Purchase Order,PDF: Print CGST and SGST values only – remove '%' suffix above 'Total Amount' in footer,CGST and SGST values printed without '%' suffix in PDF footer
+PUR-010,Changed | Already Covered,Purchase Order,GST should not auto-fill before product is selected in Purchase Order,GST field remains blank until a product is selected
+GRN-014,Changed | Already Covered,GRN,Add S.No / Line Item number column in GRN and enable item search box,S.No visible on each GRN line; search box available for items
+GRN-015,Changed | Already Covered,GRN,Received Qty must not exceed PO Quantity; accept within Delivery Tolerance,System prevents Received Qty exceeding PO Qty; accepts qty within Delivery Tolerance
+STO-008,Changed | Already Covered,Stock Master,Multiple batches of same product must display as separate line items in Stock Master,Each batch of a product displays as a separate line item in Stock Master
+STO-009,Changed | Already Covered,Stock Master,"Add Inventory Count module: auto count number (INV-MONTH-001), count date, performed by, and product input fields",Module available; count number auto-generated; all fields functional; Confirm works
+STO-010,Changed | Already Covered,Stock Master,Add 'Inventory Count Difference' module (admin only) showing count vs existing stock and variance,Module accessible to admin only; shows product stock with count vs existing and difference values
+PRO-015,Changed | Already Covered,Products Master,Remove 'Opening Stock' field from Products Master,'Opening Stock' field is not present in Products Master
+SAL-040,Changed,Sales,Batch should auto-fill or show as dropdown when product is selected in Sales Invoice,Batch field auto-fills or shows dropdown linked to selected product
+SAL-041,Changed,Sales,Exp Date and Mfg Date must auto-fill based on selected Batch in Sales Invoice,Exp Date and Mfg Date auto-populate from selected batch
+SAL-042,Changed,Sales,Add Packing Unit field to Sales Invoice,Packing Unit field present and functional in Sales Invoice
+SAL-043,Changed,Sales,Shipping address must be validated before Sales Invoice creation,System validates shipping address before allowing invoice creation
+SAL-044,Changed,Sales,Mfg Date and Exp Date validation not working – wrong dates/batch accepted; stock reduces incorrectly,System rejects invoice with invalid Mfg/Exp dates or wrong batch; stock does not reduce
+COM-001,Changed | Already Covered,Company,"Add field ""Import and Export Code"" and make it as optional field
+
+This field have to be added in Export Sales invoices(since GSTIN for export is zero tax so no GSTIN number instead of GSTIN number Export code have to be replaced there)","Additional Field ""Import and Export Code"" in company profile"
+PRO-001,Changed,Product,"Enable ""Basic Unit"" field in drop down","""Basic Unit"" with drop down including all the basic units"
+PRO-002,Changed,Product,optional field have to be come near Order Unit / packing,"Display it as ""Order unit/packing (optional)"""
+STO-001,Changed,Stock, Display Low stock as it is blinking like a animation,Blinking Animation
+GRN-001,Changed,GRN,Watermark 'Approved' on approved Sales invoices(all the four invoices) PDF; 'Not Approved' on Draft PDF,Draft PDF shows 'Not Approved'; Approved PDF shows 'Approved' watermark
+GRN-002,Changed,GRN, The manufacturing date is allowing future date also ( the mfg date must be past date),MFG date not allowing future date to select
+GRN-003,Changed,GRN,"""Product Code"" or ""Product ID"" in Quotation it is ""Product ID"" but in GRN it is represented as ""Product Code""",Either Product ID or Product code in all the modules of Mecandria ERP
+GRN-004,,GRN,"The system status is not showing ""Partial"" while we are receiving partial quantity","Status should show ""Partial"" for partial GRN quantity"
+SI-001,Changed | Already Covered,Sales Invoices,"In all the PDFs, GST percentage is printing along with the term ""CGST""/""SGST""/""IGST""","Only ""CGST"",""SGST"""
+SI-002,Changed | Already Covered,Sales Invoices,Add validation to MFG date and Exp date in sales invoice ," MFG date should allow only the past dates
+ Exp date should allow only the future dates "
+PAY-001,,Payables,Add new field “ Purchase order number “ related to supplier for advance payment ,"Display PO number in ""Payables"""
+PAY-002,,Payables,"System is not considering advance payment.
+
+i) After GRN, record payment should show the payment details based on the reference of PO number
+
+ii) status should be ""advance Payment cleared"", ""Full payment cleared""
+
+iii) PO number and GRN value should be displayed for Full payment cleared
+
+iv) PO number should be displayed for Advance cleared",Correct display of status in payables

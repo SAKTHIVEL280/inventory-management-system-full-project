@@ -20,7 +20,7 @@ from app.models.customer import Customer
 from app.models.payment import Payment
 from app.models.product import Product, ProductCategory, StockLedger
 from app.models.purchase import GoodsReceiptNote, PurchaseOrder
-from app.models.sales import Quotation, SalesInvoice, SalesOrder
+from app.models.sales import Quotation, SalesInvoice
 from app.models.supplier import Supplier
 from app.models.user import User
 
@@ -45,7 +45,6 @@ ARCHIVE_POLICIES: list[ArchivePolicy] = [
     ArchivePolicy("quotations", "Quotations", Quotation, 120, True),
     ArchivePolicy("purchase_orders", "Purchase Orders", PurchaseOrder, 180, True),
     ArchivePolicy("grn", "Goods Receipt Notes", GoodsReceiptNote, 180, True),
-    ArchivePolicy("sales_orders", "Sales Orders", SalesOrder, 180, True),
     # Protected modules: no automatic hard delete. Explicit decision required.
     ArchivePolicy("sales_invoices", "Sales Invoices", SalesInvoice, 365, False),
     ArchivePolicy("payments", "Payments", Payment, 365, False),

@@ -8,7 +8,7 @@ from app.database import get_db
 from app.dependencies import require_permissions
 from app.models.user import User
 from app.models.product import Product, StockLedger
-from app.models.sales import SalesInvoice, SalesInvoiceItem, SalesOrder, SalesReturn, SalesReturnItem
+from app.models.sales import SalesInvoice, SalesInvoiceItem, SalesReturn, SalesReturnItem
 from app.models.purchase import GoodsReceiptNote, GRNItem, PurchaseOrder, PurchaseReturn, PurchaseReturnItem
 from app.models.customer import Customer
 from app.models.supplier import Supplier
@@ -33,6 +33,7 @@ async def dashboard_report(
     today = date.today()
     month_start = today.replace(day=1)
     receivable_statuses = ["issued", "partial_paid"]
+    cash_flow_statuses = receivable_statuses
 
     # Count totals
     total_products = db.query(func.count(Product.id)).filter(
@@ -70,11 +71,8 @@ async def dashboard_report(
         PurchaseOrder.is_deleted == False,
     ).scalar() or 0
 
-    # Pending sales orders
-    pending_so_count = db.query(func.count(SalesOrder.id)).filter(
-        SalesOrder.status.in_(["draft", "confirmed", "partial"]),
-        SalesOrder.is_deleted == False,
-    ).scalar() or 0
+    # Sales Order module removed from active workflow.
+    pending_so_count = 0
 
     # Today sales
     today_sales = db.query(func.coalesce(func.sum(SalesInvoice.total_amount), 0)).filter(
@@ -149,7 +147,7 @@ async def dashboard_report(
             SalesInvoice,
             SalesInvoice.customer_id == Customer.id,
         ).filter(
-            SalesInvoice.status.in_(receivable_statuses),
+            SalesInvoice.status.in_(cash_flow_statuses),
             SalesInvoice.amount_due > 0,
             SalesInvoice.is_deleted == False,
             Customer.is_deleted == False,
@@ -169,12 +167,7 @@ async def dashboard_report(
         ).limit(12).all()
 
     def _build_cash_in_flow(start_date: date):
-        # If no receivables fall inside the date window, show overall outstanding
-        # customers so the graph doesn't appear empty while receivables exist.
         rows = _cash_in_flow_rows(start_date)
-        if not rows:
-            rows = _cash_in_flow_rows()
-
         return [
             {
                 "customer_id": str(row.id),

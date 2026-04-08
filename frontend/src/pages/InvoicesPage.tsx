@@ -2,7 +2,7 @@
  * Sales Invoices Page
  * List, create, edit, issue invoices. GST-aware line items.
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { AppLayout } from '../components/AppLayout';
 import { salesApi, type SalesInvoice, type CreateInvoicePayload, type SalesLineItem, type SalesInvoiceItem, type InvoiceTypeValue, type InvoiceBatchOption } from '../api/sales';
@@ -129,6 +129,7 @@ const InvoicesPage = () => {
   const [importExportCode, setImportExportCode] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(todayLocalDateInputValue());
   const [dueDate, setDueDate] = useState('');
+  const [isDueDateManuallyEdited, setIsDueDateManuallyEdited] = useState(false);
   const [notes, setNotes] = useState('');
   const [items, setItems] = useState<SalesLineItem[]>([]);
 
@@ -155,7 +156,7 @@ const InvoicesPage = () => {
     return 'GST % (CGST+SGST)';
   };
 
-  const deriveDefaultInvoiceType = (selectedCustomerId: string): InvoiceTypeValue => {
+  const deriveDefaultInvoiceType = useCallback((selectedCustomerId: string): InvoiceTypeValue => {
     const customer = customers.find((c) => c.id === selectedCustomerId);
     if (!customer) return 'within_state';
 
@@ -179,9 +180,9 @@ const InvoicesPage = () => {
     }
 
     return 'other_states';
-  };
+  }, [customers, companyLocation]);
 
-  const calculateInvoiceDueDate = (selectedCustomerId: string, selectedInvoiceDate: string) => {
+  const calculateInvoiceDueDate = useCallback((selectedCustomerId: string, selectedInvoiceDate: string) => {
     if (!selectedCustomerId || !selectedInvoiceDate) {
       return '';
     }
@@ -192,7 +193,7 @@ const InvoicesPage = () => {
       : 0;
 
     return addDaysToDateInputValue(selectedInvoiceDate, paymentTermsDays);
-  };
+  }, [customers]);
 
   const fetchInvoices = async () => {
     try { setLoading(true); const res = await salesApi.listInvoices(statusFilter || undefined); setInvoices(res.data.items || []); } catch { setError('Failed to load'); } finally { setLoading(false); }
@@ -218,7 +219,7 @@ const InvoicesPage = () => {
   useEffect(() => { fetchInvoices(); }, [statusFilter]);
   useEffect(() => { fetchMasterData(); }, []);
 
-  const resetForm = () => { setCustomerId(''); setInvoiceType('within_state'); setImportExportCode(''); setInvoiceDate(todayLocalDateInputValue()); setDueDate(''); setNotes(''); setItems([]); setBatchOptionsByRow({}); setEditingId(null); setError(''); };
+  const resetForm = () => { setCustomerId(''); setInvoiceType('within_state'); setImportExportCode(''); setInvoiceDate(todayLocalDateInputValue()); setDueDate(''); setIsDueDateManuallyEdited(false); setNotes(''); setItems([]); setBatchOptionsByRow({}); setEditingId(null); setError(''); };
   const addItem = () => {
     setItems([
       ...items,
@@ -246,6 +247,7 @@ const InvoicesPage = () => {
   const handleCustomerChange = (newCustomerId: string) => {
     setCustomerId(newCustomerId);
     setDueDate(calculateInvoiceDueDate(newCustomerId, invoiceDate));
+    setIsDueDateManuallyEdited(false);
     setInvoiceType(deriveDefaultInvoiceType(newCustomerId));
   };
 
@@ -264,7 +266,7 @@ const InvoicesPage = () => {
     if (customerInIndia && invoiceType === 'export_invoice') {
       setInvoiceType(deriveDefaultInvoiceType(customerId));
     }
-  }, [customerId, customers, invoiceType]);
+  }, [customerId, customers, deriveDefaultInvoiceType, invoiceType]);
 
   useEffect(() => {
     if (!customerId || !invoiceDate) {
@@ -279,11 +281,15 @@ const InvoicesPage = () => {
       return;
     }
 
+    if (isDueDateManuallyEdited) {
+      return;
+    }
+
     const calculatedDueDate = calculateInvoiceDueDate(customerId, invoiceDate);
     if (calculatedDueDate !== dueDate) {
       setDueDate(calculatedDueDate);
     }
-  }, [customerId, invoiceDate, customers, dueDate]);
+  }, [calculateInvoiceDueDate, customerId, invoiceDate, customers, dueDate, isDueDateManuallyEdited]);
 
   const updateItem = (idx: number, field: keyof SalesLineItem, value: string | number) => {
     const updated = [...items]; (updated[idx] as unknown as Record<string, unknown>)[field] = value;
@@ -348,23 +354,23 @@ const InvoicesPage = () => {
     return s.charAt(0).toUpperCase() + s.slice(1);
   };
   const productById = (id: string) => products.find(p => p.id === id);
-  const uomAbbreviationById = (id?: string | null) => uomOptions.find((u) => u.id === id)?.abbreviation || '';
-  const resolvePackingUnit = (product?: ProductOption) => {
+  const uomAbbreviationById = useCallback((id?: string | null) => uomOptions.find((u) => u.id === id)?.abbreviation || '', [uomOptions]);
+  const resolvePackingUnit = useCallback((product?: ProductOption) => {
     if (!product) return '';
     return uomAbbreviationById(product.alt_uom_id) || uomAbbreviationById(product.uom_id) || '';
-  };
-  const resolveBaseUnit = (product?: ProductOption) => {
+  }, [uomAbbreviationById]);
+  const resolveBaseUnit = useCallback((product?: ProductOption) => {
     if (!product) return '';
     const baseUnit = (product.sku || '').trim();
     if (baseUnit) return baseUnit;
     return uomAbbreviationById(product.uom_id) || '';
-  };
+  }, [uomAbbreviationById]);
   const formatAvailableQty = (qty: number) => {
     if (!Number.isFinite(qty)) return '0';
     return Number(qty).toFixed(4).replace(/\.?0+$/, '');
   };
 
-  const loadBatchOptionsForRow = async (rowIndex: number, productId: string, autoSelectSingle: boolean) => {
+  const loadBatchOptionsForRow = useCallback(async (rowIndex: number, productId: string, autoSelectSingle: boolean) => {
     try {
       const response = await salesApi.getInvoiceBatchOptions(productId);
       const options = response.data.items || [];
@@ -405,7 +411,7 @@ const InvoicesPage = () => {
     } catch {
       setBatchOptionsByRow((prev) => ({ ...prev, [rowIndex]: [] }));
     }
-  };
+  }, [products, resolvePackingUnit]);
 
   useEffect(() => {
     if (!showForm) return;
@@ -414,7 +420,7 @@ const InvoicesPage = () => {
       if (batchOptionsByRow[idx] !== undefined) return;
       void loadBatchOptionsForRow(idx, item.product_id, false);
     });
-  }, [showForm, items, batchOptionsByRow]);
+  }, [showForm, items, batchOptionsByRow, loadBatchOptionsForRow]);
 
   const handleDateFromChange = (value: string) => {
     setDateFrom(value);
@@ -432,10 +438,37 @@ const InvoicesPage = () => {
 
   const handleSubmit = async () => {
     if (!customerId || items.length === 0) { setError('Select customer & add items'); return; }
+
+    const todayIso = todayLocalDateInputValue();
+    const invalidMfgDateIndex = items.findIndex(
+      (i) => i.manufacture_date && i.manufacture_date >= todayIso,
+    );
+    if (invalidMfgDateIndex >= 0) {
+      setError(`Line item ${invalidMfgDateIndex + 1}: MFG date must be a past date`);
+      return;
+    }
+
+    const invalidExpDateIndex = items.findIndex(
+      (i) => i.expiry_date && i.expiry_date <= todayIso,
+    );
+    if (invalidExpDateIndex >= 0) {
+      setError(`Line item ${invalidExpDateIndex + 1}: EXP date must be a future date`);
+      return;
+    }
+
+    const invalidDateOrderIndex = items.findIndex(
+      (i) => i.manufacture_date && i.expiry_date && i.expiry_date <= i.manufacture_date,
+    );
+    if (invalidDateOrderIndex >= 0) {
+      setError(`Line item ${invalidDateOrderIndex + 1}: EXP date must be later than MFG date`);
+      return;
+    }
+
     setSubmitting(true); setError('');
     try {
       const payload: CreateInvoicePayload = {
-        customer_id: customerId, sales_order_id: undefined, invoice_date: invoiceDate,
+        customer_id: customerId, invoice_date: invoiceDate,
+        due_date: dueDate || undefined,
         bill_to_customer_id: customerId,
         invoice_type: invoiceType,
         import_export_code: importExportCode.trim() || undefined,
@@ -658,7 +691,18 @@ const InvoicesPage = () => {
                 </div>
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Invoice Date *</label><input type="date" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} /></div>
                 {/* SAL-029: Due Date is fully auto-calculated for invoices */}
-                <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Due Date <span className="text-xs text-neutral-400">(auto from payment terms)</span></label><input type="date" className="w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-600" value={dueDate} readOnly disabled /></div>
+                <div>
+                  <label className="mb-1 block text-sm font-semibold text-neutral-700">Due Date <span className="text-xs text-neutral-400">(auto default, editable)</span></label>
+                  <input
+                    type="date"
+                    className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm"
+                    value={dueDate}
+                    onChange={e => {
+                      setDueDate(e.target.value);
+                      setIsDueDateManuallyEdited(true);
+                    }}
+                  />
+                </div>
               </div>
               <div>
                 <div className="mb-2 flex items-center justify-between"><h3 className="text-sm font-semibold">Items</h3><button onClick={addItem} className="rounded bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary">+ Add</button></div>
@@ -818,6 +862,7 @@ const InvoicesPage = () => {
                         setImportExportCode(selectedInvoice.import_export_code || '');
                         setInvoiceDate(selectedInvoice.invoice_date);
                         setDueDate(selectedInvoice.due_date || '');
+                        setIsDueDateManuallyEdited(true);
                         setNotes(selectedInvoice.notes || '');
                         setItems(selectedInvoiceItems.map(i => ({
                           product_id: i.product_id,

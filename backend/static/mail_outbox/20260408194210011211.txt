@@ -1,0 +1,6 @@
+to=qa@example.com
+subject=Sales Invoice INV-00004
+body=
+Please find attached Sales Invoice INV-00004.
+
+attachment=20260408194210011211_INV-00004.pdf

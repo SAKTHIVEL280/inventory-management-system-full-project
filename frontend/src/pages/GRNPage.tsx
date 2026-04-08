@@ -422,29 +422,23 @@ const GRNPage = () => {
       return;
     }
 
-    // Validate manufacture date is not in the future
+    // GRN-007: Validate manufacture date is a past date only
     const todayIso = todayLocalDateInputValue();
     const invalidMfgDateIndex = items.findIndex(
-      (i) => i.manufacture_date && i.manufacture_date > todayIso,
+      (i) => i.manufacture_date && i.manufacture_date >= todayIso,
     );
     if (invalidMfgDateIndex >= 0) {
-      setError('MFG Date cannot be a future date');
+      setError('MFG Date must be a past date');
       return;
     }
 
-    // Validate expiry date is not in the past
+    // GRN-008: Validate expiry date is a future date only
     const invalidExpDateIndex = items.findIndex(
-      (i) => i.expiry_date && i.expiry_date < todayIso,
+      (i) => i.expiry_date && i.expiry_date <= todayIso,
     );
     if (invalidExpDateIndex >= 0) {
-      setError(`Line item ${invalidExpDateIndex + 1}: expiry date must be today or a future date`);
+      setError(`Line item ${invalidExpDateIndex + 1}: expiry date must be a future date`);
       return;
-    }
-
-    const todayIso2 = todayLocalDateInputValue();
-    const expiredCount = items.filter((i) => i.expiry_date && i.expiry_date < todayIso2).length;
-    if (expiredCount > 0) {
-      toast.warning(`${expiredCount} line item(s) have an expiry date in the past. Please verify before saving.`);
     }
 
     setSubmitting(true); setError('');
@@ -661,6 +655,8 @@ const GRNPage = () => {
     ? products.filter(p => items.some(i => i.product_id === p.id))
     : products;
   const todayDateInputMax = todayLocalDateInputValue();
+  const mfgDateInputMax = addDaysToDateInputValue(todayDateInputMax, -1);
+  const expiryDateInputMin = addDaysToDateInputValue(todayDateInputMax, 1);
 
   useEffect(() => {
     const query = itemSearchQuery.trim().toLowerCase();
@@ -1122,7 +1118,7 @@ const GRNPage = () => {
                               type="date"
                               className="w-full rounded border px-2 py-1.5 text-sm"
                               value={item.manufacture_date || ''}
-                              max={todayDateInputMax}
+                              max={mfgDateInputMax}
                               onChange={e => updateItem(idx, 'manufacture_date', e.target.value)}
                             />
                           </td>
@@ -1131,7 +1127,7 @@ const GRNPage = () => {
                               type="date"
                               className="w-full rounded border px-2 py-1.5 text-sm"
                               value={item.expiry_date || ''}
-                              min={item.manufacture_date && item.manufacture_date > todayDateInputMax ? item.manufacture_date : todayDateInputMax}
+                              min={expiryDateInputMin}
                               onChange={e => updateItem(idx, 'expiry_date', e.target.value)}
                             />
                           </td>

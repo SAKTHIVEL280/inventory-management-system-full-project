@@ -10,6 +10,10 @@ Production-ready with fixes for:
 - BUG-25: Sales return adjusts invoice amount_due
 """
 from datetime import date, datetime, timedelta
+from email.message import EmailMessage
+from pathlib import Path
+import smtplib
+import ssl
 from typing import Any
 from uuid import UUID
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
@@ -55,6 +59,7 @@ from app.services.order_number_service import (
 )
 from app.services.gst_service import determine_tax_mode, determine_default_invoice_type, invoice_type_tax_mode, is_india_country, calc_line_item, split_tax
 from app.services.stock_service import get_current_stock, add_stock_entry, refresh_materialized_view
+from app.config import settings
 
 router = APIRouter(tags=["sales"])
 
@@ -79,6 +84,13 @@ def _calculate_invoice_due_date(invoice_date: date, customer: Customer) -> date:
     if payment_terms_days < 0:
         payment_terms_days = 0
     return invoice_date + timedelta(days=payment_terms_days)
+
+
+def _sales_order_module_removed() -> None:
+    raise HTTPException(
+        status_code=410,
+        detail="Sales Order module has been removed from this build.",
+    )
 
 
 def _validate_invoice_type_for_country(invoice_type: str, customer: Customer) -> None:
@@ -287,9 +299,9 @@ def _collect_batch_and_date_errors(
     if manufacture_date != expected_mfg or expiry_date != expected_exp:
         errors.append("MFG/EXP date mismatch with batch")
 
-    if expected_mfg and expected_mfg > today:
+    if expected_mfg and expected_mfg >= today:
         errors.append("Invalid date range")
-    if expected_exp and expected_exp < today:
+    if expected_exp and expected_exp <= today:
         errors.append("Invalid date range")
     if expected_mfg and expected_exp and expected_exp <= expected_mfg:
         errors.append("Invalid date range")
@@ -334,6 +346,116 @@ def _validate_invoice_line_items_for_save(
         raise HTTPException(status_code=400, detail=validation_errors)
 
     return product_cache
+
+
+def _mail_config_looks_configured() -> bool:
+    placeholders = {
+        "your@gmail.com",
+        "your-gmail-app-password",
+        "noreply@yourcompany.com",
+        "smtp.gmail.com",
+    }
+    username = (settings.mail_username or "").strip()
+    password = (settings.mail_password or "").strip()
+    sender = (settings.mail_from or "").strip()
+    server = (settings.mail_server or "").strip()
+    return bool(username and password and sender and server) and username not in placeholders and password not in placeholders
+
+
+def _write_email_outbox_copy(
+    *,
+    recipient: str,
+    subject: str,
+    body: str,
+    pdf_filename: str,
+    pdf_bytes: bytes,
+) -> str:
+    outbox_dir = Path(__file__).resolve().parents[2] / "static" / "mail_outbox"
+    outbox_dir.mkdir(parents=True, exist_ok=True)
+
+    token = datetime.utcnow().strftime("%Y%m%d%H%M%S%f")
+    base_name = f"{token}_{pdf_filename.replace(' ', '_')}"
+    pdf_path = outbox_dir / base_name
+    meta_path = outbox_dir / f"{token}.txt"
+
+    pdf_path.write_bytes(pdf_bytes)
+    meta_path.write_text(
+        "\n".join(
+            [
+                f"to={recipient}",
+                f"subject={subject}",
+                "body=",
+                body,
+                "",
+                f"attachment={pdf_path.name}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    return str(pdf_path.relative_to(Path(__file__).resolve().parents[2]).as_posix())
+
+
+def _send_pdf_email(
+    *,
+    recipient: str,
+    subject: str,
+    body: str,
+    pdf_filename: str,
+    pdf_bytes: bytes,
+) -> dict[str, str]:
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = (settings.mail_from or "").strip()
+    msg["To"] = recipient
+    msg.set_content(body)
+    msg.add_attachment(pdf_bytes, maintype="application", subtype="pdf", filename=pdf_filename)
+
+    if _mail_config_looks_configured():
+        try:
+            if settings.mail_ssl_tls:
+                with smtplib.SMTP_SSL(settings.mail_server, settings.mail_port, timeout=20) as smtp:
+                    smtp.login(settings.mail_username, settings.mail_password)
+                    smtp.send_message(msg)
+            else:
+                with smtplib.SMTP(settings.mail_server, settings.mail_port, timeout=20) as smtp:
+                    smtp.ehlo()
+                    if settings.mail_starttls:
+                        smtp.starttls(context=ssl.create_default_context())
+                        smtp.ehlo()
+                    smtp.login(settings.mail_username, settings.mail_password)
+                    smtp.send_message(msg)
+
+            return {
+                "delivery": "smtp",
+                "message": "Email sent successfully",
+            }
+        except Exception:
+            outbox_file = _write_email_outbox_copy(
+                recipient=recipient,
+                subject=subject,
+                body=body,
+                pdf_filename=pdf_filename,
+                pdf_bytes=pdf_bytes,
+            )
+            return {
+                "delivery": "outbox",
+                "message": "SMTP send failed; saved email copy to local outbox",
+                "outbox_file": outbox_file,
+            }
+
+    outbox_file = _write_email_outbox_copy(
+        recipient=recipient,
+        subject=subject,
+        body=body,
+        pdf_filename=pdf_filename,
+        pdf_bytes=pdf_bytes,
+    )
+    return {
+        "delivery": "outbox",
+        "message": "SMTP not configured; saved email copy to local outbox",
+        "outbox_file": outbox_file,
+    }
 
 
 # ────────────────────────────── Quotations ───────────────────────────────────
@@ -619,6 +741,7 @@ async def convert_quotation_to_so(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("sales_orders_write")),
 ):
+    _sales_order_module_removed()
     q = db.query(Quotation).filter(Quotation.id == quotation_id, Quotation.is_deleted == False).first()
     if not q:
         raise HTTPException(status_code=404, detail="Quotation not found")
@@ -687,6 +810,7 @@ async def list_sales_orders(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("sales_orders_read")),
 ):
+    _sales_order_module_removed()
     query = db.query(SalesOrder)
     if archived_only:
         query = query.filter(SalesOrder.is_deleted == True)
@@ -711,6 +835,7 @@ async def create_sales_order(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("sales_orders_write")),
 ):
+    _sales_order_module_removed()
     customer = db.query(Customer).filter(Customer.id == payload.customer_id, Customer.is_deleted == False).first()
     if not customer:
         raise HTTPException(status_code=400, detail="Invalid customer")
@@ -791,6 +916,7 @@ async def get_sales_order(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("sales_orders_read")),
 ):
+    _sales_order_module_removed()
     so = db.query(SalesOrder).filter(SalesOrder.id == so_id, SalesOrder.is_deleted == False).first()
     if not so:
         raise HTTPException(status_code=404, detail="Sales order not found")
@@ -803,6 +929,7 @@ async def get_sales_order_by_number(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("sales_orders_read")),
 ):
+    _sales_order_module_removed()
     so = db.query(SalesOrder).filter(SalesOrder.so_number == so_number, SalesOrder.is_deleted == False).first()
     if not so:
         raise HTTPException(status_code=404, detail="Sales order not found")
@@ -817,6 +944,7 @@ async def update_sales_order(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("sales_orders_write")),
 ):
+    _sales_order_module_removed()
     so = db.query(SalesOrder).filter(SalesOrder.id == so_id, SalesOrder.is_deleted == False).first()
     if not so:
         raise HTTPException(status_code=404, detail="Sales order not found")
@@ -896,6 +1024,7 @@ async def sales_order_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("sales_orders_write")),
 ):
+    _sales_order_module_removed()
     so = db.query(SalesOrder).filter(SalesOrder.id == so_id, SalesOrder.is_deleted == False).first()
     if not so:
         raise HTTPException(status_code=404, detail="Sales order not found")
@@ -947,6 +1076,7 @@ async def archive_sales_order(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("sales_orders_write")),
 ):
+    _sales_order_module_removed()
     so = db.query(SalesOrder).filter(SalesOrder.id == so_id, SalesOrder.is_deleted == False).first()
     if not so:
         raise HTTPException(status_code=404, detail="Sales order not found")
@@ -964,6 +1094,7 @@ async def restore_sales_order(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("sales_orders_write")),
 ):
+    _sales_order_module_removed()
     so = db.query(SalesOrder).filter(SalesOrder.id == so_id, SalesOrder.is_deleted == True).first()
     if not so:
         raise HTTPException(status_code=404, detail="Archived sales order not found")
@@ -983,6 +1114,7 @@ async def convert_so_to_invoice(
     current_user: User = Depends(require_permissions("sales_invoices_write")),
 ):
     """Convert a confirmed/fulfilled/partial sales order to a draft invoice."""
+    _sales_order_module_removed()
     so = db.query(SalesOrder).filter(SalesOrder.id == so_id, SalesOrder.is_deleted == False).first()
     if not so:
         raise HTTPException(status_code=404, detail="Sales order not found")
@@ -1144,11 +1276,13 @@ async def create_invoice(
     product_cache = _validate_invoice_line_items_for_save(db, payload.items)
 
     calculated_due_date = _calculate_invoice_due_date(payload.invoice_date, customer)
-        
+    resolved_due_date = payload.due_date or calculated_due_date
+
     if payload.sales_order_id:
-        so = db.query(SalesOrder).filter(SalesOrder.id == payload.sales_order_id).first()
-        if so and so.status not in {"confirmed", "fulfilled", "partial"}:
-            raise HTTPException(status_code=400, detail="Only confirmed, partial, or fulfilled sales orders can generate invoices")
+        raise HTTPException(
+            status_code=400,
+            detail="Sales Order module has been removed. Create invoice directly.",
+        )
 
     # BUG-02: Auto-detect GST mode from country + state/state-code
     tax_mode = determine_tax_mode(db, "customer", payload.customer_id)
@@ -1163,11 +1297,11 @@ async def create_invoice(
 
     invoice = SalesInvoice(
         invoice_number=generate_invoice_number(db),
-        sales_order_id=payload.sales_order_id,
+        sales_order_id=None,
         quotation_id=payload.quotation_id,
         customer_id=payload.customer_id,
         invoice_date=payload.invoice_date,
-        due_date=calculated_due_date,
+        due_date=resolved_due_date,
         status="draft",
         sold_to_customer_id=payload.sold_to_customer_id or payload.customer_id,
         bill_to_customer_id=payload.bill_to_customer_id or payload.customer_id,
@@ -1273,6 +1407,7 @@ async def update_invoice(
     product_cache = _validate_invoice_line_items_for_save(db, payload.items)
 
     calculated_due_date = _calculate_invoice_due_date(payload.invoice_date, customer)
+    resolved_due_date = payload.due_date or calculated_due_date
 
     # BUG-02: Auto-detect GST mode (country + state/state-code)
     tax_mode = determine_tax_mode(db, "customer", payload.customer_id)
@@ -1285,17 +1420,18 @@ async def update_invoice(
     if not tax_mode["gst_applicable"]:
         is_igst = False
         gst_applicable = False
-        
+
     if payload.sales_order_id:
-        so = db.query(SalesOrder).filter(SalesOrder.id == payload.sales_order_id).first()
-        if so and so.status not in {"confirmed", "fulfilled", "partial"}:
-            raise HTTPException(status_code=400, detail="Only confirmed, partial, or fulfilled sales orders can generate invoices")
+        raise HTTPException(
+            status_code=400,
+            detail="Sales Order module has been removed. Create invoice directly.",
+        )
 
     invoice.customer_id = payload.customer_id
-    invoice.sales_order_id = payload.sales_order_id
+    invoice.sales_order_id = None
     invoice.quotation_id = payload.quotation_id
     invoice.invoice_date = payload.invoice_date
-    invoice.due_date = calculated_due_date
+    invoice.due_date = resolved_due_date
     invoice.sold_to_customer_id = payload.sold_to_customer_id or payload.customer_id
     invoice.bill_to_customer_id = payload.bill_to_customer_id or payload.customer_id
     invoice.ship_to_customer_id = payload.ship_to_customer_id or payload.customer_id
@@ -1434,14 +1570,42 @@ async def issue_invoice(
 @router.post("/api/v1/invoices/{invoice_id}/send-email")
 async def send_invoice_email(
     invoice_id: UUID,
+    payload: dict | None = Body(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("sales_invoices_write")),
 ):
+    from app.services.pdf_service import generate_invoice_pdf
+
     invoice = db.query(SalesInvoice).filter(SalesInvoice.id == invoice_id, SalesInvoice.is_deleted == False).first()
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    # TODO: Implement actual email sending via SMTP/FastAPI-Mail
-    return {"message": "Email queued (email delivery pending implementation)"}
+
+    recipient = (payload or {}).get("email") if payload else None
+    if not recipient:
+        customer = db.query(Customer).filter(Customer.id == invoice.customer_id, Customer.is_deleted == False).first()
+        recipient = customer.email if customer else None
+
+    if not recipient:
+        raise HTTPException(status_code=400, detail="Recipient email is required")
+
+    pdf_bytes = generate_invoice_pdf(db, invoice_id)
+    subject = f"Sales Invoice {invoice.invoice_number}"
+    body = f"Please find attached Sales Invoice {invoice.invoice_number}."
+    sent = _send_pdf_email(
+        recipient=recipient,
+        subject=subject,
+        body=body,
+        pdf_filename=f"{invoice.invoice_number}.pdf",
+        pdf_bytes=pdf_bytes,
+    )
+
+    return {
+        "message": sent["message"],
+        "delivery": sent["delivery"],
+        "invoice_number": invoice.invoice_number,
+        "recipient": recipient,
+        "outbox_file": sent.get("outbox_file"),
+    }
 
 
 # ────────────────────────────── Sales Returns ────────────────────────────────
@@ -1653,14 +1817,36 @@ async def send_quotation_email(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("quotations_write")),
 ):
+    from app.services.pdf_service import generate_quotation_pdf
+
     q = db.query(Quotation).filter(Quotation.id == quotation_id, Quotation.is_deleted == False).first()
     if not q:
         raise HTTPException(status_code=404, detail="Quotation not found")
 
-    recipient = (payload or {}).get("email")
+    recipient = (payload or {}).get("email") if payload else None
+    if not recipient:
+        customer = db.query(Customer).filter(Customer.id == q.customer_id, Customer.is_deleted == False).first()
+        recipient = customer.email if customer else None
+
+    if not recipient:
+        raise HTTPException(status_code=400, detail="Recipient email is required")
+
+    pdf_bytes = generate_quotation_pdf(db, quotation_id)
+    subject = f"Quotation {q.quotation_number}"
+    body = f"Please find attached Quotation {q.quotation_number}."
+    sent = _send_pdf_email(
+        recipient=recipient,
+        subject=subject,
+        body=body,
+        pdf_filename=f"{q.quotation_number}.pdf",
+        pdf_bytes=pdf_bytes,
+    )
+
     return {
-        "message": "Email queued (email delivery pending implementation)",
+        "message": sent["message"],
+        "delivery": sent["delivery"],
         "quotation_number": q.quotation_number,
         "recipient": recipient,
+        "outbox_file": sent.get("outbox_file"),
     }
 

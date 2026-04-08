@@ -18,7 +18,6 @@ import CategoriesPage from './pages/CategoriesPage';
 import ProductsPage from './pages/ProductsPage';
 import PurchaseOrderPage from './pages/PurchaseOrderPage';
 import QuotationsPage from './pages/QuotationsPage';
-import SalesOrdersPage from './pages/SalesOrdersPage';
 import InvoicesPage from './pages/InvoicesPage';
 import GRNPage from './pages/GRNPage';
 import StockPage from './pages/StockPage';
@@ -187,16 +186,6 @@ function App() {
         <Route path="/quotations" element={<Navigate to="/sales/quotations" replace />} />
 
         <Route
-          path="/sales/orders"
-          element={
-            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.SALES_ORDERS_READ}>
-              <SalesOrdersPage />
-            </ProtectedRoute>
-          }
-        />
-        <Route path="/sales-orders" element={<Navigate to="/sales/orders" replace />} />
-
-        <Route
           path="/sales/invoices"
           element={
             <ProtectedRoute requiredPermission={PERMISSION_SCOPES.SALES_INVOICES_READ}>
@@ -204,6 +193,8 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route path="/sales/orders" element={<Navigate to="/sales/invoices" replace />} />
+        <Route path="/sales-orders" element={<Navigate to="/sales/invoices" replace />} />
         <Route path="/invoices" element={<Navigate to="/sales/invoices" replace />} />
 
         {/* ── Inventory ───────────────────────────────────── */}
