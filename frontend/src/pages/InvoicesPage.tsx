@@ -5,14 +5,14 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AppLayout } from '../components/AppLayout';
-import { salesApi, type SalesInvoice, type CreateInvoicePayload, type SalesLineItem, type SalesInvoiceItem, type InvoiceTypeValue } from '../api/sales';
+import { salesApi, type SalesInvoice, type CreateInvoicePayload, type SalesLineItem, type SalesInvoiceItem, type InvoiceTypeValue, type InvoiceBatchOption } from '../api/sales';
 import { apiClient } from '../api/client';
 import { toast } from 'sonner';
 import { confirmWithToast } from '../utils/toastHelper';
 import { addDaysToDateInputValue, todayLocalDateInputValue } from '../utils/date';
 import { emptyWhenZero } from '../utils/numberInput';
 
-interface ProductOption { id: string; name: string; product_code: string; selling_price: number; mrp: number; gst_rate: number; hsn_code: string; description?: string; }
+interface ProductOption { id: string; name: string; product_code: string; sku?: string | null; selling_price: number; mrp: number; gst_rate: number; hsn_code: string; description?: string; uom_id?: string | null; alt_uom_id?: string | null; }
 interface CustomerOption {
   id: string;
   company_name: string;
@@ -23,6 +23,7 @@ interface CustomerOption {
   billing_country?: string;
 }
 interface CompanyLocation { state?: string; state_code?: string; }
+interface UomOption { id: string; name: string; abbreviation: string; }
 
 const INVOICE_TYPE_LABELS: Record<InvoiceTypeValue, string> = {
   export_invoice: 'Export Invoice',
@@ -89,6 +90,8 @@ const InvoicesPage = () => {
   const [selectedInvoiceItems, setSelectedInvoiceItems] = useState<SalesInvoiceItem[]>([]);
   const [showInvoiceDetail, setShowInvoiceDetail] = useState(false);
   const [companyLocation, setCompanyLocation] = useState<CompanyLocation | null>(null);
+  const [uomOptions, setUomOptions] = useState<UomOption[]>([]);
+  const [batchOptionsByRow, setBatchOptionsByRow] = useState<Record<number, InvoiceBatchOption[]>>({});
 
   const [customerId, setCustomerId] = useState('');
   const [invoiceType, setInvoiceType] = useState<InvoiceTypeValue>('within_state');
@@ -99,8 +102,8 @@ const InvoicesPage = () => {
   const [items, setItems] = useState<SalesLineItem[]>([]);
 
   const isExportInvoice = invoiceType === 'export_invoice';
-  const lineItemColumnCount = isExportInvoice ? 14 : 15;
-  const lineItemTotalLabelColSpan = isExportInvoice ? 12 : 13;
+  const lineItemColumnCount = isExportInvoice ? 15 : 16;
+  const lineItemTotalLabelColSpan = isExportInvoice ? 13 : 14;
 
   const selectedCustomer = customers.find((c) => c.id === customerId);
   const selectedCustomerIsIndia = selectedCustomer ? isIndiaCountry(selectedCustomer.billing_country) : null;
@@ -165,14 +168,16 @@ const InvoicesPage = () => {
   };
   const fetchMasterData = async () => {
     try {
-      const [c, p, comp] = await Promise.all([
+      const [c, p, comp, uom] = await Promise.all([
         apiClient.get('/api/v1/customers', { params: { page_size: 100 } }),
         apiClient.get('/api/v1/products', { params: { page_size: 100 } }),
         apiClient.get('/api/v1/company'),
+        apiClient.get('/api/v1/products/uom'),
       ]);
       setCustomers(c.data.items || []);
       setProducts(p.data.items || []);
       setCompanyLocation({ state: comp.data?.state || '', state_code: comp.data?.state_code || '' });
+      setUomOptions(uom.data || []);
     } catch {
       /* */
     }
@@ -182,7 +187,7 @@ const InvoicesPage = () => {
   useEffect(() => { fetchInvoices(); }, [statusFilter]);
   useEffect(() => { fetchMasterData(); }, []);
 
-  const resetForm = () => { setCustomerId(''); setInvoiceType('within_state'); setImportExportCode(''); setInvoiceDate(todayLocalDateInputValue()); setDueDate(''); setNotes(''); setItems([]); setEditingId(null); setError(''); };
+  const resetForm = () => { setCustomerId(''); setInvoiceType('within_state'); setImportExportCode(''); setInvoiceDate(todayLocalDateInputValue()); setDueDate(''); setNotes(''); setItems([]); setBatchOptionsByRow({}); setEditingId(null); setError(''); };
   const addItem = () => {
     setItems([
       ...items,
@@ -251,11 +256,53 @@ const InvoicesPage = () => {
 
   const updateItem = (idx: number, field: keyof SalesLineItem, value: string | number) => {
     const updated = [...items]; (updated[idx] as unknown as Record<string, unknown>)[field] = value;
-    // SAL-020/022/023: Auto-fill MRP and GST from product master
-    if (field === 'product_id') { const p = products.find(x => x.id === value); if (p) { updated[idx].unit_price = p.mrp || p.selling_price; updated[idx].gst_rate = p.gst_rate; } }
+
+    if (field === 'product_id') {
+      const productId = String(value || '');
+      const p = products.find(x => x.id === productId);
+      if (p) {
+        updated[idx].unit_price = p.mrp || p.selling_price;
+        updated[idx].gst_rate = p.gst_rate;
+        updated[idx].order_unit = resolvePackingUnit(p);
+      } else {
+        updated[idx].order_unit = '';
+      }
+      updated[idx].batch_no = '';
+      updated[idx].manufacture_date = '';
+      updated[idx].expiry_date = '';
+      setItems(updated);
+      setBatchOptionsByRow((prev) => ({ ...prev, [idx]: [] }));
+      if (productId) {
+        void loadBatchOptionsForRow(idx, productId, true);
+      }
+      return;
+    }
+
+    if (field === 'batch_no') {
+      const selected = (batchOptionsByRow[idx] || []).find((opt) => opt.batch_no === String(value || ''));
+      if (selected) {
+        updated[idx].manufacture_date = selected.manufacture_date || '';
+        updated[idx].expiry_date = selected.expiry_date || '';
+      } else {
+        updated[idx].manufacture_date = '';
+        updated[idx].expiry_date = '';
+      }
+    }
+
     setItems(updated);
   };
-  const removeItem = (idx: number) => { setItems(items.filter((_, i) => i !== idx)); };
+  const removeItem = (idx: number) => {
+    setItems(items.filter((_, i) => i !== idx));
+    setBatchOptionsByRow((prev) => {
+      const next: Record<number, InvoiceBatchOption[]> = {};
+      Object.entries(prev).forEach(([rowKey, value]) => {
+        const rowIndex = Number(rowKey);
+        if (rowIndex < idx) next[rowIndex] = value;
+        if (rowIndex > idx) next[rowIndex - 1] = value;
+      });
+      return next;
+    });
+  };
   const calcTotal = (i: SalesLineItem) => {
     const g = i.unit_price * i.quantity;
     const d = g * (i.discount_percent || 0) / 100;
@@ -270,6 +317,73 @@ const InvoicesPage = () => {
     return s.charAt(0).toUpperCase() + s.slice(1);
   };
   const productById = (id: string) => products.find(p => p.id === id);
+  const uomAbbreviationById = (id?: string | null) => uomOptions.find((u) => u.id === id)?.abbreviation || '';
+  const resolvePackingUnit = (product?: ProductOption) => {
+    if (!product) return '';
+    return uomAbbreviationById(product.alt_uom_id) || uomAbbreviationById(product.uom_id) || '';
+  };
+  const resolveBaseUnit = (product?: ProductOption) => {
+    if (!product) return '';
+    const baseUnit = (product.sku || '').trim();
+    if (baseUnit) return baseUnit;
+    return uomAbbreviationById(product.uom_id) || '';
+  };
+  const formatAvailableQty = (qty: number) => {
+    if (!Number.isFinite(qty)) return '0';
+    return Number(qty).toFixed(4).replace(/\.?0+$/, '');
+  };
+
+  const loadBatchOptionsForRow = async (rowIndex: number, productId: string, autoSelectSingle: boolean) => {
+    try {
+      const response = await salesApi.getInvoiceBatchOptions(productId);
+      const options = response.data.items || [];
+      setBatchOptionsByRow((prev) => ({ ...prev, [rowIndex]: options }));
+
+      setItems((prev) => {
+        if (rowIndex < 0 || rowIndex >= prev.length) return prev;
+        const currentRow = prev[rowIndex];
+        if (currentRow.product_id !== productId) return prev;
+
+        const next = [...prev];
+        const updatedRow = { ...currentRow };
+        const product = products.find((p) => p.id === productId);
+        if (product) {
+          updatedRow.order_unit = resolvePackingUnit(product);
+        }
+
+        if (options.length === 1 && autoSelectSingle) {
+          const selected = options[0];
+          updatedRow.batch_no = selected.batch_no;
+          updatedRow.manufacture_date = selected.manufacture_date || '';
+          updatedRow.expiry_date = selected.expiry_date || '';
+        } else if (updatedRow.batch_no) {
+          const selected = options.find((opt) => opt.batch_no === updatedRow.batch_no);
+          if (selected) {
+            updatedRow.manufacture_date = selected.manufacture_date || '';
+            updatedRow.expiry_date = selected.expiry_date || '';
+          } else {
+            updatedRow.batch_no = '';
+            updatedRow.manufacture_date = '';
+            updatedRow.expiry_date = '';
+          }
+        }
+
+        next[rowIndex] = updatedRow;
+        return next;
+      });
+    } catch {
+      setBatchOptionsByRow((prev) => ({ ...prev, [rowIndex]: [] }));
+    }
+  };
+
+  useEffect(() => {
+    if (!showForm) return;
+    items.forEach((item, idx) => {
+      if (!item.product_id) return;
+      if (batchOptionsByRow[idx] !== undefined) return;
+      void loadBatchOptionsForRow(idx, item.product_id, false);
+    });
+  }, [showForm, items, batchOptionsByRow]);
 
   const handleDateFromChange = (value: string) => {
     setDateFrom(value);
@@ -503,16 +617,17 @@ const InvoicesPage = () => {
               <div>
                 <div className="mb-2 flex items-center justify-between"><h3 className="text-sm font-semibold">Items</h3><button onClick={addItem} className="rounded bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary">+ Add</button></div>
                 <div className="overflow-x-auto rounded-lg border border-neutral-200">
-                  <table className="w-full min-w-[1600px] table-fixed text-sm">
+                  <table className="w-full min-w-[1760px] table-fixed text-sm">
                     <thead>
                       <tr className="bg-neutral-50">
-                        <th className="w-[18%] px-3 py-2 text-left">Product</th>
-                        <th className="w-[8%] px-3 py-2 text-left">Product ID</th>
-                        <th className="w-[10%] px-3 py-2 text-left">Description</th>
-                        <th className="w-[8%] px-3 py-2 text-left">Order Unit</th>
-                        <th className="w-[8%] px-3 py-2 text-left">Batch</th>
-                        <th className="w-[8%] px-3 py-2 text-left">MFG Date</th>
-                        <th className="w-[8%] px-3 py-2 text-left">EXP Date</th>
+                        <th className="w-[16%] px-3 py-2 text-left">Product</th>
+                        <th className="w-[7%] px-3 py-2 text-left">Product ID</th>
+                        <th className="w-[9%] px-3 py-2 text-left">Description</th>
+                        <th className="w-[7%] px-3 py-2 text-left">Packing Unit</th>
+                        <th className="w-[7%] px-3 py-2 text-left">Base Unit</th>
+                        <th className="w-[7%] px-3 py-2 text-left">Batch</th>
+                        <th className="w-[7%] px-3 py-2 text-left">MFG Date</th>
+                        <th className="w-[7%] px-3 py-2 text-left">EXP Date</th>
                         <th className="w-[7%] px-3 py-2 text-left">HSN</th>
                         <th className="w-16 px-3 py-2 text-right">Qty</th>
                         <th className="w-16 px-3 py-2 text-right">Free</th>
@@ -526,6 +641,9 @@ const InvoicesPage = () => {
                     <tbody>
                       {items.map((item, idx) => {
                         const prod = productById(item.product_id);
+                        const rowBatchOptions = batchOptionsByRow[idx] || [];
+                        const hasMultipleBatches = rowBatchOptions.length > 1;
+                        const hasSingleBatch = rowBatchOptions.length === 1;
                         return (
                         <tr key={idx} className="border-t border-neutral-100">
                           <td className="px-3 py-2">
@@ -539,16 +657,40 @@ const InvoicesPage = () => {
                           {/* SAL-014: Description column */}
                           <td className="px-3 py-2 text-xs text-neutral-500">{prod?.description || prod?.name || '-'}</td>
                           <td className="px-3 py-2">
-                            <input type="text" className="w-full rounded border px-2 py-1.5 text-sm" value={item.order_unit || ''} onChange={e => updateItem(idx, 'order_unit', e.target.value)} placeholder="e.g. Box" />
+                            <input type="text" className="w-full rounded border bg-neutral-50 px-2 py-1.5 text-sm text-neutral-700" value={item.order_unit || ''} readOnly placeholder="Auto from product" />
                           </td>
                           <td className="px-3 py-2">
-                            <input type="text" className="w-full rounded border px-2 py-1.5 text-sm" value={item.batch_no || ''} onChange={e => updateItem(idx, 'batch_no', e.target.value)} placeholder="Batch" />
+                            <input type="text" className="w-full rounded border bg-neutral-50 px-2 py-1.5 text-sm text-neutral-700" value={resolveBaseUnit(prod)} readOnly placeholder="Auto from product" />
                           </td>
                           <td className="px-3 py-2">
-                            <input type="date" className="w-full rounded border px-2 py-1.5 text-sm" value={item.manufacture_date || ''} onChange={e => updateItem(idx, 'manufacture_date', e.target.value)} />
+                            {hasMultipleBatches ? (
+                              <select
+                                className="w-full rounded border px-2 py-1.5 text-sm"
+                                value={item.batch_no || ''}
+                                onChange={e => updateItem(idx, 'batch_no', e.target.value)}
+                              >
+                                <option value="">Select batch</option>
+                                {rowBatchOptions.map((opt) => (
+                                  <option key={opt.batch_no} value={opt.batch_no}>
+                                    {opt.batch_no} (Avail: {formatAvailableQty(opt.available_qty)})
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                type="text"
+                                className="w-full rounded border bg-neutral-50 px-2 py-1.5 text-sm text-neutral-700"
+                                value={hasSingleBatch ? (item.batch_no || rowBatchOptions[0].batch_no) : ''}
+                                readOnly
+                                placeholder={item.product_id ? 'No batch available' : 'Select product first'}
+                              />
+                            )}
                           </td>
                           <td className="px-3 py-2">
-                            <input type="date" className="w-full rounded border px-2 py-1.5 text-sm" value={item.expiry_date || ''} onChange={e => updateItem(idx, 'expiry_date', e.target.value)} />
+                            <input type="date" className="w-full rounded border bg-neutral-50 px-2 py-1.5 text-sm text-neutral-700" value={item.manufacture_date || ''} readOnly />
+                          </td>
+                          <td className="px-3 py-2">
+                            <input type="date" className="w-full rounded border bg-neutral-50 px-2 py-1.5 text-sm text-neutral-700" value={item.expiry_date || ''} readOnly />
                           </td>
                           {/* SAL-021: HSN Code column */}
                           <td className="px-3 py-2 text-xs text-neutral-500">{prod?.hsn_code || '-'}</td>

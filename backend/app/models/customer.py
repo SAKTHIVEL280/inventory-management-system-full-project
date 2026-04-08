@@ -43,7 +43,7 @@ class Customer(Base):
     same_as_billing = Column(Boolean, nullable=False, default=True)
 
     credit_limit = Column(Integer, nullable=False, default=0)
-    payment_terms_days = Column(Integer, nullable=False, default=30)
+    payment_terms_days = Column(Integer, nullable=True, default=None)
     opening_balance_type = Column(String(2), nullable=False, default="dr")
     currency_code = Column(String(10), nullable=False, default="INR")
 

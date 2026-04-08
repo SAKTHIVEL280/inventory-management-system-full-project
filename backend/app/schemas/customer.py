@@ -49,9 +49,27 @@ class CustomerBase(BaseModel):
     same_as_billing: bool = True  # If true, shipping address copied from billing
 
     # === Financial Terms ===
+    credit_limit: int = 0  # Max credit allowed in selected currency
+    payment_terms_days: Optional[int] = None  # Payment term in days (optional)
     opening_balance_type: str = "dr"  # REQUIRED: "dr" (debit) or "cr" (credit)
     currency_code: str = "INR"  # Default currency for the customer
     is_active: bool = True  # Set false to soft-deactivate customer
+
+    @field_validator("credit_limit")
+    @classmethod
+    def validate_non_negative_credit_limit(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("credit_limit cannot be negative")
+        return value
+
+    @field_validator("payment_terms_days")
+    @classmethod
+    def validate_non_negative_payment_terms(cls, value: Optional[int]) -> Optional[int]:
+        if value is None:
+            return value
+        if value < 0:
+            raise ValueError("payment_terms_days cannot be negative")
+        return value
 
     @field_validator("phone", "alternate_phone")
     @classmethod

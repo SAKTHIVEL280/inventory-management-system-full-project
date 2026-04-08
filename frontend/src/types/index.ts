@@ -139,7 +139,7 @@ export interface Customer {
   shipping_pincode?: string | null;
   same_as_billing: boolean;
   credit_limit: number;
-  payment_terms_days: number;
+  payment_terms_days?: number | null;
   opening_balance: number;
   opening_balance_type: 'dr' | 'cr';
   currency_code: string;

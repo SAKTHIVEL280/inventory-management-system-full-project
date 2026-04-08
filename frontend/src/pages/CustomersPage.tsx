@@ -501,7 +501,7 @@ const CustomersPage = () => {
       shipping_country: parsed.data.same_as_billing ? null : normalizeOptional(parsed.data.shipping_country),
       shipping_pincode: parsed.data.same_as_billing ? null : normalizeOptional(parsed.data.shipping_pincode),
       credit_limit: parsed.data.credit_limit,
-      payment_terms_days: parsed.data.payment_terms_days ?? editingItem?.payment_terms_days ?? 0,
+      payment_terms_days: parsed.data.payment_terms_days ?? null,
       currency_code: parsed.data.currency_code.trim().toUpperCase() || 'INR',
       opening_balance: editingItem?.opening_balance ?? 0,
       opening_balance_type: editingItem?.opening_balance_type ?? 'dr' as const,

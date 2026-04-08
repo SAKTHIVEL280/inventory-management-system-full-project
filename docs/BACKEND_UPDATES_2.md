@@ -2,6 +2,144 @@
 
 ---
 
+## BE-62: Sales Invoice PDF Unit Column Set to Base Unit Only
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Sales Invoice PDF
+**Type**: Print Formatting Fix
+
+### Overview
+Updated Sales Invoice PDF line-item unit display so the unit column shows Base Unit only.
+
+### Changes Made
+- Changed invoice PDF row mapping to always use product Base Unit for the unit cell.
+- Updated invoice PDF unit column header label from `Packing Unit` to `Base Unit`.
+- Kept non-invoice templates unchanged.
+
+### Files Modified
+- `backend/app/services/pdf_service.py`
+
+### Validation
+- Verified no backend/IDE errors in modified file.
+
+## BE-61: Sales Invoice Batch Options API + Packing Unit PDF Support (SAL-032/033/034)
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Sales Invoice, Billing PDF
+**Type**: Enhancement
+
+### Overview
+Implemented backend support for product-linked batch selection in Sales Invoice and updated invoice PDF to print Packing Unit from invoice/product data.
+
+### Changes Made
+- Added product-specific batch options API:
+  - `GET /api/v1/invoices/batch-options?product_id=<uuid>`
+  - returns `batch_no`, `available_qty`, `manufacture_date`, `expiry_date`
+  - computes available quantity from confirmed GRN, purchase return, issued/paid invoice, and confirmed sales return flows.
+- Ensured batch options are limited to the selected product only.
+- Updated invoice PDF line-item unit rendering:
+  - column label is now context-driven for invoice (`Packing Unit`)
+  - value uses `SalesInvoiceItem.order_unit` first, then product packing fallback.
+- Kept quotation compatibility by passing unit-column label and row field mapping explicitly.
+
+### Files Modified
+- `backend/app/routers/sales.py`
+- `backend/app/services/pdf_service.py`
+
+### Validation
+- Verified no backend/IDE errors in modified files.
+
+## BE-60: Billing PDF Total Currency Spacing (THB 62.56 Format)
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Billing PDF (PO, Sales Invoice, Quotation)
+**Type**: Print Formatting Fix
+
+### Overview
+Adjusted total-section currency formatting to include a separator between currency prefix/code and amount (for example `THB 62.56`).
+
+### Changes Made
+- Added shared total formatter for billing PDFs to enforce clean currency spacing in total rows.
+- Updated total-section values for:
+  - `subtotal`
+  - GST totals (`CGST`, `SGST`/`UTGST`, `IGST`)
+  - `grand_total_rupee`
+  - `balance_due_rupee`
+- Applied consistently to Purchase Order, Sales Invoice, and Quotation PDF contexts.
+
+### Files Modified
+- `backend/app/services/pdf_service.py`
+
+### Validation
+- Verified no backend/IDE errors in modified file.
+
+## BE-59: Billing PDF GST Total Labels Simplified (PO/Invoice/Quotation)
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Billing PDF (PO, Sales Invoice, Quotation)
+**Type**: Bug Fix / Print Refinement
+
+### Overview
+Standardized GST rows in the Total section to display only tax label and amount, removing numeric/rate suffixes (for example `CGST9 (9%)`).
+
+### Changes Made
+- Removed dynamic GST total label formatting that appended numeric values and percentages.
+- Updated Sales Invoice total section labels to always render as plain labels:
+  - `CGST`
+  - `SGST` or `UTGST` (based on invoice type)
+  - `IGST`
+- Updated Quotation PDF context to use the same plain-label tax totals and support IGST total row rendering when applicable.
+- Updated Purchase Order total section template to render IGST as a single row when applicable, otherwise CGST + SGST rows.
+
+### Files Modified
+- `backend/app/services/pdf_service.py`
+
+### Validation
+- Verified no backend/IDE errors in modified file.
+
+## BE-58: Customer Payment Terms Optional Loading Behavior Fix
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Customer Master
+**Type**: Bug Fix
+
+### Overview
+Adjusted Customer Master payment terms behavior so new customer flow does not auto-assume 30 days and edit mode only shows saved values.
+
+### Changes Made
+- Updated Customer model to keep `payment_terms_days` nullable with no model default.
+- Updated Customer schema to keep `payment_terms_days` optional.
+- Added explicit validation for non-negative payment terms only when value is provided.
+
+### Files Modified
+- `backend/app/models/customer.py`
+- `backend/app/schemas/customer.py`
+
+### Validation
+- Verified no backend/IDE errors in modified files.
+
+## BE-57: Customer Master Financial Fields Persistence Fix
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Customer Master
+**Type**: Bug Fix
+
+### Overview
+Fixed Customer Master save behavior where payment terms and credit limit values were not persisting due to missing schema fields.
+
+### Changes Made
+- Added missing customer schema fields:
+  - `credit_limit`
+  - `payment_terms_days`
+- Added non-negative validation for customer financial term fields.
+- Ensured customer create/update payloads include these fields in model validation and persistence flow.
+
+### Files Modified
+- `backend/app/schemas/customer.py`
+
+### Validation
+- Verified no backend/IDE errors in modified file.
+
 ## BE-56: STO-006/007 Inventory Count APIs and Admin Difference Endpoint
 **Date**: April 8, 2026
 **Status**: ✅ Completed

@@ -146,6 +146,10 @@ def main() -> int:
         "CREATE INDEX IF NOT EXISTS ix_inventory_count_items_count_id ON inventory_count_items (inventory_count_id)",
         "CREATE INDEX IF NOT EXISTS ix_inventory_count_items_product_id ON inventory_count_items (product_id)",
 
+        # Customer payment terms should be optional (DB-40)
+        "ALTER TABLE customers ALTER COLUMN payment_terms_days DROP DEFAULT",
+        "ALTER TABLE customers ALTER COLUMN payment_terms_days DROP NOT NULL",
+
                 # Customer country/currency customization options
                 """
                 CREATE TABLE IF NOT EXISTS customization_options (

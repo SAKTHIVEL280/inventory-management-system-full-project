@@ -208,7 +208,7 @@ CREATE TABLE customers (
   shipping_pincode VARCHAR(10),
   same_as_billing BOOLEAN NOT NULL DEFAULT TRUE,
   credit_limit INTEGER NOT NULL DEFAULT 0,
-  payment_terms_days INTEGER NOT NULL DEFAULT 30,
+  payment_terms_days INTEGER,
   opening_balance_type VARCHAR(2) NOT NULL DEFAULT 'dr' CHECK (opening_balance_type IN ('dr','cr')),
   currency_code VARCHAR(10) NOT NULL DEFAULT 'INR',
   is_active BOOLEAN NOT NULL DEFAULT TRUE,

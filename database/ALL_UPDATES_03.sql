@@ -174,4 +174,14 @@ CREATE INDEX IF NOT EXISTS ix_inventory_count_items_product_id
 ON inventory_count_items (product_id);
 
 -- ============================================================================
+-- DB-40: Customer Payment Terms Optional (No default preload)
+-- ============================================================================
+
+ALTER TABLE customers
+ALTER COLUMN payment_terms_days DROP DEFAULT;
+
+ALTER TABLE customers
+ALTER COLUMN payment_terms_days DROP NOT NULL;
+
+-- ============================================================================
 COMMIT;

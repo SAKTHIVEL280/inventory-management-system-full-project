@@ -1,5 +1,101 @@
 # Frontend Updates Log
 
+## FE-72: Restore Base Unit Alongside Packing Unit in Sales Invoice (SAL-034)
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Sales Invoice
+**Type**: Bug Fix / UI Enhancement
+
+### Overview
+Restored the missing Base Unit column in Sales Invoice line items while keeping the Packing Unit column added earlier.
+
+### Changes Made
+- Re-added Base Unit column in invoice line item grid.
+- Kept Packing Unit column intact and read-only auto-fill behavior.
+- Mapped values separately to preserve integrity:
+  - Base Unit from product base unit field (with UOM fallback)
+  - Packing Unit from product order/packing unit mapping.
+- Updated column count, total-row colspan, table min-width, and header widths so both columns render cleanly without overlap.
+
+### Files Modified
+- `frontend/src/pages/InvoicesPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified file.
+- Verified frontend build succeeds (`npm run build`).
+
+## FE-71: Sales Invoice Batch Auto-Fill + Packing Unit Grid Update (SAL-032/033/034)
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Sales Invoice
+**Type**: Enhancement
+
+### Overview
+Implemented dynamic product-linked batch selection in Sales Invoice, automatic MFG/EXP fill from selected batch, and Packing Unit auto-fill from product master.
+
+### Changes Made
+- Added Sales API client support for invoice batch options endpoint.
+- Updated invoice item grid behavior:
+  - fetch batch options when product is selected
+  - auto-select batch when exactly one is available
+  - show dropdown when multiple batches are available
+  - show available quantity in dropdown labels
+  - auto-fill `MFG Date` and `EXP Date` from selected batch
+  - keep date fields read-only (auto-driven)
+- Replaced editable `Order Unit` input with `Packing Unit` display auto-filled from product UOM data.
+- Added row-level batch option state handling for add/remove/edit flows.
+
+### Files Modified
+- `frontend/src/api/sales.ts`
+- `frontend/src/pages/InvoicesPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified files.
+- Verified frontend build succeeds (`npm run build`).
+
+## FE-70: Customer Payment Terms No-Preload Submit Behavior Fix
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Customer Master
+**Type**: Bug Fix
+
+### Overview
+Fixed Customer Master form behavior so Payment Terms is not auto-filled in new customer flow and only persisted value appears on modify/change.
+
+### Changes Made
+- Updated submit payload mapping to send `payment_terms_days = null` when user leaves field blank.
+- Removed fallback behavior that forced a numeric value in submit payload.
+- Aligned frontend customer types/API payloads to support nullable `payment_terms_days`.
+
+### Files Modified
+- `frontend/src/pages/CustomersPage.tsx`
+- `frontend/src/api/customers.ts`
+- `frontend/src/types/index.ts`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified files.
+- Verified frontend build succeeds (`npm run build`).
+
+## FE-69: Customer Master Currency Payload Type Alignment
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Customer Master
+**Type**: Bug Fix / Type Safety
+
+### Overview
+Aligned Customer API payload typing so currency data used in Customer Master form is explicitly typed and maintained through save flows.
+
+### Changes Made
+- Added `currency_code` in customer create payload type definition.
+- Removed type mismatch risk between Customer form payload and API layer.
+
+### Files Modified
+- `frontend/src/api/customers.ts`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified file.
+- Verified frontend build succeeds (`npm run build`).
+
 ## FE-68: Inventory Count Module Button Visual Affordance Fix
 **Date**: April 8, 2026
 **Status**: ✅ Completed

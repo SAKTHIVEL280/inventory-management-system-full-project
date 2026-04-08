@@ -217,6 +217,18 @@ export interface SalesInvoiceItem {
   total_amount: number;
 }
 
+export interface InvoiceBatchOption {
+  batch_no: string;
+  available_qty: number;
+  manufacture_date?: string | null;
+  expiry_date?: string | null;
+}
+
+export interface InvoiceBatchOptionsResponse {
+  product_id: string;
+  items: InvoiceBatchOption[];
+}
+
 export interface SalesOrderItemResponse {
   id?: string;
   product_id: string;
@@ -359,6 +371,12 @@ class SalesApiClient {
 
   async getInvoice(id: string) {
     return apiClient.get<InvoiceDetailResponse>(`/api/v1/invoices/${id}`);
+  }
+
+  async getInvoiceBatchOptions(productId: string) {
+    return apiClient.get<InvoiceBatchOptionsResponse>('/api/v1/invoices/batch-options', {
+      params: { product_id: productId },
+    });
   }
 
   async createInvoice(payload: CreateInvoicePayload) {

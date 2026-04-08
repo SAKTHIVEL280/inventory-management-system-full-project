@@ -2,6 +2,38 @@
 
 ---
 
+## DB-40: Customer Payment Terms Optional (No Default 30 Preload)
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Customer Master
+**Type**: Bug Fix / Data Model Alignment
+
+### Overview
+Updated customer payment terms column behavior to avoid automatic default `30` days for new records when user has not provided any value.
+
+### Database Check
+- Verified existing schema used `payment_terms_days INTEGER NOT NULL DEFAULT 30`.
+- Requirement needed nullable/no-default behavior, so migration was required.
+
+### Changes Made
+- Updated base schema for fresh DBs to make `payment_terms_days` optional.
+- Added dedicated migration SQL:
+	- `database/05_customer_payment_terms_optional.sql`
+- Added compatibility migration statements to:
+	- `database/ALL_UPDATES_2.sql`
+	- `database/ALL_UPDATES_03.sql`
+	- `backend/run_migration.py`
+
+### Files Modified
+- `database/01_schema.sql`
+- `database/05_customer_payment_terms_optional.sql`
+- `database/ALL_UPDATES_2.sql`
+- `database/ALL_UPDATES_03.sql`
+- `backend/run_migration.py`
+
+### Validation
+- Verified no SQL/editor errors in modified files.
+
 ## DB-39: STO-006/007 Inventory Count Tables and Compatibility Migration
 **Date**: April 8, 2026
 **Status**: ✅ Completed
