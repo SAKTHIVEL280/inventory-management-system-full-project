@@ -89,7 +89,7 @@ const InventoryCountPage = () => {
 
   const addItem = () => {
     if (!entry.serial_number || !entry.product_id || entry.quantity < 0) {
-      toast.error('Please enter Serial Number, Product ID and valid Quantity.');
+      toast.error('Please enter Serial Number, Product Code and valid Quantity.');
       return;
     }
 
@@ -192,7 +192,7 @@ const InventoryCountPage = () => {
               />
             </div>
             <div className="xl:col-span-2">
-              <label className="hms-label">Product ID</label>
+              <label className="hms-label">Product Code</label>
               <select
                 className="hms-input"
                 value={entry.product_id}
@@ -277,7 +277,7 @@ const InventoryCountPage = () => {
               <thead>
                 <tr className="border-b border-neutral-200 bg-neutral-50">
                   <th className="px-4 py-3 text-left font-semibold text-neutral-600">Serial Number</th>
-                  <th className="px-4 py-3 text-left font-semibold text-neutral-600">Product ID</th>
+                  <th className="px-4 py-3 text-left font-semibold text-neutral-600">Product Code</th>
                   <th className="px-4 py-3 text-left font-semibold text-neutral-600">Product Description</th>
                   <th className="px-4 py-3 text-right font-semibold text-neutral-600">Quantity</th>
                   <th className="px-4 py-3 text-left font-semibold text-neutral-600">Batch Number</th>
@@ -295,7 +295,7 @@ const InventoryCountPage = () => {
                   items.map((item, index) => (
                     <tr key={`${item.serial_number}-${item.product_id}-${index}`} className="border-b border-neutral-100">
                       <td className="px-4 py-3">{item.serial_number}</td>
-                      <td className="px-4 py-3 text-xs text-neutral-600">{item.product_id}</td>
+                      <td className="px-4 py-3 text-xs text-neutral-600">{products.find((p) => p.id === item.product_id)?.product_code || item.product_id}</td>
                       <td className="px-4 py-3">{item.product_description || '—'}</td>
                       <td className="px-4 py-3 text-right">{item.quantity}</td>
                       <td className="px-4 py-3">{item.batch_no || '—'}</td>

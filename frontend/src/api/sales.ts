@@ -245,6 +245,10 @@ export interface InvoiceDetailResponse {
   items: SalesInvoiceItem[];
 }
 
+type ApiCallOptions = {
+  suppressGlobalErrorToast?: boolean;
+};
+
 export interface SalesReturn {
   id: string;
   return_number: string;
@@ -379,16 +383,22 @@ class SalesApiClient {
     });
   }
 
-  async createInvoice(payload: CreateInvoicePayload) {
-    return apiClient.post<SalesInvoice>('/api/v1/invoices', payload);
+  async createInvoice(payload: CreateInvoicePayload, options?: ApiCallOptions) {
+    return apiClient.post<SalesInvoice>('/api/v1/invoices', payload, {
+      ...(options?.suppressGlobalErrorToast ? { skipErrorToast: true } : {}),
+    } as unknown as Record<string, unknown>);
   }
 
-  async updateInvoice(id: string, payload: UpdateInvoicePayload) {
-    return apiClient.put<SalesInvoice>(`/api/v1/invoices/${id}`, payload);
+  async updateInvoice(id: string, payload: UpdateInvoicePayload, options?: ApiCallOptions) {
+    return apiClient.put<SalesInvoice>(`/api/v1/invoices/${id}`, payload, {
+      ...(options?.suppressGlobalErrorToast ? { skipErrorToast: true } : {}),
+    } as unknown as Record<string, unknown>);
   }
 
-  async issueInvoice(id: string) {
-    return apiClient.post<SalesInvoice>(`/api/v1/invoices/${id}/issue`, {});
+  async issueInvoice(id: string, options?: ApiCallOptions) {
+    return apiClient.post<SalesInvoice>(`/api/v1/invoices/${id}/issue`, {}, {
+      ...(options?.suppressGlobalErrorToast ? { skipErrorToast: true } : {}),
+    } as unknown as Record<string, unknown>);
   }
 
   async sendInvoiceEmail(id: string, email: string) {

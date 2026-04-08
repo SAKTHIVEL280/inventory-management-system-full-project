@@ -21,6 +21,7 @@ export interface CreatePaymentPayload {
   party_type: 'customer' | 'supplier';
   customer_id?: string;
   supplier_id?: string;
+  purchase_order_id?: string;
   payment_date: string;
   amount: number;
   payment_mode: string;
@@ -41,6 +42,7 @@ export interface PaymentAllocation {
   payment_id: string;
   invoice_id?: string;
   purchase_grn_id?: string;
+  purchase_order_id?: string;
   allocated_amount: number;
   invoice_number?: string;
   grn_number?: string;
@@ -63,7 +65,10 @@ export interface Payment {
   cheque_date?: string;
   bank_name?: string;
   notes?: string;
-  status: 'pending' | 'cleared' | 'bounced' | 'cancelled';
+  status: 'pending' | 'cleared' | 'bounced' | 'cancelled' | 'advance_payment_cleared' | 'full_payment_cleared';
+  status_display?: string;
+  purchase_order_id?: string;
+  po_number?: string;
   created_at: string;
   allocations?: PaymentAllocation[];
 }

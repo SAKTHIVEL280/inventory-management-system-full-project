@@ -72,6 +72,27 @@ const calculateTotals = (items: POLineItem[]) => {
   );
 };
 
+const normalizePOStatus = (status?: string): string => {
+  const token = (status || '').toLowerCase();
+  return token === 'received' ? 'completed' : token;
+};
+
+const poStatusBadgeClass = (status?: string): string => {
+  const normalized = normalizePOStatus(status);
+  if (normalized === 'draft') return 'bg-yellow-100 text-yellow-700';
+  if (normalized === 'sent') return 'bg-blue-100 text-blue-700';
+  if (normalized === 'partial') return 'bg-orange-100 text-orange-700';
+  if (normalized === 'completed') return 'bg-green-100 text-green-700';
+  return 'bg-gray-100 text-gray-700';
+};
+
+const poStatusLabel = (status?: string): string => {
+  const normalized = normalizePOStatus(status);
+  if (normalized === 'sent') return 'Sent / Approved';
+  if (normalized === 'completed') return 'Completed';
+  return normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : '-';
+};
+
 const PurchaseOrderPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -758,7 +779,7 @@ const PurchaseOrderPage = () => {
               >
                 All
               </button>
-              {['draft', 'sent', 'partial', 'received', 'cancelled'].map((s) => (
+              {['draft', 'sent', 'partial', 'completed', 'cancelled'].map((s) => (
                 <button
                   key={s}
                   onClick={() => setStatusFilter(s)}
@@ -847,14 +868,8 @@ const PurchaseOrderPage = () => {
                         <td className="px-4 py-3">{new Date(po.order_date).toLocaleDateString('en-IN')}</td>
                         <td className="px-4 py-3">₹{(po.total_amount / 100).toFixed(2)}</td>
                         <td className="px-4 py-3">
-                          <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
-                            po.status === 'draft' ? 'bg-yellow-100 text-yellow-700' :
-                            po.status === 'sent' ? 'bg-blue-100 text-blue-700' :
-                            po.status === 'partial' ? 'bg-orange-100 text-orange-700' :
-                            po.status === 'received' ? 'bg-green-100 text-green-700' :
-                            'bg-gray-100 text-gray-700'
-                          }`}>
-                            {po.status === 'sent' ? 'Sent / Approved' : po.status}
+                          <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${poStatusBadgeClass(po.status)}`}>
+                            {poStatusLabel(po.status)}
                           </span>
                         </td>
                         <td className="px-4 py-3">
@@ -923,14 +938,8 @@ const PurchaseOrderPage = () => {
                 </div>
                 <div>
                   <p className="text-xs text-neutral-600">Status</p>
-                  <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
-                    selectedPO.status === 'draft' ? 'bg-yellow-100 text-yellow-700' :
-                    selectedPO.status === 'sent' ? 'bg-blue-100 text-blue-700' :
-                    selectedPO.status === 'partial' ? 'bg-orange-100 text-orange-700' :
-                    selectedPO.status === 'received' ? 'bg-green-100 text-green-700' :
-                    'bg-gray-100 text-gray-700'
-                  }`}>
-                    {selectedPO.status === 'sent' ? 'Sent / Approved' : selectedPO.status}
+                  <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${poStatusBadgeClass(selectedPO.status)}`}>
+                    {poStatusLabel(selectedPO.status)}
                   </span>
                 </div>
                 <div>
@@ -969,6 +978,7 @@ const PurchaseOrderPage = () => {
                           <th className="px-3 py-2 text-right text-xs font-semibold">GST %</th>
                           <th className="px-3 py-2 text-right text-xs font-semibold">Total</th>
                           <th className="px-3 py-2 text-right text-xs font-semibold">Received</th>
+                          <th className="px-3 py-2 text-right text-xs font-semibold">Line Status</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -978,6 +988,9 @@ const PurchaseOrderPage = () => {
                           const disc = gross * (item.discount_percent || 0) / 100;
                           const taxable = gross - disc;
                           const total = taxable + taxable * item.gst_rate / 100;
+                          const receivedQty = Number(item.received_quantity || 0);
+                          const orderedQty = Number(item.quantity || 0);
+                          const lineStatus = receivedQty <= 0 ? 'Pending/Draft' : receivedQty < orderedQty ? 'Partial' : 'Completed';
                           return (
                             <tr key={idx} className="border-t border-neutral-100">
                               <td className="px-3 py-2 font-medium">{product?.name || 'Unknown'}</td>
@@ -987,6 +1000,7 @@ const PurchaseOrderPage = () => {
                               <td className="px-3 py-2 text-right">{item.gst_rate}%</td>
                               <td className="px-3 py-2 text-right font-medium">₹{total.toFixed(2)}</td>
                               <td className="px-3 py-2 text-right">{item.received_quantity ?? 0} / {item.quantity}</td>
+                              <td className="px-3 py-2 text-right text-xs font-semibold text-neutral-700">{lineStatus}</td>
                             </tr>
                           );
                         })}

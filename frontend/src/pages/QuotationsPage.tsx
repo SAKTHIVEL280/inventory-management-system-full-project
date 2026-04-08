@@ -3,7 +3,7 @@
  * List, create, edit quotations. Approve, download/send PDF.
  *
  * SAL-003: MRP instead of Unit Price
- * SAL-004: Product ID column
+ * SAL-004: Product Code column
  * SAL-005: Product Description column
  * SAL-006: Valid Until must be future date
  * SAL-007: Removed SO reference/convert
@@ -481,7 +481,7 @@ const QuotationsPage = () => {
                 </div>
               </div>
 
-              {/* Line Items - SAL-003/004/005: MRP, Product ID, Description columns */}
+              {/* Line Items - SAL-003/004/005: MRP, Product Code, Description columns */}
               <div>
                 <div className="mb-2 flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-neutral-700">Items</h3>
@@ -492,7 +492,7 @@ const QuotationsPage = () => {
                     <thead>
                       <tr className="bg-neutral-50">
                         <th className="px-3 py-2 text-left">Product</th>
-                        <th className="px-3 py-2 text-left w-24">Product ID</th>
+                        <th className="px-3 py-2 text-left w-24">Product Code</th>
                         <th className="px-3 py-2 text-left w-32">Description</th>
                         <th className="px-3 py-2 text-right w-20">Qty</th>
                         <th className="px-3 py-2 text-right w-28">MRP (₹)</th>
@@ -513,7 +513,7 @@ const QuotationsPage = () => {
                                 {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.product_code})</option>)}
                               </select>
                             </td>
-                            {/* SAL-004: Product ID column */}
+                            {/* SAL-004: Product Code column */}
                             <td className="px-3 py-2 text-xs text-neutral-500 font-mono">{prod?.product_code || '-'}</td>
                             {/* SAL-005: Description column */}
                             <td className="px-3 py-2 text-xs text-neutral-500">{prod?.description || prod?.name || '-'}</td>

@@ -10,6 +10,7 @@ Production-ready with fixes for:
 - BUG-25: Sales return adjusts invoice amount_due
 """
 from datetime import date, datetime, timedelta
+from typing import Any
 from uuid import UUID
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
@@ -93,6 +94,246 @@ def _validate_invoice_type_for_country(invoice_type: str, customer: Customer) ->
             status_code=400,
             detail="For non-India customers, only Export Invoice is allowed.",
         )
+
+
+def _has_text(value: Any) -> bool:
+    return bool(str(value).strip()) if value is not None else False
+
+
+def _validate_shipping_address_for_invoice(customer: Customer) -> None:
+    """SAL-043: Ensure shipping address is complete before invoice save."""
+    required_missing = (
+        not _has_text(customer.shipping_address_line1)
+        or not _has_text(customer.shipping_city)
+        or not _has_text(customer.shipping_state)
+        or not _has_text(customer.shipping_country)
+    )
+    if required_missing:
+        raise HTTPException(
+            status_code=400,
+            detail="Please complete Shipping Address before creating invoice",
+        )
+
+    if is_india_country(customer.shipping_country) and not _has_text(customer.shipping_pincode):
+        raise HTTPException(
+            status_code=400,
+            detail="Please complete Shipping Address before creating invoice",
+        )
+
+
+def _build_product_batch_snapshot(db: Session, product_id: UUID) -> dict[str, dict[str, Any]]:
+    """Build positive available batch map for a product from transactional data."""
+    batch_balances: dict[str, float] = {}
+    batch_meta: dict[str, tuple[date | None, date | None]] = {}
+
+    def _accumulate(batch_no, manufacture_date, expiry_date, qty_delta):
+        token = (batch_no or "").strip()
+        if not token:
+            return
+        if token not in batch_meta:
+            batch_meta[token] = (manufacture_date, expiry_date)
+        else:
+            prev_mfg, prev_exp = batch_meta[token]
+            batch_meta[token] = (
+                prev_mfg or manufacture_date,
+                prev_exp or expiry_date,
+            )
+        batch_balances[token] = batch_balances.get(token, 0.0) + float(qty_delta or 0)
+
+    grn_rows = (
+        db.query(
+            GRNItem.batch_no,
+            GRNItem.manufacture_date,
+            GRNItem.expiry_date,
+            func.coalesce(func.sum(GRNItem.quantity), 0).label("qty"),
+            func.coalesce(func.sum(GRNItem.free_quantity), 0).label("free_qty"),
+        )
+        .join(GoodsReceiptNote, GRNItem.grn_id == GoodsReceiptNote.id)
+        .filter(
+            GRNItem.product_id == product_id,
+            GoodsReceiptNote.status == "confirmed",
+            GoodsReceiptNote.is_deleted == False,
+            GRNItem.is_deleted == False,
+        )
+        .group_by(GRNItem.batch_no, GRNItem.manufacture_date, GRNItem.expiry_date)
+        .all()
+    )
+    for row in grn_rows:
+        _accumulate(
+            row.batch_no,
+            row.manufacture_date,
+            row.expiry_date,
+            float(row.qty or 0) + float(row.free_qty or 0),
+        )
+
+    purchase_return_rows = (
+        db.query(
+            GRNItem.batch_no,
+            GRNItem.manufacture_date,
+            GRNItem.expiry_date,
+            func.coalesce(func.sum(PurchaseReturnItem.quantity), 0).label("qty"),
+        )
+        .join(PurchaseReturn, PurchaseReturnItem.purchase_return_id == PurchaseReturn.id)
+        .outerjoin(GRNItem, PurchaseReturnItem.grn_item_id == GRNItem.id)
+        .filter(
+            PurchaseReturnItem.product_id == product_id,
+            PurchaseReturn.status == "confirmed",
+            PurchaseReturn.is_deleted == False,
+            PurchaseReturnItem.is_deleted == False,
+        )
+        .group_by(GRNItem.batch_no, GRNItem.manufacture_date, GRNItem.expiry_date)
+        .all()
+    )
+    for row in purchase_return_rows:
+        _accumulate(
+            row.batch_no,
+            row.manufacture_date,
+            row.expiry_date,
+            -float(row.qty or 0),
+        )
+
+    sales_issue_rows = (
+        db.query(
+            SalesInvoiceItem.batch_no,
+            SalesInvoiceItem.manufacture_date,
+            SalesInvoiceItem.expiry_date,
+            func.coalesce(func.sum(SalesInvoiceItem.quantity), 0).label("qty"),
+        )
+        .join(SalesInvoice, SalesInvoiceItem.invoice_id == SalesInvoice.id)
+        .filter(
+            SalesInvoiceItem.product_id == product_id,
+            SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
+            SalesInvoice.is_deleted == False,
+            SalesInvoiceItem.is_deleted == False,
+        )
+        .group_by(
+            SalesInvoiceItem.batch_no,
+            SalesInvoiceItem.manufacture_date,
+            SalesInvoiceItem.expiry_date,
+        )
+        .all()
+    )
+    for row in sales_issue_rows:
+        _accumulate(
+            row.batch_no,
+            row.manufacture_date,
+            row.expiry_date,
+            -float(row.qty or 0),
+        )
+
+    sales_return_rows = (
+        db.query(
+            SalesInvoiceItem.batch_no,
+            SalesInvoiceItem.manufacture_date,
+            SalesInvoiceItem.expiry_date,
+            func.coalesce(func.sum(SalesReturnItem.quantity), 0).label("qty"),
+        )
+        .join(SalesReturn, SalesReturnItem.sales_return_id == SalesReturn.id)
+        .outerjoin(SalesInvoiceItem, SalesReturnItem.invoice_item_id == SalesInvoiceItem.id)
+        .filter(
+            SalesReturnItem.product_id == product_id,
+            SalesReturn.status == "confirmed",
+            SalesReturn.is_deleted == False,
+            SalesReturnItem.is_deleted == False,
+        )
+        .group_by(
+            SalesInvoiceItem.batch_no,
+            SalesInvoiceItem.manufacture_date,
+            SalesInvoiceItem.expiry_date,
+        )
+        .all()
+    )
+    for row in sales_return_rows:
+        _accumulate(
+            row.batch_no,
+            row.manufacture_date,
+            row.expiry_date,
+            float(row.qty or 0),
+        )
+
+    snapshot: dict[str, dict[str, Any]] = {}
+    for batch_no, qty in batch_balances.items():
+        if qty <= 1e-6:
+            continue
+        manufacture_date, expiry_date = batch_meta.get(batch_no, (None, None))
+        snapshot[batch_no] = {
+            "available_qty": round(float(qty), 4),
+            "manufacture_date": manufacture_date,
+            "expiry_date": expiry_date,
+        }
+    return snapshot
+
+
+def _collect_batch_and_date_errors(
+    batch_no: str | None,
+    manufacture_date: date | None,
+    expiry_date: date | None,
+    batch_snapshot: dict[str, dict[str, Any]],
+    today: date,
+) -> list[str]:
+    """SAL-044: Validate selected batch and enforce MFG/EXP rules."""
+    if not batch_snapshot:
+        return []
+
+    errors: list[str] = []
+    token = (batch_no or "").strip()
+    if not token or token not in batch_snapshot:
+        return ["Invalid batch selected"]
+
+    expected = batch_snapshot[token]
+    expected_mfg = expected.get("manufacture_date")
+    expected_exp = expected.get("expiry_date")
+
+    if manufacture_date != expected_mfg or expiry_date != expected_exp:
+        errors.append("MFG/EXP date mismatch with batch")
+
+    if expected_mfg and expected_mfg > today:
+        errors.append("Invalid date range")
+    if expected_exp and expected_exp < today:
+        errors.append("Invalid date range")
+    if expected_mfg and expected_exp and expected_exp <= expected_mfg:
+        errors.append("Invalid date range")
+
+    return errors
+
+
+def _validate_invoice_line_items_for_save(
+    db: Session,
+    items,
+    allow_deleted_products: bool = False,
+) -> dict[str, Product]:
+    """Validate invoice items and return product cache for reuse in save flow."""
+    product_cache: dict[str, Product] = {}
+    batch_cache: dict[str, dict[str, dict[str, Any]]] = {}
+    today = date.today()
+    validation_errors: list[str] = []
+
+    for item in items:
+        product_key = str(item.product_id)
+        if product_key not in product_cache:
+            product_query = db.query(Product).filter(Product.id == item.product_id)
+            if not allow_deleted_products:
+                product_query = product_query.filter(Product.is_deleted == False)
+            product = product_query.first()
+            if not product:
+                raise HTTPException(status_code=400, detail="Invalid product")
+            product_cache[product_key] = product
+            batch_cache[product_key] = _build_product_batch_snapshot(db, item.product_id)
+
+        for err in _collect_batch_and_date_errors(
+            getattr(item, "batch_no", None),
+            getattr(item, "manufacture_date", None),
+            getattr(item, "expiry_date", None),
+            batch_cache[product_key],
+            today,
+        ):
+            if err not in validation_errors:
+                validation_errors.append(err)
+
+    if validation_errors:
+        raise HTTPException(status_code=400, detail=validation_errors)
+
+    return product_cache
 
 
 # ────────────────────────────── Quotations ───────────────────────────────────
@@ -870,148 +1111,16 @@ async def get_invoice_batch_options(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    batch_balances: dict[str, float] = {}
-    batch_meta: dict[str, tuple[date | None, date | None]] = {}
-
-    def _accumulate(batch_no, manufacture_date, expiry_date, qty_delta):
-        token = (batch_no or "").strip()
-        if not token:
-            return
-        if token not in batch_meta:
-            batch_meta[token] = (manufacture_date, expiry_date)
-        else:
-            prev_mfg, prev_exp = batch_meta[token]
-            batch_meta[token] = (
-                prev_mfg or manufacture_date,
-                prev_exp or expiry_date,
-            )
-        batch_balances[token] = batch_balances.get(token, 0.0) + float(qty_delta or 0)
-
-    grn_rows = (
-        db.query(
-            GRNItem.batch_no,
-            GRNItem.manufacture_date,
-            GRNItem.expiry_date,
-            func.coalesce(func.sum(GRNItem.quantity), 0).label("qty"),
-            func.coalesce(func.sum(GRNItem.free_quantity), 0).label("free_qty"),
-        )
-        .join(GoodsReceiptNote, GRNItem.grn_id == GoodsReceiptNote.id)
-        .filter(
-            GRNItem.product_id == product_id,
-            GoodsReceiptNote.status == "confirmed",
-            GoodsReceiptNote.is_deleted == False,
-            GRNItem.is_deleted == False,
-        )
-        .group_by(GRNItem.batch_no, GRNItem.manufacture_date, GRNItem.expiry_date)
-        .all()
-    )
-    for row in grn_rows:
-        _accumulate(
-            row.batch_no,
-            row.manufacture_date,
-            row.expiry_date,
-            float(row.qty or 0) + float(row.free_qty or 0),
-        )
-
-    purchase_return_rows = (
-        db.query(
-            GRNItem.batch_no,
-            GRNItem.manufacture_date,
-            GRNItem.expiry_date,
-            func.coalesce(func.sum(PurchaseReturnItem.quantity), 0).label("qty"),
-        )
-        .join(PurchaseReturn, PurchaseReturnItem.purchase_return_id == PurchaseReturn.id)
-        .outerjoin(GRNItem, PurchaseReturnItem.grn_item_id == GRNItem.id)
-        .filter(
-            PurchaseReturnItem.product_id == product_id,
-            PurchaseReturn.status == "confirmed",
-            PurchaseReturn.is_deleted == False,
-            PurchaseReturnItem.is_deleted == False,
-        )
-        .group_by(GRNItem.batch_no, GRNItem.manufacture_date, GRNItem.expiry_date)
-        .all()
-    )
-    for row in purchase_return_rows:
-        _accumulate(
-            row.batch_no,
-            row.manufacture_date,
-            row.expiry_date,
-            -float(row.qty or 0),
-        )
-
-    sales_issue_rows = (
-        db.query(
-            SalesInvoiceItem.batch_no,
-            SalesInvoiceItem.manufacture_date,
-            SalesInvoiceItem.expiry_date,
-            func.coalesce(func.sum(SalesInvoiceItem.quantity), 0).label("qty"),
-        )
-        .join(SalesInvoice, SalesInvoiceItem.invoice_id == SalesInvoice.id)
-        .filter(
-            SalesInvoiceItem.product_id == product_id,
-            SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
-            SalesInvoice.is_deleted == False,
-            SalesInvoiceItem.is_deleted == False,
-        )
-        .group_by(
-            SalesInvoiceItem.batch_no,
-            SalesInvoiceItem.manufacture_date,
-            SalesInvoiceItem.expiry_date,
-        )
-        .all()
-    )
-    for row in sales_issue_rows:
-        _accumulate(
-            row.batch_no,
-            row.manufacture_date,
-            row.expiry_date,
-            -float(row.qty or 0),
-        )
-
-    sales_return_rows = (
-        db.query(
-            SalesInvoiceItem.batch_no,
-            SalesInvoiceItem.manufacture_date,
-            SalesInvoiceItem.expiry_date,
-            func.coalesce(func.sum(SalesReturnItem.quantity), 0).label("qty"),
-        )
-        .join(SalesReturn, SalesReturnItem.sales_return_id == SalesReturn.id)
-        .outerjoin(SalesInvoiceItem, SalesReturnItem.invoice_item_id == SalesInvoiceItem.id)
-        .filter(
-            SalesReturnItem.product_id == product_id,
-            SalesReturn.status == "confirmed",
-            SalesReturn.is_deleted == False,
-            SalesReturnItem.is_deleted == False,
-        )
-        .group_by(
-            SalesInvoiceItem.batch_no,
-            SalesInvoiceItem.manufacture_date,
-            SalesInvoiceItem.expiry_date,
-        )
-        .all()
-    )
-    for row in sales_return_rows:
-        _accumulate(
-            row.batch_no,
-            row.manufacture_date,
-            row.expiry_date,
-            float(row.qty or 0),
-        )
-
-    batch_items = []
-    for batch_no, qty in batch_balances.items():
-        if qty <= 1e-6:
-            continue
-        manufacture_date, expiry_date = batch_meta.get(batch_no, (None, None))
-        batch_items.append(
-            {
-                "batch_no": batch_no,
-                "available_qty": round(float(qty), 4),
-                "manufacture_date": manufacture_date.isoformat() if manufacture_date else None,
-                "expiry_date": expiry_date.isoformat() if expiry_date else None,
-            }
-        )
-
+    snapshot = _build_product_batch_snapshot(db, product_id)
+    batch_items = [
+        {
+            "batch_no": batch_no,
+            "available_qty": meta.get("available_qty", 0),
+            "manufacture_date": meta.get("manufacture_date").isoformat() if meta.get("manufacture_date") else None,
+            "expiry_date": meta.get("expiry_date").isoformat() if meta.get("expiry_date") else None,
+        }
+        for batch_no, meta in snapshot.items()
+    ]
     batch_items.sort(key=lambda row: (row["expiry_date"] is None, row["expiry_date"] or "", row["batch_no"]))
 
     return {
@@ -1029,6 +1138,10 @@ async def create_invoice(
     customer = db.query(Customer).filter(Customer.id == payload.customer_id, Customer.is_deleted == False).first()
     if not customer:
         raise HTTPException(status_code=400, detail="Invalid customer")
+
+    _validate_shipping_address_for_invoice(customer)
+
+    product_cache = _validate_invoice_line_items_for_save(db, payload.items)
 
     calculated_due_date = _calculate_invoice_due_date(payload.invoice_date, customer)
         
@@ -1073,9 +1186,7 @@ async def create_invoice(
 
     subtotal = total_discount = total_taxable = total_cgst = total_sgst = total_igst = 0
     for item in payload.items:
-        product = db.query(Product).filter(Product.id == item.product_id, Product.is_deleted == False).first()
-        if not product:
-            raise HTTPException(status_code=400, detail="Invalid product")
+        product = product_cache[str(item.product_id)]
         calc = calc_line_item(
             item.quantity,
             item.unit_price,
@@ -1157,6 +1268,10 @@ async def update_invoice(
     if not customer:
         raise HTTPException(status_code=400, detail="Invalid customer")
 
+    _validate_shipping_address_for_invoice(customer)
+
+    product_cache = _validate_invoice_line_items_for_save(db, payload.items)
+
     calculated_due_date = _calculate_invoice_due_date(payload.invoice_date, customer)
 
     # BUG-02: Auto-detect GST mode (country + state/state-code)
@@ -1197,9 +1312,7 @@ async def update_invoice(
 
     subtotal = total_discount = total_taxable = total_cgst = total_sgst = total_igst = 0
     for item in payload.items:
-        product = db.query(Product).filter(Product.id == item.product_id, Product.is_deleted == False).first()
-        if not product:
-            raise HTTPException(status_code=400, detail="Invalid product")
+        product = product_cache[str(item.product_id)]
         calc = calc_line_item(
             item.quantity,
             item.unit_price,
@@ -1264,6 +1377,10 @@ async def issue_invoice(
         raise HTTPException(status_code=400, detail="Only draft invoices can be issued")
 
     items = db.query(SalesInvoiceItem).filter(SalesInvoiceItem.invoice_id == invoice.id).all()
+
+    # SAL-044 safety guard: block issue if stored batch/date data is invalid.
+    _validate_invoice_line_items_for_save(db, items, allow_deleted_products=True)
+
     for item in items:
         stock = get_current_stock(db, item.product_id)
         if stock < float(item.quantity):

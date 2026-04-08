@@ -47,6 +47,36 @@ from app.services.stock_service import add_stock_entry, refresh_materialized_vie
 router = APIRouter(tags=["purchase"])
 
 
+def _derive_grn_status_display(raw_status: str | None, is_partial_qty: bool) -> str:
+    status = (raw_status or "").strip().lower()
+    if status == "draft":
+        return "Partial Receipt (Draft)" if is_partial_qty else "Draft"
+    if status == "confirmed":
+        return "Partial Receipt (Confirmed)" if is_partial_qty else "Confirmed"
+    if status == "cancelled":
+        return "Cancelled"
+    return (raw_status or "-").strip() or "-"
+
+
+def _get_partial_qty_grn_ids(db: Session, grn_ids: list[UUID]) -> set[str]:
+    if not grn_ids:
+        return set()
+
+    rows = (
+        db.query(GRNItem.grn_id)
+        .join(PurchaseOrderItem, GRNItem.purchase_order_item_id == PurchaseOrderItem.id)
+        .filter(
+            GRNItem.grn_id.in_(grn_ids),
+            GRNItem.is_deleted == False,
+            PurchaseOrderItem.is_deleted == False,
+            GRNItem.quantity < PurchaseOrderItem.quantity,
+        )
+        .distinct()
+        .all()
+    )
+    return {str(row.grn_id) for row in rows}
+
+
 # ────────────────────────────── Purchase Orders ──────────────────────────────
 
 @router.get("/api/v1/purchase-orders")
@@ -66,7 +96,11 @@ async def list_purchase_orders(
     elif not include_archived:
         query = query.filter(PurchaseOrder.is_deleted == False)
     if status:
-        query = query.filter(PurchaseOrder.status == status)
+        normalized_status = status.strip().lower()
+        if normalized_status in {"completed", "received"}:
+            query = query.filter(PurchaseOrder.status.in_(["completed", "received"]))
+        else:
+            query = query.filter(PurchaseOrder.status == normalized_status)
     if supplier_id:
         query = query.filter(PurchaseOrder.supplier_id == supplier_id)
     total = query.count()
@@ -264,20 +298,29 @@ async def update_purchase_order_status(
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
 
+    requested_status = (payload.status or "").strip().lower()
+    if requested_status == "received":
+        requested_status = "completed"
+
+    current_status = (po.status or "").strip().lower()
+    if current_status == "received":
+        current_status = "completed"
+
     allowed = {
         "draft": {"sent", "cancelled"},
-        "sent": {"cancelled", "partial", "received"},
-        "partial": {"received"},
+        "sent": {"cancelled", "partial", "completed"},
+        "partial": {"completed"},
     }
-    if payload.status not in allowed.get(po.status, set()):
+    if requested_status not in allowed.get(current_status, set()):
         raise HTTPException(status_code=400, detail="Invalid status transition")
 
-    if po.status == "draft" and payload.status == "sent":
+    if current_status == "draft" and requested_status == "sent":
         supplier = db.query(Supplier).filter(Supplier.id == po.supplier_id, Supplier.is_deleted == False).first()
         if not supplier:
             raise HTTPException(status_code=400, detail="Cannot send PO: supplier reference is invalid")
 
-    po.status = payload.status
+    # Database check constraint currently stores terminal fulfillment as `received`.
+    po.status = "received" if requested_status == "completed" else requested_status
     db.commit()
     db.refresh(po)
     return po
@@ -341,6 +384,7 @@ async def list_grn(
         query = query.filter(GoodsReceiptNote.supplier_id == supplier_id)
     total = query.count()
     rows = query.order_by(GoodsReceiptNote.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    partial_qty_grn_ids = _get_partial_qty_grn_ids(db, [g.id for g in rows])
 
     # GRN-003: Resolve PO numbers for linked GRNs
     po_ids = {str(g.purchase_order_id) for g in rows if g.purchase_order_id}
@@ -363,7 +407,10 @@ async def list_grn(
                 g_dict[k] = str(v)
             elif hasattr(v, 'isoformat'):
                 g_dict[k] = v.isoformat()
+        is_partial_qty = str(g.id) in partial_qty_grn_ids
         g_dict["po_number"] = po_number_map.get(str(g.purchase_order_id)) if g.purchase_order_id else None
+        g_dict["is_partial_qty"] = is_partial_qty
+        g_dict["status_display"] = _derive_grn_status_display(g.status, is_partial_qty)
         items_out.append(g_dict)
 
     return {"items": items_out, "total": total, "page": page, "page_size": page_size, "has_more": (page * page_size) < total}
@@ -443,19 +490,19 @@ async def create_grn(
         if not product:
             raise HTTPException(status_code=400, detail=f"Invalid product: {item.product_id}")
 
-        # Validate manufacture date is not today or in the future
+        # Validate manufacture date is not in the future
         from datetime import date
-        if item.manufacture_date and item.manufacture_date >= date.today():
+        if item.manufacture_date and item.manufacture_date > date.today():
             raise HTTPException(
                 status_code=400,
-                detail=f"Line item {idx}: manufacturing date must be a past date only (not today or future)",
+                detail="MFG Date cannot be a future date",
             )
 
-        # Validate expiry date is not today or in the past (must be future only)
-        if item.expiry_date and item.expiry_date <= date.today():
+        # Validate expiry date is not in the past
+        if item.expiry_date and item.expiry_date < date.today():
             raise HTTPException(
                 status_code=400,
-                detail=f"Line item {idx}: expiry date must be a future date only (not today or past)",
+                detail=f"Line item {idx}: expiry date must be today or a future date",
             )
 
         if item.manufacture_date and item.expiry_date and item.expiry_date < item.manufacture_date:
@@ -485,13 +532,15 @@ async def create_grn(
                 raise HTTPException(status_code=400, detail="Unable to map GRN line item to purchase order line item")
 
             ordered_qty = float(po_item.quantity or 0)
-            received_qty = float(item.quantity or 0)
+            previously_received_qty = float(po_item.received_quantity or 0)
+            current_receipt_qty = float(item.quantity or 0)
+            cumulative_received_qty = previously_received_qty + current_receipt_qty
             minimum_allowed = max(0.0, ordered_qty - under_delivery_tolerance)
             maximum_allowed = ordered_qty + over_delivery_tolerance
 
-            if received_qty < minimum_allowed:
+            if cumulative_received_qty < minimum_allowed:
                 raise HTTPException(status_code=400, detail="Under delivery exceeded allowed tolerance")
-            if received_qty > maximum_allowed:
+            if cumulative_received_qty > maximum_allowed:
                 raise HTTPException(status_code=400, detail="Over delivery exceeded allowed tolerance")
 
         calc = calc_line_item(
@@ -552,7 +601,24 @@ async def get_grn(
     if not grn:
         raise HTTPException(status_code=404, detail="GRN not found")
     items = db.query(GRNItem).filter(GRNItem.grn_id == grn_id).all()
-    return {"grn": grn, "items": items}
+
+    grn_dict = {c.name: getattr(grn, c.name) for c in grn.__table__.columns}
+    for k, v in grn_dict.items():
+        if hasattr(v, 'hex'):
+            grn_dict[k] = str(v)
+        elif hasattr(v, 'isoformat'):
+            grn_dict[k] = v.isoformat()
+
+    is_partial_qty = str(grn.id) in _get_partial_qty_grn_ids(db, [grn.id])
+    if grn.purchase_order_id:
+        po = db.query(PurchaseOrder).filter(PurchaseOrder.id == grn.purchase_order_id).first()
+        grn_dict["po_number"] = po.po_number if po else None
+    else:
+        grn_dict["po_number"] = None
+    grn_dict["is_partial_qty"] = is_partial_qty
+    grn_dict["status_display"] = _derive_grn_status_display(grn.status, is_partial_qty)
+
+    return {"grn": grn_dict, "items": items}
 
 
 @router.put("/api/v1/grn/{grn_id}")
@@ -627,19 +693,19 @@ async def update_grn(
         if not product:
             raise HTTPException(status_code=400, detail=f"Invalid product: {item.product_id}")
 
-        # Validate manufacture date is not today or in the future
+        # Validate manufacture date is not in the future
         from datetime import date
-        if item.manufacture_date and item.manufacture_date >= date.today():
+        if item.manufacture_date and item.manufacture_date > date.today():
             raise HTTPException(
                 status_code=400,
-                detail=f"Line item {idx}: manufacturing date must be a past date only (not today or future)",
+                detail="MFG Date cannot be a future date",
             )
         
-        # Validate expiry date is not today or in the past (must be future only)
-        if item.expiry_date and item.expiry_date <= date.today():
+        # Validate expiry date is not in the past
+        if item.expiry_date and item.expiry_date < date.today():
             raise HTTPException(
                 status_code=400,
-                detail=f"Line item {idx}: expiry date must be a future date only (not today or past)",
+                detail=f"Line item {idx}: expiry date must be today or a future date",
             )
         
         if item.manufacture_date and item.expiry_date and item.expiry_date < item.manufacture_date:
@@ -668,13 +734,15 @@ async def update_grn(
                 raise HTTPException(status_code=400, detail="Unable to map GRN line item to purchase order line item")
 
             ordered_qty = float(po_item.quantity or 0)
-            received_qty = float(item.quantity or 0)
+            previously_received_qty = float(po_item.received_quantity or 0)
+            current_receipt_qty = float(item.quantity or 0)
+            cumulative_received_qty = previously_received_qty + current_receipt_qty
             minimum_allowed = max(0.0, ordered_qty - float(grn.under_delivery_tolerance or 0))
             maximum_allowed = ordered_qty + float(grn.over_delivery_tolerance or 0)
 
-            if received_qty < minimum_allowed:
+            if cumulative_received_qty < minimum_allowed:
                 raise HTTPException(status_code=400, detail="Under delivery exceeded allowed tolerance")
-            if received_qty > maximum_allowed:
+            if cumulative_received_qty > maximum_allowed:
                 raise HTTPException(status_code=400, detail="Over delivery exceeded allowed tolerance")
 
         calc = calc_line_item(
@@ -737,10 +805,10 @@ async def confirm_grn(
     if grn.status != "draft":
         raise HTTPException(status_code=400, detail="GRN is not in draft status")
 
-    # BUG-24: Guard against already-received POs
+    # BUG-24: Guard against already completed POs
     if grn.purchase_order_id:
         po = db.query(PurchaseOrder).filter(PurchaseOrder.id == grn.purchase_order_id).first()
-        if po and po.status == "received":
+        if po and po.status in {"received", "completed"}:
             raise HTTPException(status_code=400, detail="Purchase order is already fully received")
 
     grn.status = "confirmed"
@@ -784,12 +852,16 @@ async def confirm_grn(
     # Update PO status based on fulfillment
     if grn.purchase_order_id:
         po = db.query(PurchaseOrder).filter(PurchaseOrder.id == grn.purchase_order_id).first()
-        if po and po.status not in {"received", "cancelled"}:
+        if po and po.status not in {"received", "completed", "cancelled"}:
             po_items = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.purchase_order_id == po.id).all()
-            if po_items and all(float(i.received_quantity) >= float(i.quantity) for i in po_items):
-                po.status = "received"
-            else:
-                po.status = "partial"
+            if po_items:
+                has_any_receipt = any(float(i.received_quantity or 0) > 0 for i in po_items)
+                if not has_any_receipt:
+                    po.status = "sent"
+                elif all(float(i.received_quantity or 0) >= float(i.quantity or 0) for i in po_items):
+                    po.status = "received"
+                else:
+                    po.status = "partial"
 
     # BUG-01: Refresh materialized view after stock changes
     refresh_materialized_view(db)

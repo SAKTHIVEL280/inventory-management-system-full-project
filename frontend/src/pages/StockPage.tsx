@@ -50,7 +50,7 @@ const StockPage = () => {
 
   const sc: Record<string, string> = {
     'In Stock': 'bg-green-100 text-green-700',
-    'Low Stock': 'bg-orange-100 text-orange-700 animate-pulse',
+    'Low Stock': 'bg-orange-100 text-orange-700',
   };
 
   const lowCount = items.filter(i => i.status === 'Low Stock').length;
@@ -134,11 +134,11 @@ const StockPage = () => {
                     <td className="px-4 py-3 text-neutral-500">{formatDate(item.manufacture_date)}</td>
                     <td className="px-4 py-3 text-neutral-500">{formatDate(item.expiry_date)}</td>
                     <td className="px-4 py-3 text-neutral-500">{item.hsn}</td>
-                    <td className="px-4 py-3 text-right font-medium">{item.closing_qty}</td>
+                    <td className={`px-4 py-3 text-right font-medium ${item.status === 'Low Stock' ? 'hms-low-stock-qty hms-low-stock-blink' : ''}`}>{item.closing_qty}</td>
                     <td className="px-4 py-3 text-right text-neutral-500">{item.safety_stock}</td>
                     <td className="px-4 py-3 text-right text-neutral-500">{item.min_stock}</td>
                     <td className="px-4 py-3 text-center">
-                      <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${sc[item.status] || 'bg-gray-100'}`}>{item.status}</span>
+                      <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${sc[item.status] || 'bg-gray-100'} ${item.status === 'Low Stock' ? 'hms-low-stock-blink' : ''}`}>{item.status}</span>
                     </td>
                   </tr>
                 ))}

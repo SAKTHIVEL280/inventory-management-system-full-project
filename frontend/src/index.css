@@ -78,3 +78,31 @@ input[type='number']::-webkit-inner-spin-button {
     @apply border-red-400 bg-red-50;
   }
 }
+
+@layer utilities {
+  @keyframes hms-low-stock-blink {
+    0%,
+    100% {
+      opacity: 1;
+      box-shadow: 0 0 0 rgba(234, 88, 12, 0);
+    }
+    50% {
+      opacity: 0.55;
+      box-shadow: 0 0 0.4rem rgba(234, 88, 12, 0.22);
+    }
+  }
+
+  .hms-low-stock-blink {
+    animation: hms-low-stock-blink 1.6s ease-in-out infinite;
+  }
+
+  .hms-low-stock-qty {
+    @apply font-semibold text-orange-700;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hms-low-stock-blink {
+    animation: none;
+  }
+}

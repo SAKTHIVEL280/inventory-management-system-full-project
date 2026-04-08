@@ -1,4 +1,4 @@
-import { FocusEvent, useEffect, useState } from 'react';
+import { FocusEvent, useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
@@ -49,6 +49,89 @@ const defaultProductValues: ProductForm = {
   selling_price: 0, mrp: 0,
   safety_stock: 0, category_id: '', uom_id: '',
   is_active: true, status: 'active',
+};
+
+const DEFAULT_BASIC_UNITS = [
+  'PCS',
+  'KG',
+  'G',
+  'LTR',
+  'ML',
+  'BOX',
+  'PACK',
+  'MTR',
+  'SQM',
+  'NOS',
+];
+
+type TypeaheadInputProps = {
+  id: string;
+  value: string;
+  options: string[];
+  placeholder: string;
+  onChange: (nextValue: string) => void;
+  className?: string;
+};
+
+const TypeaheadInput = ({
+  id,
+  value,
+  options,
+  placeholder,
+  onChange,
+  className = 'hms-input',
+}: TypeaheadInputProps) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const filteredOptions = useMemo(() => {
+    const needle = value.trim().toLowerCase();
+    const normalized = [...new Set(options.map((option) => option.trim()).filter((option) => option.length > 0))];
+    if (!needle) {
+      return normalized.slice(0, 12);
+    }
+    const startsWithMatches = normalized.filter((option) => option.toLowerCase().startsWith(needle));
+    const includesMatches = normalized.filter(
+      (option) => !option.toLowerCase().startsWith(needle) && option.toLowerCase().includes(needle)
+    );
+    return [...startsWithMatches, ...includesMatches].slice(0, 12);
+  }, [options, value]);
+
+  return (
+    <div className="relative">
+      <input
+        id={id}
+        className={className}
+        value={value}
+        placeholder={placeholder}
+        onFocus={() => setIsOpen(true)}
+        onBlur={() => {
+          window.setTimeout(() => setIsOpen(false), 120);
+        }}
+        onChange={(event) => {
+          onChange(event.target.value);
+          setIsOpen(true);
+        }}
+      />
+      {isOpen && filteredOptions.length > 0 && (
+        <div className="absolute z-20 mt-1 max-h-52 w-full overflow-auto rounded-lg border border-neutral-200 bg-white shadow-lg">
+          {filteredOptions.map((option) => (
+            <button
+              key={`${id}-${option}`}
+              type="button"
+              className="block w-full px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
+              onMouseDown={(event) => {
+                event.preventDefault();
+                onChange(option);
+                setIsOpen(false);
+              }}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 };
 
 const ProductsPage = () => {
@@ -332,9 +415,18 @@ const ProductsPage = () => {
   const products = productsQuery.data?.items ?? [];
   const categories = categoriesQuery.data ?? [];
   const uoms = uomQuery.data ?? [];
+  const basicUnitOptions = useMemo(() => {
+    const unitCandidates = [
+      ...DEFAULT_BASIC_UNITS,
+      ...uoms.flatMap((u) => [u.abbreviation, u.name]),
+      ...products.map((product) => product.sku ?? ''),
+    ];
+    return [...new Set(unitCandidates.map((unit) => unit.trim()).filter((unit) => unit.length > 0))];
+  }, [products, uoms]);
   const isSaving = productMutation.isPending || updateMutation.isPending;
   const unitPrice = productForm.watch('unit_price');
   const baseUnitQty = productForm.watch('base_unit_qty');
+  const baseUnitValue = productForm.watch('sku') ?? '';
   const computedPurchase = (Number(unitPrice || 0) * Number(baseUnitQty || 0)).toFixed(2);
 
   // Filter products based on search query
@@ -434,7 +526,16 @@ const ProductsPage = () => {
                 </div>
                 <div>
                   <label htmlFor="product_sku" className="hms-label">Base Unit *</label>
-                  <input id="product_sku" className="hms-input" placeholder="e.g. Bottle, Piece, Kg" {...productForm.register('sku')} />
+                  <input type="hidden" {...productForm.register('sku')} />
+                  <TypeaheadInput
+                    id="product_sku"
+                    value={baseUnitValue}
+                    options={basicUnitOptions}
+                    placeholder="Type to search units (e.g. PCS, KG, LTR)"
+                    onChange={(nextValue) => {
+                      productForm.setValue('sku', nextValue, { shouldDirty: true, shouldValidate: true });
+                    }}
+                  />
                   {getFieldError('sku') && <p className="mt-1 text-xs text-danger">{getFieldError('sku')}</p>}
                 </div>
                 <div>
@@ -455,9 +556,9 @@ const ProductsPage = () => {
                   {getFieldError('category_id') && <p className="mt-1 text-xs text-danger">{getFieldError('category_id')}</p>}
                 </div>
                 <div>
-                  <label htmlFor="alt_uom_id" className="hms-label">Order Unit/Packing</label>
+                  <label htmlFor="alt_uom_id" className="hms-label">Order Unit / Packing (optional)</label>
                   <select id="alt_uom_id" className="hms-input" {...productForm.register('alt_uom_id')}>
-                    <option value="">Select Order Unit/Packing (optional)</option>
+                    <option value="">Select Order Unit / Packing (optional)</option>
                     {uoms.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.abbreviation})</option>)}
                   </select>
                   {getFieldError('alt_uom_id') && <p className="mt-1 text-xs text-danger">{getFieldError('alt_uom_id')}</p>}

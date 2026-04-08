@@ -73,6 +73,37 @@ const isIndiaCountry = (value?: string | null) => {
   return token === 'india' || token === 'in' || token === 'bharat' || token === 'republic of india';
 };
 
+const extractApiMessages = (detail: unknown): string[] => {
+  if (!detail) return [];
+  if (typeof detail === 'string') return [detail];
+  if (Array.isArray(detail)) {
+    return detail
+      .flatMap((entry) => {
+        if (typeof entry === 'string') return [entry];
+        if (entry && typeof entry === 'object') {
+          const obj = entry as { msg?: string; message?: string };
+          return [obj.msg || obj.message || ''];
+        }
+        return [''];
+      })
+      .map((msg) => msg.trim())
+      .filter(Boolean);
+  }
+  if (detail && typeof detail === 'object') {
+    const obj = detail as { message?: string; messages?: unknown[]; detail?: unknown };
+    if (Array.isArray(obj.messages)) {
+      return extractApiMessages(obj.messages);
+    }
+    if (obj.detail) {
+      return extractApiMessages(obj.detail);
+    }
+    if (typeof obj.message === 'string' && obj.message.trim()) {
+      return [obj.message.trim()];
+    }
+  }
+  return [];
+};
+
 const InvoicesPage = () => {
   const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -422,9 +453,19 @@ const InvoicesPage = () => {
           gst_rate: Number(isExportInvoice ? 0 : i.gst_rate),
         })),
       };
-      if (editingId) await salesApi.updateInvoice(editingId, payload); else await salesApi.createInvoice(payload);
+      if (editingId) {
+        await salesApi.updateInvoice(editingId, payload, { suppressGlobalErrorToast: true });
+      } else {
+        await salesApi.createInvoice(payload, { suppressGlobalErrorToast: true });
+      }
       setShowForm(false); resetForm(); fetchInvoices();
-    } catch (err: unknown) { const m = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail; setError(typeof m === 'string' ? m : 'Failed'); } finally { setSubmitting(false); }
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      const messages = extractApiMessages(detail);
+      const popupMessages = messages.length > 0 ? messages : ['Failed to save invoice'];
+      popupMessages.forEach((message) => toast.error(message));
+      setError(popupMessages.join('\n'));
+    } finally { setSubmitting(false); }
   };
 
   const handleIssue = async (id: string) => {
@@ -432,10 +473,15 @@ const InvoicesPage = () => {
       type: 'warning',
     });
     if (!confirmed) return;
-    try { await salesApi.issueInvoice(id); fetchInvoices(); }
+    try { await salesApi.issueInvoice(id, { suppressGlobalErrorToast: true }); fetchInvoices(); }
     catch (err: unknown) {
-      const m = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      toast.error(typeof m === 'string' ? m : 'Issue failed');
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      const messages = extractApiMessages(detail);
+      if (messages.length === 0) {
+        toast.error('Issue failed');
+      } else {
+        messages.forEach((message) => toast.error(message));
+      }
     }
   };
 
@@ -621,7 +667,7 @@ const InvoicesPage = () => {
                     <thead>
                       <tr className="bg-neutral-50">
                         <th className="w-[16%] px-3 py-2 text-left">Product</th>
-                        <th className="w-[7%] px-3 py-2 text-left">Product ID</th>
+                        <th className="w-[7%] px-3 py-2 text-left">Product Code</th>
                         <th className="w-[9%] px-3 py-2 text-left">Description</th>
                         <th className="w-[7%] px-3 py-2 text-left">Packing Unit</th>
                         <th className="w-[7%] px-3 py-2 text-left">Base Unit</th>
@@ -652,7 +698,7 @@ const InvoicesPage = () => {
                               {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.product_code})</option>)}
                             </select>
                           </td>
-                          {/* SAL-013: Product ID column */}
+                          {/* SAL-013: Product Code column */}
                           <td className="px-3 py-2 text-xs text-neutral-500 font-mono">{prod?.product_code || '-'}</td>
                           {/* SAL-014: Description column */}
                           <td className="px-3 py-2 text-xs text-neutral-500">{prod?.description || prod?.name || '-'}</td>

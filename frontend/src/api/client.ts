@@ -58,6 +58,10 @@ interface ApiErrorResponse {
   detail?: ApiErrorDetail;
 }
 
+interface ToastControlRequestConfig {
+  skipErrorToast?: boolean;
+}
+
 const normalizeApiErrorMessage = (error: unknown): string => {
   const axiosError = error as AxiosError<ApiErrorResponse>;
 
@@ -169,9 +173,12 @@ class ApiClient {
 
         // Global user-facing error message for all API failures.
         // Pages can still show inline form errors; this ensures errors never stay console-only.
-        const message = normalizeApiErrorMessage(error);
-        if (shouldShowToast(message)) {
-          toast.error(message);
+        const requestConfig = (error?.config || {}) as ToastControlRequestConfig;
+        if (!requestConfig.skipErrorToast) {
+          const message = normalizeApiErrorMessage(error);
+          if (shouldShowToast(message)) {
+            toast.error(message);
+          }
         }
 
         return Promise.reject(error);

@@ -16,6 +16,7 @@ class PaymentCreateRequest(BaseModel):
     party_type: str
     customer_id: Optional[UUID] = None
     supplier_id: Optional[UUID] = None
+    purchase_order_id: Optional[UUID] = None
     payment_date: date
     amount: int
     payment_mode: str

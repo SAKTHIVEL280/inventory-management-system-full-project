@@ -82,7 +82,7 @@ const InventoryCountDifferencePage = () => {
                   <thead>
                     <tr className="border-b border-neutral-200 bg-neutral-50">
                       <th className="px-4 py-3 text-left font-semibold text-neutral-600">S.No</th>
-                      <th className="px-4 py-3 text-left font-semibold text-neutral-600">Product ID</th>
+                      <th className="px-4 py-3 text-left font-semibold text-neutral-600">Product Code</th>
                       <th className="px-4 py-3 text-left font-semibold text-neutral-600">Product</th>
                       <th className="px-4 py-3 text-left font-semibold text-neutral-600">Batch</th>
                       <th className="px-4 py-3 text-left font-semibold text-neutral-600">Mfg</th>
@@ -101,7 +101,7 @@ const InventoryCountDifferencePage = () => {
                       result.items.map((item, index) => (
                         <tr key={`${item.product_id}-${item.serial_number}-${index}`} className="border-b border-neutral-100">
                           <td className="px-4 py-3">{item.serial_number}</td>
-                          <td className="px-4 py-3 text-xs text-neutral-600">{item.product_id}</td>
+                          <td className="px-4 py-3 text-xs text-neutral-600">{item.product_code || item.product_id}</td>
                           <td className="px-4 py-3">
                             <div className="font-medium text-neutral-900">{item.product_name || '—'}</div>
                             <div className="text-xs text-neutral-500">{item.product_code || ''}</div>

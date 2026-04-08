@@ -1,5 +1,251 @@
 # Frontend Updates Log
 
+## FE-81: Payables PO/GRN Auto-Fill + Advance-Adjusted Remaining Flow (PAY-001, PAY-002)
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Payables
+**Type**: Enhancement / UX Logic Update
+
+### Overview
+Implemented PO-linked payables flow with GRN auto-selection/auto-fill and advance-adjusted remaining payable display/validation.
+
+### Changes Made
+- Added supplier-specific PO loading with PO search in Payables form.
+- Added mandatory PO selection for supplier payment creation.
+- Added PO-scoped GRN selection for non-advance payments.
+- Added GRN settlement panel fields:
+  - GRN Amount
+  - Remaining Amount (After Advance)
+- Added auto-fill behavior for non-advance flow:
+  - auto-select first open GRN for selected PO,
+  - auto-fill payment amount using computed remaining.
+- Updated payment payload to send `purchase_order_id` and single selected GRN allocation for non-advance record.
+- Updated payment list rendering:
+  - top-level PO display,
+  - status chip labels for `Advance Payment Cleared` and `Full Payment Cleared`.
+- Updated status filter behavior to include all cleared-like variants under `Cleared` aggregate.
+
+### Files Modified
+- `frontend/src/api/payments.ts`
+- `frontend/src/api/purchase.ts`
+- `frontend/src/pages/PayablesPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified files.
+- Verified frontend build succeeds (`npm run build`).
+
+## FE-80: Compact GRN Status Badge Styling
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: GRN
+**Type**: UI Polish
+
+### Overview
+Reduced visual size of GRN status chips to avoid bulky status rendering in list/detail views.
+
+### Changes Made
+- Reduced status chip padding and font size for a compact appearance.
+- Added compact display text for partial statuses:
+  - `Partial (Draft)`
+  - `Partial (Confirmed)`
+- Preserved full status meaning via tooltip (`title`) with full label text.
+
+### Files Modified
+- `frontend/src/pages/GRNPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified file.
+
+## FE-79: GRN Status Naming for Partial Receipt Draft/Confirmed
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: GRN
+**Type**: UX Enhancement
+
+### Overview
+Updated GRN status display to clearly distinguish partial-quantity documents in draft and confirmed stages.
+
+### Changes Made
+- Added status display rendering in GRN list and GRN detail modal using backend metadata.
+- Applied improved status names:
+  - `Partial Receipt (Draft)`
+  - `Partial Receipt (Confirmed)`
+- Kept standard statuses for non-partial rows:
+  - `Draft`, `Confirmed`, `Cancelled`.
+- Added badge color variations to visually distinguish partial draft vs partial confirmed.
+
+### Files Modified
+- `frontend/src/api/purchase.ts`
+- `frontend/src/pages/GRNPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified files.
+- Verified frontend build succeeds (`npm run build`).
+
+## FE-78: GRN Partial Receipt Tolerance Validation Uses Cumulative Qty
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: GRN
+**Type**: Logic / UX Fix
+
+### Overview
+Adjusted GRN linked-PO tolerance checks to evaluate cumulative received quantity, so creating remaining quantity after a partial GRN no longer triggers incorrect tolerance errors.
+
+### Changes Made
+- Updated GRN save-side tolerance logic to validate with:
+  - `previously received qty + current entered qty`
+  instead of current row qty alone.
+- Updated tolerance popup data to show cumulative received value explicitly.
+
+### Files Modified
+- `frontend/src/pages/GRNPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified file.
+- Verified frontend build succeeds (`npm run build`).
+
+## FE-77: GRN Expiry Date Current-Date Enablement (Past-Date Restriction)
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: GRN
+**Type**: Validation / UX Fix
+
+### Overview
+Fixed GRN expiry-date behavior so users can select from current date onward, while past dates are blocked.
+
+### Changes Made
+- Updated GRN frontend validation to block only expiry dates earlier than today.
+- Updated expiry-date validation message to: `expiry date must be today or a future date`.
+- Updated GRN expiry-date input `min` to today (and still respects manufacture-date consistency).
+
+### Files Modified
+- `frontend/src/pages/GRNPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified file.
+- Verified frontend build succeeds (`npm run build`).
+
+## FE-76: GRN MFG Date Restriction + Product Code Label Standardization + PO Partial/Completed UI (GRN-002, GRN-003, GRN-004)
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: GRN, Purchase Order, Sales Invoice, Quotation, Inventory Count
+**Test Cases**: GRN-002, GRN-003, GRN-004
+**Type**: Enhancement / UX Consistency Fix
+
+### Overview
+Applied requested GRN-related UX and status improvements: prevented future MFG selection in GRN with exact message, standardized user-facing naming to `Product Code`, and aligned PO fulfillment status presentation to `Partial`/`Completed` with line-level visibility.
+
+### Changes Made
+- GRN MFG Date (frontend):
+  - MFG input now uses `max=today` to prevent future date picking.
+  - save validation blocks only future MFG values and shows exact message:
+    - `MFG Date cannot be a future date`.
+- Product naming consistency (`Product ID` -> `Product Code`) in UI:
+  - Quotation items grid header
+  - Sales Invoice items grid header
+  - Inventory Count entry label, table header, and validation toast message
+  - Inventory Count Difference table header
+  - where appropriate, displayed value now shows product code first instead of raw product UUID.
+- Purchase Order status UI:
+  - replaced `received` presentation with `completed` in status filter and badges.
+  - added robust status normalization so legacy `received` records still render as `Completed`.
+  - added line-item fulfillment status in PO detail modal:
+    - `Pending/Draft`, `Partial`, `Completed`.
+
+### Files Modified
+- `frontend/src/pages/GRNPage.tsx`
+- `frontend/src/pages/PurchaseOrderPage.tsx`
+- `frontend/src/pages/QuotationsPage.tsx`
+- `frontend/src/pages/InvoicesPage.tsx`
+- `frontend/src/pages/InventoryCountPage.tsx`
+- `frontend/src/pages/InventoryCountDifferencePage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified files.
+- Verified frontend build succeeds (`npm run build`).
+
+## FE-75: Product Basic Unit Typeahead + Order Unit Label + Stock Low-Alert Blink (PRO-001, PRO-002, STO-001)
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Product Master, Stock / Inventory
+**Test Cases**: PRO-001, PRO-002, STO-001
+**Type**: Enhancement / UI Update
+
+### Overview
+Implemented product and stock UX enhancements: Base Unit is now a searchable dropdown-style typeahead, the optional marker for Order Unit/Packing is inline in the label, and low-stock rows now have a subtle blinking visual alert.
+
+### Changes Made
+- Replaced editable Product Base Unit text input with a searchable typeahead dropdown behavior.
+- Populated Base Unit suggestions from:
+  - predefined standard unit tokens (PCS, KG, LTR, BOX, etc.)
+  - active UOM master names/abbreviations
+  - existing product Base Unit values for continuity during edits.
+- Kept Base Unit binding on the same `sku` field so stored values continue working in dependent modules (PO/Invoice/PDF contexts already reading this field).
+- Updated Product label text to inline optional format:
+  - `Order Unit / Packing (optional)`
+- Added low-stock blinking animation utility classes and applied them to:
+  - Current Qty cell (low stock rows)
+  - Status badge (low stock rows)
+- Added reduced-motion fallback to disable blink animation when OS preference requests reduced motion.
+
+### Files Modified
+- `frontend/src/pages/ProductsPage.tsx`
+- `frontend/src/pages/StockPage.tsx`
+- `frontend/src/index.css`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified files.
+- Verified frontend build succeeds (`npm run build`).
+
+## FE-74: Duplicate Error Toast Prevention in Sales Invoice
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Sales Invoice / API Client
+**Type**: UX Fix
+
+### Overview
+Resolved duplicate popup error messages caused by both global API interceptor toasts and page-level invoice toasts firing for the same failed request.
+
+### Changes Made
+- Added per-request global-toast suppression support in API client interceptor (`skipErrorToast`).
+- Extended Sales API invoice methods to support `suppressGlobalErrorToast` options:
+  - create invoice
+  - update invoice
+  - issue invoice
+- Updated invoice page handlers to suppress global toasts for these actions and keep only page-level detailed popup messages.
+
+### Files Modified
+- `frontend/src/api/client.ts`
+- `frontend/src/api/sales.ts`
+- `frontend/src/pages/InvoicesPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified files.
+- Verified frontend build succeeds (`npm run build`).
+
+## FE-73: Sales Invoice Popup Error Handling for Multi-Validation Responses (SAL-043, SAL-044)
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Sales Invoice
+**Type**: UX / Error Handling Fix
+
+### Overview
+Updated Sales Invoice error handling to show all backend validation messages as popup toasts instead of a single generic error.
+
+### Changes Made
+- Added API detail parser to normalize error payloads from string/list/object formats.
+- On save/create/update failures:
+  - shows each validation message as separate toast popup.
+  - keeps combined messages in inline error block for reference.
+- Applied same multi-message popup behavior for issue-invoice errors.
+
+### Files Modified
+- `frontend/src/pages/InvoicesPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified file.
+- Verified frontend build succeeds (`npm run build`).
+
 ## FE-72: Restore Base Unit Alongside Packing Unit in Sales Invoice (SAL-034)
 **Date**: April 8, 2026
 **Status**: ✅ Completed

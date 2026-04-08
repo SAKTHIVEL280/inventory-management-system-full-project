@@ -385,8 +385,10 @@ const GRNPage = () => {
         const orderedQty = Number(i.po_ordered_qty || 0);
         const minimumAllowed = Math.max(0, orderedQty - Number(underDeliveryTolerance || 0));
         const maximumAllowed = orderedQty + Number(overDeliveryTolerance || 0);
-        const receivedQty = Number(i.quantity || 0);
-        return receivedQty < minimumAllowed || receivedQty > maximumAllowed;
+        const previouslyReceivedQty = Number(i.po_received_qty || 0);
+        const currentReceivedQty = Number(i.quantity || 0);
+        const cumulativeReceivedQty = previouslyReceivedQty + currentReceivedQty;
+        return cumulativeReceivedQty < minimumAllowed || cumulativeReceivedQty > maximumAllowed;
       });
 
       if (qtyOutOfRangeIndex >= 0) {
@@ -394,15 +396,17 @@ const GRNPage = () => {
         const orderedQty = Number(qtyOutOfRange.po_ordered_qty || 0);
         const minimumAllowed = Math.max(0, orderedQty - Number(underDeliveryTolerance || 0));
         const maximumAllowed = orderedQty + Number(overDeliveryTolerance || 0);
-        const receivedQty = Number(qtyOutOfRange.quantity || 0);
-        const isUnderDelivery = receivedQty < minimumAllowed;
+        const previouslyReceivedQty = Number(qtyOutOfRange.po_received_qty || 0);
+        const currentReceivedQty = Number(qtyOutOfRange.quantity || 0);
+        const cumulativeReceivedQty = previouslyReceivedQty + currentReceivedQty;
+        const isUnderDelivery = cumulativeReceivedQty < minimumAllowed;
         const productName = products.find((p) => p.id === qtyOutOfRange.product_id)?.name || `Line item ${qtyOutOfRangeIndex + 1}`;
 
         openTolerancePopup({
           title: isUnderDelivery ? 'Under delivery exceeded allowed tolerance' : 'Over delivery exceeded allowed tolerance',
           itemLabel: productName,
           rowNumber: qtyOutOfRangeIndex + 1,
-          receivedQty,
+          receivedQty: cumulativeReceivedQty,
           minAllowed: minimumAllowed,
           maxAllowed: maximumAllowed,
         });
@@ -418,22 +422,22 @@ const GRNPage = () => {
       return;
     }
 
-    // Validate manufacture date is not today or in the future
+    // Validate manufacture date is not in the future
     const todayIso = todayLocalDateInputValue();
     const invalidMfgDateIndex = items.findIndex(
-      (i) => i.manufacture_date && i.manufacture_date >= todayIso,
+      (i) => i.manufacture_date && i.manufacture_date > todayIso,
     );
     if (invalidMfgDateIndex >= 0) {
-      setError(`Line item ${invalidMfgDateIndex + 1}: manufacturing date must be a past date only (not today or future)`);
+      setError('MFG Date cannot be a future date');
       return;
     }
 
-    // Validate expiry date is not today or in the past (must be future only)
+    // Validate expiry date is not in the past
     const invalidExpDateIndex = items.findIndex(
-      (i) => i.expiry_date && i.expiry_date <= todayIso,
+      (i) => i.expiry_date && i.expiry_date < todayIso,
     );
     if (invalidExpDateIndex >= 0) {
-      setError(`Line item ${invalidExpDateIndex + 1}: expiry date must be a future date only (not today or past)`);
+      setError(`Line item ${invalidExpDateIndex + 1}: expiry date must be today or a future date`);
       return;
     }
 
@@ -547,7 +551,33 @@ const GRNPage = () => {
     }
   };
 
-  const sc: Record<string, string> = { draft: 'bg-gray-100 text-gray-700', confirmed: 'bg-green-100 text-green-700', cancelled: 'bg-red-100 text-red-700' };
+  const statusChipClass = (grn: GoodsReceiptNote) => {
+    const status = (grn.status || '').toLowerCase();
+    if (status === 'cancelled') return 'bg-red-100 text-red-700';
+    if (grn.is_partial_qty && status === 'confirmed') return 'bg-amber-100 text-amber-800';
+    if (grn.is_partial_qty && status === 'draft') return 'bg-orange-100 text-orange-800';
+    if (status === 'confirmed') return 'bg-green-100 text-green-700';
+    if (status === 'draft') return 'bg-gray-100 text-gray-700';
+    return 'bg-gray-100 text-gray-700';
+  };
+
+  const statusDisplayText = (grn: GoodsReceiptNote) => {
+    if (grn.status_display && grn.status_display.trim()) return grn.status_display;
+    const status = (grn.status || '').toLowerCase();
+    if (status === 'draft') return grn.is_partial_qty ? 'Partial Receipt (Draft)' : 'Draft';
+    if (status === 'confirmed') return grn.is_partial_qty ? 'Partial Receipt (Confirmed)' : 'Confirmed';
+    if (status === 'cancelled') return 'Cancelled';
+    return grn.status;
+  };
+
+  const compactStatusText = (grn: GoodsReceiptNote) => {
+    const full = statusDisplayText(grn);
+    if (full === 'Partial Receipt (Draft)') return 'Partial (Draft)';
+    if (full === 'Partial Receipt (Confirmed)') return 'Partial (Confirmed)';
+    return full;
+  };
+
+  const statusChipTextClass = 'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold leading-4 whitespace-nowrap';
 
   const supplierNameById = (id: string) => suppliers.find((s) => s.id === id)?.company_name || '-';
 
@@ -630,6 +660,7 @@ const GRNPage = () => {
   const availableProducts = selectedPO
     ? products.filter(p => items.some(i => i.product_id === p.id))
     : products;
+  const todayDateInputMax = todayLocalDateInputValue();
 
   useEffect(() => {
     const query = itemSearchQuery.trim().toLowerCase();
@@ -739,7 +770,7 @@ const GRNPage = () => {
                     <td className="px-4 py-3 font-medium text-neutral-700">{g.payment_due_date || '-'}</td>
                     <td className="px-4 py-3">{g.supplier_invoice_number || '-'}</td>
                     <td className="px-4 py-3 text-right font-medium">{formatPaise(g.total_amount)}</td>
-                    <td className="px-4 py-3 text-center"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${sc[g.status] || 'bg-gray-100'}`}>{g.status}</span></td>
+                    <td className="px-4 py-3 text-center"><span title={statusDisplayText(g)} className={`${statusChipTextClass} ${statusChipClass(g)}`}>{compactStatusText(g)}</span></td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1">
                         {archiveView === 'active' && g.status === 'draft' && (
@@ -775,7 +806,7 @@ const GRNPage = () => {
               <div className="grid grid-cols-2 md:grid-cols-7 gap-4 bg-neutral-50 p-4 rounded-lg">
                 <div><p className="text-xs text-neutral-600">Receipt Date</p><p className="font-medium">{detailGRN.receipt_date}</p></div>
                 <div><p className="text-xs text-neutral-600">Payment Due Date</p><p className="font-medium">{detailGRN.payment_due_date || '-'}</p></div>
-                <div><p className="text-xs text-neutral-600">Status</p><span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${sc[detailGRN.status] || 'bg-gray-100'}`}>{detailGRN.status}</span></div>
+                <div><p className="text-xs text-neutral-600">Status</p><span title={statusDisplayText(detailGRN)} className={`${statusChipTextClass} ${statusChipClass(detailGRN)}`}>{compactStatusText(detailGRN)}</span></div>
                 <div><p className="text-xs text-neutral-600">Total Amount</p><p className="font-medium">{formatPaise(detailGRN.total_amount)}</p></div>
                 <div><p className="text-xs text-neutral-600">Supplier Invoice</p><p className="font-medium">{detailGRN.supplier_invoice_number || '—'}</p></div>
                 <div><p className="text-xs text-neutral-600">Under Delivery Tol. (Qty)</p><p className="font-medium">{Number(detailGRN.under_delivery_tolerance || 0).toFixed(2)}</p></div>
@@ -1091,6 +1122,7 @@ const GRNPage = () => {
                               type="date"
                               className="w-full rounded border px-2 py-1.5 text-sm"
                               value={item.manufacture_date || ''}
+                              max={todayDateInputMax}
                               onChange={e => updateItem(idx, 'manufacture_date', e.target.value)}
                             />
                           </td>
@@ -1099,7 +1131,7 @@ const GRNPage = () => {
                               type="date"
                               className="w-full rounded border px-2 py-1.5 text-sm"
                               value={item.expiry_date || ''}
-                              min={item.manufacture_date || undefined}
+                              min={item.manufacture_date && item.manufacture_date > todayDateInputMax ? item.manufacture_date : todayDateInputMax}
                               onChange={e => updateItem(idx, 'expiry_date', e.target.value)}
                             />
                           </td>
@@ -1162,7 +1194,7 @@ const GRNPage = () => {
 
               <div className="space-y-2 rounded-lg border border-red-100 bg-red-50 p-4 text-sm text-red-900">
                 <p><span className="font-semibold">Item:</span> {tolerancePopup.itemLabel} (Row {tolerancePopup.rowNumber})</p>
-                <p><span className="font-semibold">Received:</span> {formatQty(tolerancePopup.receivedQty)}</p>
+                <p><span className="font-semibold">Cumulative Received:</span> {formatQty(tolerancePopup.receivedQty)}</p>
                 <p><span className="font-semibold">Allowed:</span> {formatQty(tolerancePopup.minAllowed)} - {formatQty(tolerancePopup.maxAllowed)}</p>
               </div>
 

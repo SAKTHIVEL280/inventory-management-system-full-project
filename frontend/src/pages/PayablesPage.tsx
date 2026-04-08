@@ -11,11 +11,11 @@
  * - PAY-006: Total Record Payments cannot exceed GRN Value
  * - PAY-007: Edit option after Recording payment (before Clear/Bounce)
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { AppLayout } from '../components/AppLayout';
 import { paymentsApi, type Payment, type CreatePaymentPayload, type PaymentAllocationRequest } from '../api/payments';
-import { purchaseApi, type GoodsReceiptNote } from '../api/purchase';
+import { purchaseApi, type GoodsReceiptNote, type PurchaseOrder } from '../api/purchase';
 import { apiClient } from '../api/client';
 import { todayLocalDateInputValue } from '../utils/date';
 import { showError, showSuccess, confirmWithToast } from '../utils/toastHelper';
@@ -38,6 +38,10 @@ const PayablesPage = () => {
 
   // PAY-001/002/003: Outstanding GRNs for selected supplier
   const [outstandingGRNs, setOutstandingGRNs] = useState<GoodsReceiptNote[]>([]);
+  const [supplierPOs, setSupplierPOs] = useState<PurchaseOrder[]>([]);
+  const [selectedPOId, setSelectedPOId] = useState('');
+  const [selectedGRNId, setSelectedGRNId] = useState('');
+  const [poSearch, setPoSearch] = useState('');
 
   // PAY-004: Advance payment mode
   const [isAdvancePayment, setIsAdvancePayment] = useState(false);
@@ -52,6 +56,8 @@ const PayablesPage = () => {
   const [referenceNumber, setReferenceNumber] = useState('');
   const [notes, setNotes] = useState('');
   const [allocations, setAllocations] = useState<Record<string, number>>({});
+
+  const CLEARED_STATUSES = new Set(['cleared', 'advance_payment_cleared', 'advance_cleared', 'full_payment_cleared']);
 
   const fetchPayments = async () => {
     try {
@@ -68,13 +74,28 @@ const PayablesPage = () => {
     try { const res = await apiClient.get('/api/v1/suppliers', { params: { page_size: 100 } }); setSuppliers(res.data.items || []); } catch { /* */ }
   };
 
+  const fetchPOsForSupplier = async (nextSupplierId: string) => {
+    if (!nextSupplierId) {
+      setSupplierPOs([]);
+      return;
+    }
+    try {
+      const res = await purchaseApi.listPOs(undefined, 1, 200, { supplier_id: nextSupplierId });
+      const rows = res.data.items || [];
+      setSupplierPOs(rows.filter((po) => po.status !== 'cancelled'));
+    } catch {
+      setSupplierPOs([]);
+    }
+  };
+
   // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchPayments should run when archiveView changes
   useEffect(() => { fetchPayments(); }, [archiveView]);
   useEffect(() => { fetchSuppliers(); }, []);
 
   // When supplier changes, fetch their confirmed GRNs
   useEffect(() => {
-    if (!supplierId) { setOutstandingGRNs([]); return; }
+    if (!supplierId) { setOutstandingGRNs([]); setSupplierPOs([]); setSelectedPOId(''); setSelectedGRNId(''); return; }
+    void fetchPOsForSupplier(supplierId);
     (async () => {
       try {
         const res = await purchaseApi.listGRNs('confirmed', 1, 100, { supplier_id: supplierId });
@@ -83,7 +104,22 @@ const PayablesPage = () => {
     })();
   }, [supplierId]);
 
-  const resetForm = () => { setSupplierId(''); setPaymentDate(todayLocalDateInputValue()); setAmount(0); setPaymentMode('bank_transfer'); setReferenceNumber(''); setNotes(''); setAllocations({}); setError(''); setIsAdvancePayment(false); setEditingPayment(null); };
+  const resetForm = () => {
+    setSupplierId('');
+    setSupplierPOs([]);
+    setSelectedPOId('');
+    setSelectedGRNId('');
+    setPoSearch('');
+    setPaymentDate(todayLocalDateInputValue());
+    setAmount(0);
+    setPaymentMode('bank_transfer');
+    setReferenceNumber('');
+    setNotes('');
+    setAllocations({});
+    setError('');
+    setIsAdvancePayment(false);
+    setEditingPayment(null);
+  };
   const paiseToRupees = (paise: number) => (Number.isFinite(paise) ? paise / 100 : 0);
   const rupeesToPaise = (value: string | number) => {
     const num = typeof value === 'number' ? value : parseFloat(value);
@@ -109,23 +145,137 @@ const PayablesPage = () => {
   const filteredPayments = payments.filter((p) => {
     const term = searchQuery.trim().toLowerCase();
     const allocationRefs = p.allocations?.map((a) => a.po_number || a.grn_number).filter(Boolean).join(' ') || '';
+    const statusLabel = (p.status_display || p.status || '').toLowerCase();
     const matchesSearch =
       !term ||
       supplierNameById(p.supplier_id).toLowerCase().includes(term) ||
       p.payment_date.toLowerCase().includes(term) ||
-      p.status.toLowerCase().includes(term) ||
+      statusLabel.includes(term) ||
       p.payment_mode.toLowerCase().includes(term) ||
       allocationRefs.toLowerCase().includes(term) ||
       (p.reference_number || '').toLowerCase().includes(term);
-    const matchesStatus = !statusFilter || p.status === statusFilter;
+    const paymentStatus = (p.status || '').toLowerCase();
+    const matchesStatus = !statusFilter || (statusFilter === 'cleared'
+      ? ['cleared', 'advance_payment_cleared', 'advance_cleared', 'full_payment_cleared'].includes(paymentStatus)
+      : paymentStatus === statusFilter);
     const matchesMode = !modeFilter || p.payment_mode === modeFilter;
     const matchesFrom = !dateFrom || p.payment_date >= dateFrom;
     const matchesTo = !dateTo || p.payment_date <= dateTo;
     return matchesSearch && matchesStatus && matchesMode && matchesFrom && matchesTo;
   });
 
+  const remainingByGRN = useMemo(() => {
+    const directPaidByGRN: Record<string, number> = {};
+    const advanceByPO: Record<string, number> = {};
+
+    payments
+      .filter((p) => CLEARED_STATUSES.has((p.status || '').toLowerCase()))
+      .forEach((payment) => {
+        const hasGrnAlloc = (payment.allocations || []).some((a) => Boolean(a.purchase_grn_id));
+        if (!hasGrnAlloc && payment.purchase_order_id) {
+          advanceByPO[payment.purchase_order_id] = (advanceByPO[payment.purchase_order_id] || 0) + Number(payment.amount || 0);
+          return;
+        }
+
+        (payment.allocations || []).forEach((alloc) => {
+          if (!alloc.purchase_grn_id) return;
+          directPaidByGRN[alloc.purchase_grn_id] = (directPaidByGRN[alloc.purchase_grn_id] || 0) + Number(alloc.allocated_amount || 0);
+        });
+      });
+
+    const grnByPO: Record<string, GoodsReceiptNote[]> = {};
+    outstandingGRNs.forEach((grn) => {
+      if (!grn.purchase_order_id) return;
+      if (!grnByPO[grn.purchase_order_id]) grnByPO[grn.purchase_order_id] = [];
+      grnByPO[grn.purchase_order_id].push(grn);
+    });
+
+    const remaining: Record<string, number> = {};
+    Object.entries(grnByPO).forEach(([poId, poGrns]) => {
+      let advanceLeft = Number(advanceByPO[poId] || 0);
+      const sorted = [...poGrns].sort((a, b) => String(a.receipt_date).localeCompare(String(b.receipt_date)));
+      sorted.forEach((grn) => {
+        const total = Number(grn.total_amount || 0);
+        const directPaid = Number(directPaidByGRN[grn.id] || 0);
+        const dueBeforeAdvance = Math.max(0, total - directPaid);
+        const appliedAdvance = Math.min(dueBeforeAdvance, advanceLeft);
+        const dueAfterAdvance = Math.max(0, dueBeforeAdvance - appliedAdvance);
+        advanceLeft = Math.max(0, advanceLeft - appliedAdvance);
+        remaining[grn.id] = dueAfterAdvance;
+      });
+    });
+
+    return remaining;
+  }, [payments, outstandingGRNs]);
+
+  const filteredPOs = useMemo(() => {
+    const q = poSearch.trim().toLowerCase();
+    if (!q) return supplierPOs;
+    return supplierPOs.filter((po) =>
+      po.po_number.toLowerCase().includes(q) ||
+      po.status.toLowerCase().includes(q)
+    );
+  }, [poSearch, supplierPOs]);
+
+  const poScopedGRNs = useMemo(() => {
+    if (!selectedPOId) return [];
+    return outstandingGRNs.filter((grn) => grn.purchase_order_id === selectedPOId);
+  }, [outstandingGRNs, selectedPOId]);
+
+  useEffect(() => {
+    if (!selectedPOId || isAdvancePayment) {
+      if (!isAdvancePayment) {
+        setSelectedGRNId('');
+        setAllocations({});
+        setAmount(0);
+      }
+      return;
+    }
+
+    const firstOpen = poScopedGRNs.find((grn) => Number(remainingByGRN[grn.id] || 0) > 0);
+    if (!firstOpen) {
+      setSelectedGRNId('');
+      setAllocations({});
+      setAmount(0);
+      return;
+    }
+
+    setSelectedGRNId(firstOpen.id);
+    const remaining = Number(remainingByGRN[firstOpen.id] || 0);
+    setAllocations({ [firstOpen.id]: remaining });
+    setAmount(remaining);
+  }, [isAdvancePayment, poScopedGRNs, remainingByGRN, selectedPOId]);
+
+  useEffect(() => {
+    if (!selectedGRNId || isAdvancePayment) return;
+    const remaining = Number(remainingByGRN[selectedGRNId] || 0);
+    setAllocations({ [selectedGRNId]: remaining });
+    setAmount(remaining);
+  }, [isAdvancePayment, remainingByGRN, selectedGRNId]);
+
   const handleSubmit = async () => {
     if (!supplierId || amount <= 0) { setError('Select supplier and enter amount'); return; }
+
+    if (!selectedPOId) {
+      setError('Select PO Number');
+      return;
+    }
+
+    if (!isAdvancePayment) {
+      if (!selectedGRNId) {
+        setError('Select GRN Number');
+        return;
+      }
+      const remaining = Number(remainingByGRN[selectedGRNId] || 0);
+      if (remaining <= 0) {
+        setError('No remaining payable for selected GRN');
+        return;
+      }
+      if (amount > remaining) {
+        setError(`Payment cannot exceed remaining amount of ${formatAmount(remaining)}`);
+        return;
+      }
+    }
 
     // PAY-006: Validate total allocations don't exceed GRN values
     if (!isAdvancePayment) {
@@ -142,16 +292,17 @@ const PayablesPage = () => {
 
     setSubmitting(true); setError('');
     try {
-      const allocationList: PaymentAllocationRequest[] = Object.entries(allocations)
-        .filter(([, amt]) => amt > 0)
-        .map(([grnId, amt]) => ({ purchase_grn_id: grnId, allocated_amount: amt }));
+      const allocationList: PaymentAllocationRequest[] = !isAdvancePayment && selectedGRNId
+        ? [{ purchase_grn_id: selectedGRNId, allocated_amount: amount }]
+        : [];
 
       const payload: CreatePaymentPayload = {
         payment_type: 'payment', party_type: 'supplier',
         supplier_id: supplierId, payment_date: paymentDate,
         amount: amount, payment_mode: paymentMode,
+        purchase_order_id: selectedPOId,
         reference_number: referenceNumber || undefined,
-        notes: isAdvancePayment ? `[ADVANCE PAYMENT] ${notes || ''}`.trim() : (notes || undefined),
+        notes: notes || undefined,
         allocations: allocationList,
       };
       await paymentsApi.createPayment(payload);
@@ -204,11 +355,21 @@ const PayablesPage = () => {
     setReferenceNumber(p.reference_number || '');
     setNotes('');
     setAllocations({});
-    setIsAdvancePayment(false);
+    const advanceRecord = !((p.allocations || []).some((a) => Boolean(a.purchase_grn_id))) && Boolean(p.purchase_order_id);
+    setIsAdvancePayment(advanceRecord);
+    setSelectedPOId(p.purchase_order_id || p.allocations?.find((a) => a.purchase_order_id)?.purchase_order_id || '');
+    setSelectedGRNId(p.allocations?.find((a) => a.purchase_grn_id)?.purchase_grn_id || '');
     setShowForm(true);
   };
 
-  const sc: Record<string, string> = { pending: 'bg-amber-100 text-amber-700', cleared: 'bg-green-100 text-green-700', bounced: 'bg-red-100 text-red-700', cancelled: 'bg-gray-100 text-gray-700' };
+  const sc: Record<string, string> = {
+    pending: 'bg-amber-100 text-amber-700',
+    cleared: 'bg-green-100 text-green-700',
+    advance_payment_cleared: 'bg-blue-100 text-blue-700',
+    full_payment_cleared: 'bg-emerald-100 text-emerald-700',
+    bounced: 'bg-red-100 text-red-700',
+    cancelled: 'bg-gray-100 text-gray-700',
+  };
 
   return (
     <AppLayout title="Payables (Supplier Payments)">
@@ -226,6 +387,8 @@ const PayablesPage = () => {
               <option value="">All Statuses</option>
               <option value="pending">Pending</option>
               <option value="cleared">Cleared</option>
+              <option value="advance_payment_cleared">Advance Payment Cleared</option>
+              <option value="full_payment_cleared">Full Payment Cleared</option>
               <option value="bounced">Bounced</option>
               <option value="cancelled">Cancelled</option>
             </select>
@@ -280,11 +443,11 @@ const PayablesPage = () => {
                   <tr key={p.id} className="border-b border-neutral-100 hover:bg-neutral-50">
                     {/* PAY-001: GRN Number */}
                     <td className="px-4 py-3 font-medium text-xs">
-                      {p.allocations?.map((a) => a.grn_number).filter(Boolean).join(', ') || (p.notes?.includes('[ADVANCE PAYMENT]') ? <span className="text-amber-600 font-semibold">Advance</span> : '—')}
+                      {p.allocations?.map((a) => a.grn_number).filter(Boolean).join(', ') || '—'}
                     </td>
                     {/* PAY-003: PO Number */}
                     <td className="px-4 py-3 text-xs">
-                      {p.allocations?.map((a) => a.po_number).filter(Boolean).join(', ') || '—'}
+                      {p.po_number || p.allocations?.map((a) => a.po_number).filter(Boolean).join(', ') || '—'}
                     </td>
                     <td className="px-4 py-3">{supplierNameById(p.supplier_id)}</td>
                     <td className="px-4 py-3">{p.payment_date}</td>
@@ -296,7 +459,7 @@ const PayablesPage = () => {
                         : '—'}
                     </td>
                     <td className="px-4 py-3 text-right font-medium">{formatAmount(p.amount)}</td>
-                    <td className="px-4 py-3 text-center"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${sc[p.status]}`}>{p.status}</span></td>
+                    <td className="px-4 py-3 text-center"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${sc[p.status] || 'bg-gray-100 text-gray-700'}`}>{p.status_display || p.status}</span></td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1">
                         {archiveView === 'active' && p.status === 'pending' && (
@@ -331,7 +494,21 @@ const PayablesPage = () => {
               )}
               {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>}
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Supplier *</label><select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={supplierId} onChange={e => setSupplierId(e.target.value)}><option value="">Select</option>{suppliers.map(s => <option key={s.id} value={s.id}>{s.company_name}</option>)}</select></div>
+                <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Supplier *</label><select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={supplierId} onChange={e => { setSupplierId(e.target.value); setSelectedPOId(''); setSelectedGRNId(''); }}><option value="">Select</option>{suppliers.map(s => <option key={s.id} value={s.id}>{s.company_name}</option>)}</select></div>
+                <div>
+                  <label className="mb-1 block text-sm font-semibold text-neutral-700">PO Number *</label>
+                  <input
+                    type="text"
+                    className="mb-2 w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm"
+                    placeholder="Search PO number"
+                    value={poSearch}
+                    onChange={(e) => setPoSearch(e.target.value)}
+                  />
+                  <select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={selectedPOId} onChange={e => { setSelectedPOId(e.target.value); setSelectedGRNId(''); }}>
+                    <option value="">Select PO Number</option>
+                    {filteredPOs.map(po => <option key={po.id} value={po.id}>{po.po_number} ({po.status})</option>)}
+                  </select>
+                </div>
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Date *</label><input type="date" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} /></div>
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Amount (₹) *</label><input type="number" step="0.01" min="0.01" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={amount > 0 ? paiseToRupees(amount) : ''} onChange={e => setAmount(rupeesToPaise(e.target.value))} /></div>
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Mode</label><select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={paymentMode} onChange={e => setPaymentMode(e.target.value)}><option value="cash">Cash</option><option value="bank_transfer">Bank Transfer</option><option value="cheque">Cheque</option><option value="upi">UPI</option><option value="card">Card</option></select></div>
@@ -339,40 +516,50 @@ const PayablesPage = () => {
               </div>
 
               {/* PAY-001/002/003: Show GRN allocations when not advance payment */}
-              {!isAdvancePayment && outstandingGRNs.length > 0 && (
+              {!isAdvancePayment && selectedPOId && (
                 <div>
-                  <h3 className="mb-2 text-sm font-semibold text-neutral-700">Allocate to GRNs</h3>
-                  <div className="rounded-lg border border-neutral-200">
-                    <table className="w-full text-sm">
-                      <thead><tr className="bg-neutral-50">
-                        <th className="px-3 py-2 text-left">GRN #</th>
-                        <th className="px-3 py-2 text-left">PO #</th>
-                        <th className="px-3 py-2 text-right">GRN Value</th>
-                        <th className="px-3 py-2 text-right w-32">Allocate</th>
-                      </tr></thead>
-                      <tbody>
-                        {outstandingGRNs.map(grn => (
-                          <tr key={grn.id} className="border-t border-neutral-100">
-                            <td className="px-3 py-2 font-medium">{grn.grn_number}</td>
-                            <td className="px-3 py-2 text-xs">{grn.po_number || '—'}</td>
-                            <td className="px-3 py-2 text-right">{formatAmount(grn.total_amount)}</td>
-                            <td className="px-3 py-2"><input type="number" step="0.01" min="0" max={paiseToRupees(grn.total_amount)} className="w-full rounded border px-2 py-1.5 text-right text-sm" value={allocations[grn.id] ? paiseToRupees(allocations[grn.id]) : ''} onChange={e => {
-                              const newVal = rupeesToPaise(e.target.value);
-                              // PAY-006: Clamp allocation to GRN value
-                              const clamped = Math.min(newVal, grn.total_amount);
-                              setAllocations({ ...allocations, [grn.id]: clamped });
-                            }} /></td>
-                          </tr>
+                  <h3 className="mb-2 text-sm font-semibold text-neutral-700">GRN Settlement</h3>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div>
+                      <label className="mb-1 block text-sm font-semibold text-neutral-700">GRN Number *</label>
+                      <select
+                        className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm"
+                        value={selectedGRNId}
+                        onChange={(e) => setSelectedGRNId(e.target.value)}
+                      >
+                        <option value="">Select GRN</option>
+                        {poScopedGRNs.map((grn) => (
+                          <option key={grn.id} value={grn.id}>
+                            {grn.grn_number} (Remaining: {formatAmount(Number(remainingByGRN[grn.id] || 0))})
+                          </option>
                         ))}
-                      </tbody>
-                    </table>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-semibold text-neutral-700">GRN Amount</label>
+                      <input
+                        type="text"
+                        className="w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm"
+                        value={selectedGRNId ? formatAmount(Number(poScopedGRNs.find((g) => g.id === selectedGRNId)?.total_amount || 0)) : '-'}
+                        readOnly
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-semibold text-neutral-700">Remaining Amount (After Advance)</label>
+                      <input
+                        type="text"
+                        className="w-full rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm"
+                        value={selectedGRNId ? formatAmount(Number(remainingByGRN[selectedGRNId] || 0)) : '-'}
+                        readOnly
+                      />
+                    </div>
                   </div>
                 </div>
               )}
 
-              {!isAdvancePayment && supplierId && outstandingGRNs.length === 0 && (
+              {!isAdvancePayment && supplierId && selectedPOId && poScopedGRNs.length === 0 && (
                 <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-700">
-                  No confirmed GRNs found for this supplier. Use <strong>Advance Payment</strong> if you need to pay without a GRN.
+                  No confirmed GRNs found for selected PO. Use <strong>Advance Payment</strong> if you need to pay before GRN.
                 </div>
               )}
 

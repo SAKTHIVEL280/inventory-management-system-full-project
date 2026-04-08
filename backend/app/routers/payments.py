@@ -5,7 +5,9 @@ Production-ready with fixes for:
 - BUG-15: Supplier GRN allocation tracking implemented
 - BUG-03: Thread-safe payment number generation
 """
+from collections import defaultdict
 from datetime import date, datetime
+import re
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -16,11 +18,192 @@ from app.models.user import User
 from app.models.company import Company
 from app.models.payment import Payment, PaymentAllocation
 from app.models.sales import SalesInvoice
-from app.models.purchase import GoodsReceiptNote
+from app.models.purchase import GoodsReceiptNote, PurchaseOrder
 from app.schemas.payment import PaymentCreateRequest, PaymentStatusRequest
 from app.services.order_number_service import generate_payment_number
 
 router = APIRouter(prefix="/api/v1/payments", tags=["payments"])
+
+PO_ID_META_REGEX = re.compile(r"\[PO_ID:([0-9a-fA-F-]{36})\]")
+
+
+def _extract_po_id_from_notes(notes: str | None) -> UUID | None:
+    if not notes:
+        return None
+    match = PO_ID_META_REGEX.search(notes)
+    if not match:
+        return None
+    try:
+        return UUID(match.group(1))
+    except ValueError:
+        return None
+
+
+def _attach_po_meta_to_notes(notes: str | None, po_id: UUID | None) -> str | None:
+    if not po_id:
+        return notes
+    token = f"[PO_ID:{po_id}]"
+    current = (notes or "").strip()
+    if token in current:
+        return current
+    return f"{token} {current}".strip()
+
+
+def _is_cleared_like_status(status: str | None) -> bool:
+    return (status or "").strip().lower() in {
+        "cleared",
+        "advance_payment_cleared",
+        "advance_cleared",
+        "full_payment_cleared",
+    }
+
+
+def _payment_has_grn_allocations(payment: Payment) -> bool:
+    return any((a.purchase_grn_id is not None) and (not a.is_deleted) for a in (payment.allocations or []))
+
+
+def _payment_status_display(status: str | None) -> str:
+    token = (status or "").strip().lower()
+    mapping = {
+        "pending": "Pending",
+        "cleared": "Cleared",
+        "bounced": "Bounced",
+        "cancelled": "Cancelled",
+        "advance_payment_cleared": "Advance Payment Cleared",
+        "advance_cleared": "Advance Payment Cleared",
+        "full_payment_cleared": "Full Payment Cleared",
+    }
+    return mapping.get(token, status or "-")
+
+
+def _derive_payment_status_token(db: Session, payment: Payment) -> str:
+    """Derive UI status token while keeping DB-persisted status backward compatible."""
+    token = (payment.status or "").strip().lower()
+    if token != "cleared":
+        return token or "-"
+
+    if payment.party_type != "supplier":
+        return "cleared"
+
+    has_grn_alloc = _payment_has_grn_allocations(payment)
+    po_id_from_notes = _extract_po_id_from_notes(payment.notes)
+
+    # Cleared supplier payment with PO tag and no GRN allocation is an advance clear.
+    if not has_grn_alloc and po_id_from_notes:
+        return "advance_payment_cleared"
+
+    if has_grn_alloc and payment.supplier_id:
+        po_ids: set[UUID] = set()
+        impacted_grn_ids: set[UUID] = set()
+
+        for allocation in payment.allocations or []:
+            if allocation.is_deleted or not allocation.purchase_grn_id:
+                continue
+            grn = allocation.grn or db.query(GoodsReceiptNote).filter(GoodsReceiptNote.id == allocation.purchase_grn_id).first()
+            if not grn or not grn.purchase_order_id:
+                continue
+            po_ids.add(grn.purchase_order_id)
+            impacted_grn_ids.add(grn.id)
+
+        if po_ids and impacted_grn_ids:
+            snapshot = _build_supplier_payable_snapshot(db, payment.supplier_id, po_ids)
+            remaining_by_grn = snapshot["remaining_by_grn"]
+            all_fully_paid = all(int(remaining_by_grn.get(grn_id, 0)) == 0 for grn_id in impacted_grn_ids)
+            if all_fully_paid:
+                return "full_payment_cleared"
+
+    return "cleared"
+
+
+def _build_supplier_payable_snapshot(
+    db: Session,
+    supplier_id: UUID,
+    po_ids: set[UUID],
+    include_payment: Payment | None = None,
+) -> dict[str, dict[UUID, int]]:
+    """Build PO/GRN payable snapshot with advance and cleared allocations.
+
+    Returns:
+    - advance_by_po: cleared advance amount per PO
+    - direct_paid_by_grn: cleared paid amount per GRN
+    - remaining_by_grn: computed remaining payable per GRN after advance deduction
+    - po_for_grn: PO id mapping for GRNs
+    """
+    advance_by_po: dict[UUID, int] = defaultdict(int)
+    direct_paid_by_grn: dict[UUID, int] = defaultdict(int)
+    po_for_grn: dict[UUID, UUID] = {}
+
+    confirmed_grns = (
+        db.query(GoodsReceiptNote)
+        .filter(
+            GoodsReceiptNote.supplier_id == supplier_id,
+            GoodsReceiptNote.status == "confirmed",
+            GoodsReceiptNote.is_deleted == False,
+            GoodsReceiptNote.purchase_order_id.isnot(None),
+            GoodsReceiptNote.purchase_order_id.in_(list(po_ids)) if po_ids else True,
+        )
+        .all()
+    )
+
+    grns_by_po: dict[UUID, list[GoodsReceiptNote]] = defaultdict(list)
+    for grn in confirmed_grns:
+        if not grn.purchase_order_id:
+            continue
+        po_for_grn[grn.id] = grn.purchase_order_id
+        grns_by_po[grn.purchase_order_id].append(grn)
+
+    supplier_payments = (
+        db.query(Payment)
+        .filter(
+            Payment.party_type == "supplier",
+            Payment.supplier_id == supplier_id,
+            Payment.is_deleted == False,
+        )
+        .all()
+    )
+
+    if include_payment is not None and all(p.id != include_payment.id for p in supplier_payments):
+        supplier_payments.append(include_payment)
+
+    for payment in supplier_payments:
+        if not _is_cleared_like_status(payment.status):
+            continue
+
+        if not _payment_has_grn_allocations(payment):
+            po_id = _extract_po_id_from_notes(payment.notes)
+            if po_id and (not po_ids or po_id in po_ids):
+                advance_by_po[po_id] += int(payment.amount or 0)
+            continue
+
+        for allocation in payment.allocations or []:
+            if allocation.is_deleted or not allocation.purchase_grn_id:
+                continue
+            grn = db.query(GoodsReceiptNote).filter(GoodsReceiptNote.id == allocation.purchase_grn_id).first()
+            if not grn or not grn.purchase_order_id:
+                continue
+            if po_ids and grn.purchase_order_id not in po_ids:
+                continue
+            direct_paid_by_grn[allocation.purchase_grn_id] += int(allocation.allocated_amount or 0)
+
+    remaining_by_grn: dict[UUID, int] = {}
+    for po_id, po_grns in grns_by_po.items():
+        advance_left = int(advance_by_po.get(po_id, 0))
+        sorted_grns = sorted(po_grns, key=lambda g: (g.receipt_date, g.created_at))
+        for grn in sorted_grns:
+            total = int(grn.total_amount or 0)
+            direct_paid = int(direct_paid_by_grn.get(grn.id, 0))
+            due_before_advance = max(0, total - direct_paid)
+            applied_advance = min(due_before_advance, max(0, advance_left))
+            remaining = max(0, due_before_advance - applied_advance)
+            advance_left = max(0, advance_left - applied_advance)
+            remaining_by_grn[grn.id] = remaining
+
+    return {
+        "advance_by_po": advance_by_po,
+        "direct_paid_by_grn": direct_paid_by_grn,
+        "remaining_by_grn": remaining_by_grn,
+        "po_for_grn": po_for_grn,
+    }
 
 
 def _apply_invoice_allocation(db: Session, invoice_id: UUID, amount: int) -> None:
@@ -100,15 +283,41 @@ async def list_payments(
         query = query.filter(Payment.customer_id == customer_id)
     if supplier_id:
         query = query.filter(Payment.supplier_id == supplier_id)
+    derived_status_filter = None
     if status:
-        query = query.filter(Payment.status == status)
+        normalized_status = status.strip().lower()
+        if normalized_status in {"advance_payment_cleared", "advance_cleared", "full_payment_cleared"}:
+            derived_status_filter = "advance_payment_cleared" if normalized_status == "advance_cleared" else normalized_status
+            query = query.filter(Payment.status == "cleared")
+        elif normalized_status == "cleared":
+            query = query.filter(Payment.status == "cleared")
+        else:
+            query = query.filter(Payment.status == normalized_status)
 
-    total = query.count()
-    items = query.order_by(Payment.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    if derived_status_filter:
+        all_items = query.order_by(Payment.created_at.desc()).all()
+        matched = [p for p in all_items if _derive_payment_status_token(db, p) == derived_status_filter]
+        total = len(matched)
+        start = (page - 1) * page_size
+        end = start + page_size
+        items = matched[start:end]
+    else:
+        total = query.count()
+        items = query.order_by(Payment.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
     
     # Serialize with allocations for frontend display
     items_out = []
     for p in items:
+        po_id_from_notes = _extract_po_id_from_notes(p.notes)
+        po_number_from_notes = None
+        if po_id_from_notes:
+            po_row = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id_from_notes).first()
+            po_number_from_notes = po_row.po_number if po_row else None
+
+        allocation_po_ids: set[str] = set()
+        allocation_po_numbers: set[str] = set()
+        status_token = _derive_payment_status_token(db, p)
+
         p_dict = {
             "id": str(p.id),
             "payment_number": p.payment_number,
@@ -121,10 +330,15 @@ async def list_payments(
             "payment_mode": p.payment_mode,
             "reference_number": p.reference_number,
             "cheque_date": str(p.cheque_date) if p.cheque_date else None,
-            "status": p.status,
+            "status": status_token,
+            "status_display": _payment_status_display(status_token),
+            "purchase_order_id": str(po_id_from_notes) if po_id_from_notes else None,
+            "po_number": po_number_from_notes,
             "allocations": []
         }
         for a in p.allocations:
+            if a.is_deleted:
+                continue
             alloc_dict = {
                 "allocated_amount": a.allocated_amount,
             }
@@ -132,10 +346,21 @@ async def list_payments(
                 alloc_dict["invoice_number"] = a.invoice.invoice_number
             if a.grn:
                 alloc_dict["grn_number"] = a.grn.grn_number
-                # fetch PO number if linked (lazy load)
-                if getattr(a.grn, "purchase_order", None) and getattr(a.grn.purchase_order, "po_number", None):
-                   alloc_dict["po_number"] = a.grn.purchase_order.po_number
+                alloc_dict["grn_total_amount"] = int(a.grn.total_amount or 0)
+                if a.grn.purchase_order_id:
+                    po_row = db.query(PurchaseOrder).filter(PurchaseOrder.id == a.grn.purchase_order_id).first()
+                    if po_row:
+                        alloc_dict["po_number"] = po_row.po_number
+                        alloc_dict["purchase_order_id"] = str(po_row.id)
+                        allocation_po_ids.add(str(po_row.id))
+                        allocation_po_numbers.add(po_row.po_number)
             p_dict["allocations"].append(alloc_dict)
+
+        if not p_dict["purchase_order_id"] and len(allocation_po_ids) == 1:
+            p_dict["purchase_order_id"] = next(iter(allocation_po_ids))
+        if not p_dict["po_number"] and len(allocation_po_numbers) == 1:
+            p_dict["po_number"] = next(iter(allocation_po_numbers))
+
         items_out.append(p_dict)
         
     return {"items": items_out, "total": total, "page": page, "page_size": page_size, "has_more": (page * page_size) < total}
@@ -155,6 +380,59 @@ async def create_payment(
     if payload.party_type == "supplier" and not payload.supplier_id:
         raise HTTPException(status_code=400, detail="supplier_id is required for supplier payments")
 
+    selected_po = None
+    if payload.party_type == "supplier" and payload.purchase_order_id:
+        selected_po = db.query(PurchaseOrder).filter(
+            PurchaseOrder.id == payload.purchase_order_id,
+            PurchaseOrder.supplier_id == payload.supplier_id,
+            PurchaseOrder.is_deleted == False,
+        ).first()
+        if not selected_po:
+            raise HTTPException(status_code=400, detail="Invalid Purchase Order for selected supplier")
+
+    if payload.party_type == "supplier" and not payload.allocations and not payload.purchase_order_id:
+        raise HTTPException(status_code=400, detail="PO Number is required for supplier advance payment")
+
+    # Validate supplier GRN allocations with advance-adjusted remaining payable
+    if payload.party_type == "supplier" and payload.allocations:
+        grn_rows: dict[UUID, GoodsReceiptNote] = {}
+        po_ids: set[UUID] = set()
+        for allocation in payload.allocations:
+            if not allocation.purchase_grn_id:
+                continue
+            grn = db.query(GoodsReceiptNote).filter(
+                GoodsReceiptNote.id == allocation.purchase_grn_id,
+                GoodsReceiptNote.is_deleted == False,
+                GoodsReceiptNote.status == "confirmed",
+            ).first()
+            if not grn:
+                raise HTTPException(status_code=400, detail="Invalid confirmed GRN allocation")
+            if payload.supplier_id and grn.supplier_id != payload.supplier_id:
+                raise HTTPException(status_code=400, detail="Selected GRN does not belong to supplier")
+            if not grn.purchase_order_id:
+                raise HTTPException(status_code=400, detail="Selected GRN is not linked to a Purchase Order")
+            grn_rows[allocation.purchase_grn_id] = grn
+            po_ids.add(grn.purchase_order_id)
+
+        snapshot = _build_supplier_payable_snapshot(db, payload.supplier_id, po_ids)
+        remaining_by_grn = snapshot["remaining_by_grn"]
+
+        new_alloc_sum_by_grn: dict[UUID, int] = defaultdict(int)
+        for allocation in payload.allocations:
+            if not allocation.purchase_grn_id:
+                continue
+            grn_id = allocation.purchase_grn_id
+            proposed = int(allocation.allocated_amount or 0)
+            if proposed <= 0:
+                continue
+            already_new = int(new_alloc_sum_by_grn[grn_id])
+            remaining_now = max(0, int(remaining_by_grn.get(grn_id, 0)) - already_new)
+            if proposed > remaining_now:
+                grn = grn_rows.get(grn_id)
+                label = grn.grn_number if grn else str(grn_id)
+                raise HTTPException(status_code=400, detail=f"Payment exceeds remaining payable for GRN {label}")
+            new_alloc_sum_by_grn[grn_id] += proposed
+
     # BUG-03: Thread-safe number generation
     payment_number = generate_payment_number(db)
 
@@ -170,7 +448,7 @@ async def create_payment(
         reference_number=payload.reference_number,
         cheque_date=payload.cheque_date,
         bank_name=payload.bank_name,
-        notes=payload.notes,
+        notes=_attach_po_meta_to_notes(payload.notes, payload.purchase_order_id),
         status="pending",
         created_by=current_user.id,
     )
@@ -219,14 +497,18 @@ async def update_payment_status(
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
 
-    if payment.status == "cleared":
+    if payment.status in {"cleared", "advance_payment_cleared", "advance_cleared", "full_payment_cleared"}:
         raise HTTPException(status_code=400, detail="Cleared payments cannot be changed")
 
-    if payload.status not in {"pending", "cleared", "bounced", "cancelled"}:
+    requested_status = (payload.status or "").strip().lower()
+    if requested_status in {"advance_payment_cleared", "advance_cleared", "full_payment_cleared"}:
+        requested_status = "cleared"
+
+    if requested_status not in {"pending", "cleared", "bounced", "cancelled"}:
         raise HTTPException(status_code=400, detail="Invalid payment status")
 
     # BUG-15: Reverse both invoice AND GRN allocations on bounce/cancel
-    if payload.status in {"bounced", "cancelled"} and payment.status == "pending":
+    if requested_status in {"bounced", "cancelled"} and payment.status == "pending":
         allocations = db.query(PaymentAllocation).filter(PaymentAllocation.payment_id == payment.id).all()
         for allocation in allocations:
             if allocation.invoice_id:
@@ -234,7 +516,7 @@ async def update_payment_status(
             if allocation.purchase_grn_id:
                 _reverse_grn_allocation(db, allocation.purchase_grn_id, allocation.allocated_amount)
 
-    payment.status = payload.status
+    payment.status = requested_status
     db.commit()
     db.refresh(payment)
     return payment

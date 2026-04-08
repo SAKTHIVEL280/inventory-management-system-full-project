@@ -294,9 +294,24 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
         tr {
             page-break-inside: avoid;
         }
+        .po-watermark {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-24deg);
+            font-size: 42px;
+            font-weight: 700;
+            color: #b9c0ca;
+            opacity: 0.14;
+            letter-spacing: 1px;
+            z-index: 0;
+            white-space: nowrap;
+        }
     </style>
 </head>
 <body>
+
+<div class="po-watermark">{{ watermark_text }}</div>
 
 <!-- HEADER -->
 <table style="table-layout: fixed; width: 100%; border-top: 1px solid #000; border-left: 1px solid #000; border-right: 1px solid #000; margin-bottom: 0;">
@@ -1047,6 +1062,7 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
     export_invoice = invoice_type_token == "export_invoice"
     show_igst = invoice_type_token == "other_states"
     show_utgst = invoice_type_token == "union_territory"
+    watermark_text = "Approved" if (invoice.status or "").strip().lower() != "draft" else "Not Approved"
 
     for idx, item in enumerate(items, start=1):
         product = db.query(Product).filter(Product.id == item.product_id).first()
@@ -1173,6 +1189,7 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
         "balance_due_rupee": _format_total_with_currency(int(invoice.amount_due or invoice.total_amount or 0) / 100, cs),
         "total_in_words": _amount_in_words(int(invoice.total_amount or 0)),
         "notes": notes_text,
+        "watermark_text": watermark_text,
     }
     return _render_pdf_with_pagination(context, INVOICE_TEMPLATE, rows, items_per_page=BILLING_PDF_ITEMS_PER_PAGE)
 

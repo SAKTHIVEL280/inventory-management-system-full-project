@@ -2,6 +2,197 @@
 
 ---
 
+## BE-69: Payables PO-Linked Advance + Remaining Settlement Validation (PAY-001, PAY-002)
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Payments / Payables
+**Type**: Enhancement / Validation Fix
+
+### Overview
+Implemented PO-linked supplier advance support and advance-adjusted GRN payable validation while preserving DB-safe payment status persistence.
+
+### Changes Made
+- Added optional `purchase_order_id` to payment create schema.
+- Added PO metadata support in payment notes using `[PO_ID:<uuid>]` token parsing/attachment.
+- Added supplier payable snapshot computation:
+  - cleared advances by PO,
+  - cleared direct GRN allocations,
+  - remaining payable by GRN after sequential advance deduction.
+- Enforced supplier-side create validations:
+  - PO-supplier ownership validation,
+  - PO required for supplier advances without GRN allocation,
+  - allocation block when amount exceeds remaining payable after advance.
+- Enriched payments list response with payables metadata:
+  - `status_display`, derived status token,
+  - top-level `purchase_order_id`, `po_number`,
+  - allocation-level `grn_total_amount`, `purchase_order_id`, `po_number`.
+- Added derived cleared status handling for UI labels/filtering:
+  - `Advance Payment Cleared`
+  - `Full Payment Cleared`
+  while keeping DB persistence constrained to `cleared` for compatibility with existing check constraint.
+
+### Files Modified
+- `backend/app/schemas/payment.py`
+- `backend/app/routers/payments.py`
+
+### Validation
+- Verified no backend/IDE errors in modified files.
+
+## BE-68: GRN Partial Receipt Status Metadata for UI Labels
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: GRN
+**Type**: Enhancement
+
+### Overview
+Added backend metadata so GRN records can explicitly display partial-quantity status variants in the UI.
+
+### Changes Made
+- Added partial-quantity detection for GRN records linked to PO lines.
+- Added derived status display field for GRN list/get responses:
+  - `Partial Receipt (Draft)`
+  - `Partial Receipt (Confirmed)`
+  - fallback to standard `Draft` / `Confirmed` / `Cancelled`.
+- Included `is_partial_qty` and `status_display` in GRN list payload rows and GRN detail payload.
+
+### Files Modified
+- `backend/app/routers/purchase.py`
+
+### Validation
+- Verified no backend/IDE errors in modified file.
+
+## BE-67: PO Status Constraint Hotfix for GRN Confirm (Completed -> Received Persistence)
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Purchase / GRN
+**Type**: Production Bug Fix
+
+### Overview
+Fixed GRN confirm 500 error caused by writing `completed` into `purchase_orders.status` where DB check constraint currently accepts `received` as the terminal fulfilled state.
+
+### Changes Made
+- Updated PO status persistence in purchase-order status endpoint:
+  - logical `completed` requests are persisted as `received` (DB-safe).
+- Updated PO fulfillment status update in GRN confirm flow:
+  - fully received PO now persists `received` (instead of `completed`).
+- Preserved logical transition handling and frontend display mapping (`received` shown as `Completed`) without DB schema change.
+
+### Files Modified
+- `backend/app/routers/purchase.py`
+
+### Validation
+- Verified no backend/IDE errors in modified file.
+
+## BE-66: GRN Tolerance Uses Cumulative Received Qty for Partial PO Receipts
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: GRN / Purchase Order
+**Type**: Logic Fix
+
+### Overview
+Fixed linked-PO GRN tolerance validation so subsequent (remaining) GRNs are validated using cumulative received quantity, preventing false tolerance failures on partial receipt continuation.
+
+### Changes Made
+- Updated GRN create tolerance validation to compare:
+  - `previously_received + current_grn_qty`
+  against PO allowed range (under/over tolerance).
+- Updated GRN update tolerance validation with the same cumulative logic.
+- Kept existing tolerance limits and error messages unchanged.
+
+### Files Modified
+- `backend/app/routers/purchase.py`
+
+### Validation
+- Verified no backend/IDE errors in modified file.
+
+## BE-65: GRN Expiry Date Allows Current Date (Past-Date Block Only)
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: GRN
+**Type**: Validation Fix
+
+### Overview
+Adjusted GRN expiry-date validation so today is allowed, while past dates remain blocked.
+
+### Changes Made
+- Updated backend GRN create validation: expiry date now fails only when `< today`.
+- Updated backend GRN update validation: expiry date now fails only when `< today`.
+- Updated validation error text to: `Line item X: expiry date must be today or a future date`.
+
+### Files Modified
+- `backend/app/routers/purchase.py`
+
+### Validation
+- Verified no backend/IDE errors in modified file.
+
+## BE-64: Invoice PDF Watermark + GRN MFG Date Guard + PO Partial/Completed Status Logic (GRN-001, GRN-002, GRN-004)
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Billing PDF, Purchase/GRN
+**Type**: Enhancement / Validation Fix
+
+### Overview
+Implemented Sales Invoice watermark behavior matching PO style, corrected MFG future-date validation for GRN items, and strengthened PO fulfillment status logic to persist `partial` vs `completed` from GRN confirmation outcomes.
+
+### Changes Made
+- Added PO-style watermark block to Sales Invoice PDF template:
+  - `Draft` invoices render watermark text `Not Approved`
+  - non-draft invoices render watermark text `Approved`
+  - fixed-position watermark keeps visibility across all pages with non-intrusive opacity.
+- Updated GRN backend manufacturing-date validation rule:
+  - allows today/past dates
+  - blocks only future dates
+  - returns exact error message: `MFG Date cannot be a future date`.
+- Updated Purchase Order status transition and persistence logic:
+  - normalized legacy `received` handling to `completed`
+  - transition map now supports `sent -> partial/completed` and `partial -> completed`
+  - list endpoint treats `completed`/`received` filters as equivalent for backward compatibility.
+- Updated GRN confirmation fulfillment logic:
+  - no receipt -> `sent` (pending state)
+  - partial receipt -> `partial`
+  - full receipt -> `completed`
+  - completed/received POs are blocked from additional confirm processing.
+
+### Files Modified
+- `backend/app/services/pdf_service.py`
+- `backend/app/routers/purchase.py`
+
+### Validation
+- Verified no backend/IDE errors in modified files.
+
+## BE-63: Sales Invoice Shipping + Batch/Date Validation Guards (SAL-043, SAL-044)
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Sales Invoice
+**Type**: Enhancement / Data Integrity Fix
+
+### Overview
+Added strict backend validation for shipping address completeness and batch/date correctness before invoice save, and added issue-time guard to prevent stock movement on invalid line data.
+
+### Changes Made
+- Added shipping address validation before invoice create/update:
+  - Requires shipping address line, city, state, country.
+  - Requires shipping pincode for India shipping addresses.
+  - Returns: `Please complete Shipping Address before creating invoice` when incomplete.
+- Added reusable product batch snapshot builder from transactional stock sources.
+- Added line-level batch/date validation rules:
+  - selected batch must exist for selected product (`Invalid batch selected`)
+  - payload MFG/EXP must match selected batch metadata (`MFG/EXP date mismatch with batch`)
+  - date-window checks (`Invalid date range`):
+    - MFG <= today
+    - EXP >= today
+    - EXP > MFG
+- Applied validation in:
+  - create invoice
+  - update invoice
+  - issue invoice (safety guard to avoid invalid stock deduction)
+
+### Files Modified
+- `backend/app/routers/sales.py`
+
+### Validation
+- Verified no backend/IDE errors in modified file.
+
 ## BE-62: Sales Invoice PDF Unit Column Set to Base Unit Only
 **Date**: April 8, 2026
 **Status**: ✅ Completed
