@@ -2,6 +2,91 @@
 
 ---
 
+## BE-56: STO-006/007 Inventory Count APIs and Admin Difference Endpoint
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Stock Master
+**Test Cases**: STO-006, STO-007
+**Type**: Enhancement
+
+### Overview
+Implemented backend support for Inventory Count creation with auto-generated count number format and an admin-only Inventory Count Difference API.
+
+### Changes Made
+- Added new Stock Master entities:
+  - `InventoryCount`
+  - `InventoryCountItem`
+- Added inventory count number preview endpoint:
+  - `GET /api/v1/stock/inventory-counts/next-number`
+  - format: `INV-MON-001` (for example `INV-APR-001`)
+- Added inventory count confirmation/create endpoint:
+  - `POST /api/v1/stock/inventory-counts`
+  - stores header and line details with serial number, product, qty, batch, mfg/exp.
+- Added admin-only difference endpoint:
+  - `GET /api/v1/stock/inventory-counts/{count_number}/difference`
+  - compares counted quantity vs existing stock and returns difference per line.
+- Enforced admin-only access for STO-007 via `require_role("admin")`.
+
+### Files Modified
+- `backend/app/models/inventory_count.py`
+- `backend/app/models/__init__.py`
+- `backend/app/schemas/stock.py`
+- `backend/app/routers/stock.py`
+
+### Validation
+- Verified no backend/IDE errors in modified files.
+
+## BE-55: Stock Report Negative Reconciliation Row Artifact Fix
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Reports, Stock Master
+**Type**: Bug Fix
+
+### Overview
+Fixed stock report behavior where some products showed confusing negative batch/reconciliation quantities (for example `-1`) after batch-wise row expansion.
+
+### Changes Made
+- Normalized batch aggregation key from `(product + batch + mfg + exp)` to `(product + batch)` so date metadata differences do not split the same physical batch into multiple rows.
+- Added metadata merge logic to retain best available MFG/EXP values without affecting quantity math.
+- Updated reconciliation behavior to append unassigned row only when residual quantity is positive.
+- Prevented creation of negative unassigned/reconciliation rows that were surfacing mismatch artifacts in Stock Master.
+
+### Files Modified
+- `backend/app/routers/reports.py`
+
+### Validation
+- Verified no backend/IDE errors in modified file.
+- Verified frontend build succeeds (`npm run build`).
+
+## BE-54: STO-005 Stock Report Batch-Wise Row Expansion
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Reports, Stock Master
+**Type**: Enhancement / Data Contract Update
+
+### Overview
+Updated stock reporting to return separate rows per product batch instead of merging all batches into a single product row.
+
+### Changes Made
+- Reworked `/api/v1/reports/stock` to compute batch-wise balances using confirmed transactional flows:
+  - confirmed GRN (`+quantity`, `+free_quantity`)
+  - confirmed purchase returns (`-quantity`)
+  - issued/paid sales invoices (`-quantity`)
+  - confirmed sales returns (`+quantity`)
+- Preserved `StockLedger` as source of truth for overall product quantity.
+- Added unassigned reconciliation bucket for quantity deltas not mapped to explicit batch metadata.
+- Expanded response shape to include batch-level metadata fields:
+  - `batch_no`
+  - `manufacture_date`
+  - `expiry_date`
+- Kept low-stock determination product-level (safety stock threshold), while row rendering is now batch-level.
+
+### Files Modified
+- `backend/app/routers/reports.py`
+
+### Validation
+- Verified no backend/IDE errors in modified file.
+
 ## BE-52: Purchase GST Fallback for Domestic Suppliers with Blank Country
 **Date**: April 8, 2026
 **Status**: ✅ Completed

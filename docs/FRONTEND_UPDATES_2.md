@@ -1,5 +1,102 @@
 # Frontend Updates Log
 
+## FE-68: Inventory Count Module Button Visual Affordance Fix
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Stock Master
+**Type**: UI Fix
+
+### Overview
+Improved button visibility in Inventory Count and Inventory Count Difference modules where actions looked like plain text.
+
+### Changes Made
+- Added reusable button component classes in global styles:
+  - primary button
+  - outline button
+  - danger outline button
+- Applied clear bordered/color button styling to:
+  - Add Entry
+  - Confirm
+  - Show Difference
+  - Remove
+- Improved disabled-state appearance for Confirm button.
+
+### Files Modified
+- `frontend/src/index.css`
+- `frontend/src/pages/InventoryCountPage.tsx`
+- `frontend/src/pages/InventoryCountDifferencePage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified files.
+- Verified frontend build succeeds (`npm run build`).
+
+## FE-67: STO-006/007 Inventory Count and Admin Difference UI
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Stock Master
+**Test Cases**: STO-006, STO-007
+**Type**: Enhancement
+
+### Overview
+Added two new Stock Master modules in frontend:
+- Inventory Count entry/confirm module
+- Inventory Count Difference module (admin only)
+
+### Changes Made
+- Added Inventory Count page with:
+  - auto-generated count number preview (`INV-MON-001`)
+  - Count Date and Count Performed By fields
+  - line entry fields: Serial Number, Product ID, Product Description, Quantity, Batch Number, Mfg Date, Exp Date
+  - Add Entry flow and Confirm button enabled only after valid entry data exists
+- Added Inventory Count Difference page (admin only) with:
+  - Inventory Count Number input
+  - result grid showing counted qty vs existing stock vs difference values per line
+- Added route wiring:
+  - `/inventory/count`
+  - `/inventory/count-difference` (admin role protected)
+- Added Inventory navigation links in sidebar/mobile nav.
+- Extended stock API client with inventory count preview/create/difference methods.
+
+### Files Modified
+- `frontend/src/api/stock.ts`
+- `frontend/src/pages/InventoryCountPage.tsx`
+- `frontend/src/pages/InventoryCountDifferencePage.tsx`
+- `frontend/src/App.tsx`
+- `frontend/src/components/AppLayout.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified files.
+- Verified frontend build succeeds (`npm run build`).
+
+## FE-66: STO-005 Stock Master Batch-Wise Row Display
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Stock Master, Reports API Integration
+**Type**: Enhancement / UI Data Mapping Fix
+
+### Overview
+Updated Stock Master to render separate rows for each batch of the same product instead of showing merged product rows with combined batch labels.
+
+### Changes Made
+- Updated Stock page report contract consumption to batch-wise row model.
+- Added typed stock report interfaces for frontend API client with batch metadata fields.
+- Updated table columns to include:
+  - `Batch No`
+  - `MFG Date`
+  - `EXP Date`
+- Removed merged `Batch(es)` text column.
+- Expanded search to include batch number.
+- Updated row identity and UI copy to reflect row-based display (`stock rows` instead of `products`).
+- Kept status and low-stock filters compatible with backend response.
+
+### Files Modified
+- `frontend/src/api/reports.ts`
+- `frontend/src/pages/StockPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified files.
+- Verified frontend build succeeds (`npm run build`).
+
 ## FE-64: GRN Item Search Non-Destructive Locate Mode (Highlight + Scroll)
 **Date**: April 8, 2026
 **Status**: ✅ Completed

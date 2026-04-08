@@ -2,6 +2,42 @@
 
 ---
 
+## DB-39: STO-006/007 Inventory Count Tables and Compatibility Migration
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Test Cases**: STO-006, STO-007
+**Module**: Stock Master
+**Type**: Enhancement
+
+### Overview
+Added database persistence for Inventory Count and Inventory Count Difference modules.
+
+### Database Check
+- Checked existing schema and migration packs for required structures.
+- Confirmed `inventory_counts` and `inventory_count_items` did not exist, so new tables were created.
+
+### Changes Made
+- Added new base schema tables:
+	- `inventory_counts`
+	- `inventory_count_items`
+- Added indexes for count lookup and item joins.
+- Added dedicated migration script:
+	- `database/04_inventory_count_modules.sql`
+- Added same idempotent statements to:
+	- `database/ALL_UPDATES_2.sql`
+	- `database/ALL_UPDATES_03.sql`
+	- `backend/run_migration.py`
+
+### Files Modified
+- `database/01_schema.sql`
+- `database/04_inventory_count_modules.sql`
+- `database/ALL_UPDATES_2.sql`
+- `database/ALL_UPDATES_03.sql`
+- `backend/run_migration.py`
+
+### Validation
+- Verified no SQL/editor errors in modified files.
+
 ## DB-38: PO/GRN Delivery Tolerance Columns (PUR-003)
 **Date**: April 8, 2026
 **Status**: ✅ Completed

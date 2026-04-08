@@ -22,6 +22,8 @@ import SalesOrdersPage from './pages/SalesOrdersPage';
 import InvoicesPage from './pages/InvoicesPage';
 import GRNPage from './pages/GRNPage';
 import StockPage from './pages/StockPage';
+import InventoryCountPage from './pages/InventoryCountPage';
+import InventoryCountDifferencePage from './pages/InventoryCountDifferencePage';
 import ReceivablesPage from './pages/ReceivablesPage';
 import PayablesPage from './pages/PayablesPage';
 import ReportsPage from './pages/ReportsPage';
@@ -210,6 +212,22 @@ function App() {
           element={
             <ProtectedRoute requiredPermission={PERMISSION_SCOPES.STOCK_LEDGER_READ}>
               <StockPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/inventory/count"
+          element={
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.STOCK_LEDGER_WRITE}>
+              <InventoryCountPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/inventory/count-difference"
+          element={
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.STOCK_LEDGER_READ} requiredRole="admin">
+              <InventoryCountDifferencePage />
             </ProtectedRoute>
           }
         />

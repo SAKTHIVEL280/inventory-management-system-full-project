@@ -53,4 +53,28 @@ input[type='number']::-webkit-inner-spin-button {
   .hms-label {
     @apply mb-2 block text-sm font-medium text-neutral-700;
   }
+
+  .hms-button-primary {
+    @apply inline-flex items-center justify-center rounded-lg border border-primary bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition;
+  }
+
+  .hms-button-primary:hover {
+    @apply bg-primary/90 border-primary/90;
+  }
+
+  .hms-button-outline {
+    @apply inline-flex items-center justify-center rounded-lg border border-neutral-300 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-700 shadow-sm transition;
+  }
+
+  .hms-button-outline:hover {
+    @apply border-neutral-400 bg-neutral-50;
+  }
+
+  .hms-button-danger-outline {
+    @apply inline-flex items-center justify-center rounded-md border border-red-300 bg-white px-2.5 py-1 text-xs font-semibold text-red-700 transition;
+  }
+
+  .hms-button-danger-outline:hover {
+    @apply border-red-400 bg-red-50;
+  }
 }

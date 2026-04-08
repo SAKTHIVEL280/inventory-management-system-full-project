@@ -8,8 +8,8 @@ from app.database import get_db
 from app.dependencies import require_permissions
 from app.models.user import User
 from app.models.product import Product, StockLedger
-from app.models.sales import SalesInvoice, SalesInvoiceItem, SalesOrder
-from app.models.purchase import GoodsReceiptNote, GRNItem, PurchaseOrder
+from app.models.sales import SalesInvoice, SalesInvoiceItem, SalesOrder, SalesReturn, SalesReturnItem
+from app.models.purchase import GoodsReceiptNote, GRNItem, PurchaseOrder, PurchaseReturn, PurchaseReturnItem
 from app.models.customer import Customer
 from app.models.supplier import Supplier
 
@@ -246,43 +246,226 @@ async def stock_report(
     current_user: User = Depends(require_permissions("stock_ledger_read", "reports_read")),
 ):
     rows = []
+    NO_BATCH_TOKEN = "__UNASSIGNED__"
+
+    def _normalize_batch(batch_no: str | None) -> str:
+        token = (batch_no or "").strip()
+        return token if token else NO_BATCH_TOKEN
+
+    # Product-level totals remain sourced from stock ledger for consistency with
+    # all stock-affecting flows and manual adjustments.
+    product_totals = {
+        str(row.product_id): float(row.qty or 0)
+        for row in (
+            db.query(
+                StockLedger.product_id,
+                func.coalesce(func.sum(StockLedger.quantity), 0).label("qty"),
+            )
+            .group_by(StockLedger.product_id)
+            .all()
+        )
+    }
+
+    # Build batch-wise balance from transactional references.
+    # Key by (product, batch) so date metadata differences do not split the same batch.
+    batch_balances: dict[tuple[str, str], float] = {}
+    batch_meta: dict[tuple[str, str], tuple[date | None, date | None]] = {}
+
+    def _accumulate(
+        product_id,
+        batch_no,
+        manufacture_date,
+        expiry_date,
+        qty_delta,
+    ):
+        if not product_id:
+            return
+        key = (str(product_id), _normalize_batch(batch_no))
+        if key not in batch_meta:
+            batch_meta[key] = (manufacture_date, expiry_date)
+        else:
+            prev_mfg, prev_exp = batch_meta[key]
+            batch_meta[key] = (
+                prev_mfg or manufacture_date,
+                prev_exp or expiry_date,
+            )
+        batch_balances[key] = batch_balances.get(key, 0.0) + float(qty_delta or 0)
+
+    grn_rows = (
+        db.query(
+            GRNItem.product_id,
+            GRNItem.batch_no,
+            GRNItem.manufacture_date,
+            GRNItem.expiry_date,
+            func.coalesce(func.sum(GRNItem.quantity), 0).label("qty"),
+            func.coalesce(func.sum(GRNItem.free_quantity), 0).label("free_qty"),
+        )
+        .join(GoodsReceiptNote, GRNItem.grn_id == GoodsReceiptNote.id)
+        .filter(
+            GoodsReceiptNote.status == "confirmed",
+            GoodsReceiptNote.is_deleted == False,
+            GRNItem.is_deleted == False,
+        )
+        .group_by(
+            GRNItem.product_id,
+            GRNItem.batch_no,
+            GRNItem.manufacture_date,
+            GRNItem.expiry_date,
+        )
+        .all()
+    )
+    for row in grn_rows:
+        _accumulate(
+            row.product_id,
+            row.batch_no,
+            row.manufacture_date,
+            row.expiry_date,
+            float(row.qty or 0) + float(row.free_qty or 0),
+        )
+
+    purchase_return_rows = (
+        db.query(
+            PurchaseReturnItem.product_id,
+            GRNItem.batch_no,
+            GRNItem.manufacture_date,
+            GRNItem.expiry_date,
+            func.coalesce(func.sum(PurchaseReturnItem.quantity), 0).label("qty"),
+        )
+        .join(PurchaseReturn, PurchaseReturnItem.purchase_return_id == PurchaseReturn.id)
+        .outerjoin(GRNItem, PurchaseReturnItem.grn_item_id == GRNItem.id)
+        .filter(
+            PurchaseReturn.status == "confirmed",
+            PurchaseReturn.is_deleted == False,
+            PurchaseReturnItem.is_deleted == False,
+        )
+        .group_by(
+            PurchaseReturnItem.product_id,
+            GRNItem.batch_no,
+            GRNItem.manufacture_date,
+            GRNItem.expiry_date,
+        )
+        .all()
+    )
+    for row in purchase_return_rows:
+        _accumulate(
+            row.product_id,
+            row.batch_no,
+            row.manufacture_date,
+            row.expiry_date,
+            -float(row.qty or 0),
+        )
+
+    sales_issue_rows = (
+        db.query(
+            SalesInvoiceItem.product_id,
+            SalesInvoiceItem.batch_no,
+            SalesInvoiceItem.manufacture_date,
+            SalesInvoiceItem.expiry_date,
+            func.coalesce(func.sum(SalesInvoiceItem.quantity), 0).label("qty"),
+        )
+        .join(SalesInvoice, SalesInvoiceItem.invoice_id == SalesInvoice.id)
+        .filter(
+            SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
+            SalesInvoice.is_deleted == False,
+            SalesInvoiceItem.is_deleted == False,
+        )
+        .group_by(
+            SalesInvoiceItem.product_id,
+            SalesInvoiceItem.batch_no,
+            SalesInvoiceItem.manufacture_date,
+            SalesInvoiceItem.expiry_date,
+        )
+        .all()
+    )
+    for row in sales_issue_rows:
+        _accumulate(
+            row.product_id,
+            row.batch_no,
+            row.manufacture_date,
+            row.expiry_date,
+            -float(row.qty or 0),
+        )
+
+    sales_return_rows = (
+        db.query(
+            SalesReturnItem.product_id,
+            SalesInvoiceItem.batch_no,
+            SalesInvoiceItem.manufacture_date,
+            SalesInvoiceItem.expiry_date,
+            func.coalesce(func.sum(SalesReturnItem.quantity), 0).label("qty"),
+        )
+        .join(SalesReturn, SalesReturnItem.sales_return_id == SalesReturn.id)
+        .outerjoin(SalesInvoiceItem, SalesReturnItem.invoice_item_id == SalesInvoiceItem.id)
+        .filter(
+            SalesReturn.status == "confirmed",
+            SalesReturn.is_deleted == False,
+            SalesReturnItem.is_deleted == False,
+        )
+        .group_by(
+            SalesReturnItem.product_id,
+            SalesInvoiceItem.batch_no,
+            SalesInvoiceItem.manufacture_date,
+            SalesInvoiceItem.expiry_date,
+        )
+        .all()
+    )
+    for row in sales_return_rows:
+        _accumulate(
+            row.product_id,
+            row.batch_no,
+            row.manufacture_date,
+            row.expiry_date,
+            float(row.qty or 0),
+        )
+
+    balances_by_product: dict[str, list[tuple[str, date | None, date | None, float]]] = {}
+    for (product_id, batch_no), qty in batch_balances.items():
+        if abs(qty) < 1e-6:
+            continue
+        manufacture_date, expiry_date = batch_meta.get((product_id, batch_no), (None, None))
+        balances_by_product.setdefault(product_id, []).append(
+            (batch_no, manufacture_date, expiry_date, qty)
+        )
+
     products = db.query(Product).filter(Product.is_deleted == False).all()
     for product in products:
-        qty_scalar = db.query(func.coalesce(func.sum(StockLedger.quantity), 0)).filter(StockLedger.product_id == product.id).scalar() or 0
-        qty = float(qty_scalar)
+        product_id = str(product.id)
         safety = float(product.safety_stock or 0)
+        product_qty = float(product_totals.get(product_id, 0.0))
 
-        # STO-003/004: Low stock is determined by Min Safety Stock threshold.
-        status = "Low Stock" if qty <= safety else "In Stock"
+        # STO-003/004/005: Keep low-stock status product-based; only row expansion
+        # changes from product-level to batch-level.
+        status = "Low Stock" if product_qty <= safety else "In Stock"
         if low_stock_only and status != "Low Stock":
             continue
 
-        # STO-004: Get batch numbers from confirmed GRN items for this product
-        batch_rows = (
-            db.query(GRNItem.batch_no)
-            .join(GoodsReceiptNote, GRNItem.grn_id == GoodsReceiptNote.id)
-            .filter(
-                GRNItem.product_id == product.id,
-                GRNItem.batch_no.isnot(None),
-                GRNItem.batch_no != "",
-                GoodsReceiptNote.status == "confirmed",
-                GoodsReceiptNote.is_deleted == False,
-            )
-            .distinct()
-            .all()
-        )
-        batch_numbers = [b[0] for b in batch_rows if b[0]]
+        product_batches = list(balances_by_product.get(product_id, []))
+        allocated_qty = sum(float(entry[3]) for entry in product_batches)
+        unassigned_qty = product_qty - allocated_qty
 
-        rows.append({
-            "product_code": product.product_code,
-            "product_name": product.name,
-            "hsn": product.hsn_code,
-            "closing_qty": float(qty),
-            "min_stock": float(safety),
-            "safety_stock": float(safety),
-            "batch_numbers": batch_numbers,
-            "status": status,
-        })
+        # Add reconciliation row only for positive residual quantity.
+        # Negative residuals are data mismatches and should not create confusing
+        # negative rows in Stock Master.
+        if unassigned_qty > 1e-6 or not product_batches:
+            product_batches.append((NO_BATCH_TOKEN, None, None, unassigned_qty if product_batches else product_qty))
+
+        product_batches.sort(key=lambda entry: (entry[0] == NO_BATCH_TOKEN, entry[0]))
+
+        for batch_no, manufacture_date, expiry_date, batch_qty in product_batches:
+            rows.append({
+                "product_code": product.product_code,
+                "product_name": product.name,
+                "hsn": product.hsn_code,
+                "batch_no": None if batch_no == NO_BATCH_TOKEN else batch_no,
+                "manufacture_date": manufacture_date,
+                "expiry_date": expiry_date,
+                "closing_qty": float(batch_qty),
+                "min_stock": float(safety),
+                "safety_stock": float(safety),
+                "status": status,
+            })
+
+    rows.sort(key=lambda row: (row["product_name"] or "", row["batch_no"] or "~"))
     return {"items": rows, "total": len(rows)}
 
 

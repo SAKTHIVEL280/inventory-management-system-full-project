@@ -121,7 +121,11 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
       key: 'inventory',
       label: 'Inventory',
       icon: 'warehouse',
-      items: [{ to: '/inventory/stock', label: 'Stock', visible: can('stock_ledger_read'), icon: 'warehouse' }],
+      items: [
+        { to: '/inventory/stock', label: 'Stock', visible: can('stock_ledger_read'), icon: 'warehouse' },
+        { to: '/inventory/count', label: 'Inventory Count', visible: can('stock_ledger_write'), icon: 'fact_check' },
+        { to: '/inventory/count-difference', label: 'Count Difference', visible: isAdmin && can('stock_ledger_read'), icon: 'difference' },
+      ],
     },
     {
       key: 'purchase',
@@ -156,7 +160,7 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
       icon: 'bar_chart',
       items: [{ to: '/reports', label: 'Reports', visible: can('reports_read'), icon: 'bar_chart' }],
     },
-  ], [can]);
+  ], [can, isAdmin]);
 
   const getGroupForPath = useCallback((pathname: string): string => {
     for (const group of navGroups) {

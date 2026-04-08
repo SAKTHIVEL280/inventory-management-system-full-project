@@ -25,6 +25,7 @@ from app.models.sales import (
 )
 from app.models.payment import Payment, PaymentAllocation
 from app.models.customization_option import CustomizationOption
+from app.models.inventory_count import InventoryCount, InventoryCountItem
 
 __all__ = [
 	"Base",
@@ -53,4 +54,6 @@ __all__ = [
 	"Payment",
 	"PaymentAllocation",
 	"CustomizationOption",
+	"InventoryCount",
+	"InventoryCountItem",
 ]

@@ -29,6 +29,24 @@ export interface DashboardStats {
   recent_invoices: { invoice_number: string; customer_name: string; amount: number; status: string; date: string }[];
 }
 
+export interface StockReportItem {
+  product_code: string;
+  product_name: string;
+  hsn: string;
+  batch_no: string | null;
+  manufacture_date: string | null;
+  expiry_date: string | null;
+  closing_qty: number;
+  min_stock: number;
+  safety_stock: number;
+  status: string;
+}
+
+export interface StockReportResponse {
+  items: StockReportItem[];
+  total: number;
+}
+
 /**
  * Fetch dashboard statistics
  */
@@ -40,7 +58,7 @@ export const getDashboardStats = async (): Promise<DashboardStats> => {
 /**
  * Fetch stock report
  */
-export const getStockReport = async (lowStockOnly = false) => {
+export const getStockReport = async (lowStockOnly = false): Promise<StockReportResponse> => {
   const response = await apiClient.get('/api/v1/reports/stock', {
     params: { low_stock_only: lowStockOnly },
   });
