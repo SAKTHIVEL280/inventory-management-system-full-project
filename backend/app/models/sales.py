@@ -127,6 +127,8 @@ class SalesInvoice(Base):
     ship_to_customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id"), nullable=True)
     supply_state = Column(String(100), nullable=True)
     supply_state_code = Column(String(5), nullable=True)
+    invoice_type = Column(String(30), nullable=False, default="within_state")
+    import_export_code = Column(String(50), nullable=True)
     is_igst = Column(Boolean, nullable=False, default=False)
     subtotal = Column(Integer, nullable=False, default=0)
     total_discount = Column(Integer, nullable=False, default=0)

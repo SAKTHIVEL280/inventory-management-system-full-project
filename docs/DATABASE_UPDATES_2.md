@@ -2,6 +2,83 @@
 
 ---
 
+## DB-38: PO/GRN Delivery Tolerance Columns (PUR-003)
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Test Case**: PUR-003
+**Module**: Purchase Order, GRN
+**Type**: Enhancement
+
+### Overview
+Added delivery tolerance persistence fields in Purchase Orders and Goods Receipt Notes, with compatibility coverage for existing databases.
+
+### Changes Made
+- Added `purchase_orders.under_delivery_tolerance` (`NUMERIC(10,2)`, default `0`).
+- Added `purchase_orders.over_delivery_tolerance` (`NUMERIC(10,2)`, default `0`).
+- Added `goods_receipt_notes.under_delivery_tolerance` (`NUMERIC(10,2)`, default `0`).
+- Added `goods_receipt_notes.over_delivery_tolerance` (`NUMERIC(10,2)`, default `0`).
+- Added corresponding idempotent `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements to:
+	- `database/ALL_UPDATES_2.sql`
+	- `database/ALL_UPDATES_03.sql`
+	- `backend/run_migration.py`
+
+### Files Modified
+- `database/01_schema.sql`
+- `database/ALL_UPDATES_2.sql`
+- `database/ALL_UPDATES_03.sql`
+- `backend/run_migration.py`
+
+### Validation
+- Verified no SQL/editor errors in modified files.
+
+## DB-37: SAL-030 Export Invoice Import/Export Fields
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Test Case**: SAL-030
+**Module**: Sales Invoice, Company Profile
+**Type**: Enhancement
+
+### Overview
+Added database fields required for export invoice Import & Export values and aligned compatibility migrations.
+
+### Changes Made
+- Added `sales_invoices.import_export_code` in base schema.
+- Added `company.import_export_number` in base schema.
+- Added compatibility `ALTER TABLE` statements to:
+	- `database/ALL_UPDATES_2.sql`
+	- `database/ALL_UPDATES_03.sql`
+	- `backend/run_migration.py`
+
+### Files Modified
+- `database/01_schema.sql`
+- `database/ALL_UPDATES_2.sql`
+- `database/ALL_UPDATES_03.sql`
+- `backend/run_migration.py`
+
+## DB-36: SAL-029 Sales Invoice Type Column
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Test Case**: SAL-029
+**Module**: Sales Invoice
+**Type**: Enhancement
+
+### Overview
+Added invoice type persistence support to Sales Invoice so invoice classification is stored and available across API, UI, and PDF.
+
+### Changes Made
+- Added `invoice_type` column in `sales_invoices` base schema with default `within_state`.
+- Added compatibility `ALTER TABLE` in `ALL_UPDATES_2.sql`.
+- Added compatibility `ALTER TABLE` in `ALL_UPDATES_03.sql`.
+- Added compatibility statement in `backend/run_migration.py`.
+
+### Files Modified
+- `database/01_schema.sql`
+- `database/ALL_UPDATES_2.sql`
+- `database/ALL_UPDATES_03.sql`
+- `backend/run_migration.py`
+
+---
+
 ## DB-35: Retired Redundant Standalone SQL Scripts
 **Date**: April 8, 2026
 **Status**: ✅ Completed

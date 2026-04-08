@@ -66,9 +66,24 @@ PO_TEMPLATE = """<!DOCTYPE html>
         .page-break {
             page-break-after: always;
         }
+        .po-watermark {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-24deg);
+            font-size: 42px;
+            font-weight: 700;
+            color: #b9c0ca;
+            opacity: 0.14;
+            letter-spacing: 1px;
+            z-index: 0;
+            white-space: nowrap;
+        }
     </style>
 </head>
 <body>
+
+<div class="po-watermark">{{ watermark_text }}</div>
 
 <!-- HEADER -->
 <table style="table-layout: fixed; width: 100%; border-top: 1px solid #000; border-left: 1px solid #000; border-right: 1px solid #000; margin-bottom: 0;">
@@ -109,6 +124,8 @@ PO_TEMPLATE = """<!DOCTYPE html>
                 <tr><td style="width: 130px; border: none; padding: 1px 0; font-size: 10px;">PO Date:</td><td style="border: none; padding: 1px 0; font-size: 10px;">{{ doc_date }}</td></tr>
                 <tr><td style="width: 130px; border: none; padding: 1px 0; font-size: 10px;">Shipping/Delivery Date:</td><td style="border: none; padding: 1px 0; font-size: 10px;">{{ expected_delivery_date }}</td></tr>
                 <tr><td style="width: 130px; border: none; padding: 1px 0; font-size: 10px;">Place of Supply:</td><td style="border: none; padding: 1px 0; font-size: 10px;">{{ bill_to_state }}</td></tr>
+                <tr><td style="width: 130px; border: none; padding: 1px 0; font-size: 10px;">Under Delivery Tol.:</td><td style="border: none; padding: 1px 0; font-size: 10px;">{{ under_delivery_tolerance }}</td></tr>
+                <tr><td style="width: 130px; border: none; padding: 1px 0; font-size: 10px;">Over Delivery Tol.:</td><td style="border: none; padding: 1px 0; font-size: 10px;">{{ over_delivery_tolerance }}</td></tr>
             </table>
         </td>
     </tr>
@@ -290,6 +307,9 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
             <div style="font-size: 9px; line-height: 1.4;">{{ company_address }}</div>
             <div style="font-size: 9px; line-height: 1.4;">GSTIN {{ company_gstin }}</div>
             <div style="font-size: 9px; line-height: 1.4;">{{ company_contact }}</div>
+            {% if export_invoice and company_import_export_number %}
+            <div style="font-size: 9px; line-height: 1.4;">Import &amp; Export Number: {{ company_import_export_number }}</div>
+            {% endif %}
         </td>
         <td style="width: 200px; text-align: right; vertical-align: bottom; padding-bottom: 6px; padding-right: 30px; border: none;">
             <div style="font-size: 18px; font-weight: bold; letter-spacing: 1px;">{{ doc_title }}</div>
@@ -310,8 +330,10 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
         </td>
         <td style="width: 50%; padding: 4px 6px; vertical-align: top;">
             <table style="width: 100%;">
+                <tr><td style="width: 90px; border: none; padding: 1px 0; font-size: 10px;">Invoice Type</td><td style="border: none; padding: 1px 0; font-size: 10px; font-weight: bold;">: {{ invoice_type_label }}</td></tr>
                 <tr><td style="width: 90px; border: none; padding: 1px 0; font-size: 10px;">Place Of Supply</td><td style="border: none; padding: 1px 0; font-size: 10px; font-weight: bold;">: {{ bill_to_state }}</td></tr>
                 {% if order_currency %}<tr><td style="width: 90px; border: none; padding: 1px 0; font-size: 10px;">Order Currency</td><td style="border: none; padding: 1px 0; font-size: 10px; font-weight: bold;">: {{ order_currency }}</td></tr>{% endif %}
+                {% if export_invoice and import_export_code %}<tr><td style="width: 120px; border: none; padding: 1px 0; font-size: 10px;">Import &amp; Export Code</td><td style="border: none; padding: 1px 0; font-size: 10px; font-weight: bold;">: {{ import_export_code }}</td></tr>{% endif %}
             </table>
         </td>
     </tr>
@@ -323,36 +345,108 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
         <td style="width: 50%; border-right: 1px solid #000; padding: 5px 6px;">
             <div style="font-size: 9px; font-weight: bold; text-decoration: underline; margin-bottom: 3px;">Bill To</div>
             <div style="font-weight: bold; font-size: 11px; margin-bottom: 2px;">{{ bill_to_name }}</div>
-            <div style="font-size: 9.5px; line-height: 1.4;">{{ bill_to_address }}<br>GSTIN {{ bill_to_gstin }}</div>
+            <div style="font-size: 9.5px; line-height: 1.4;">
+                {{ bill_to_address }}
+                {% if not export_invoice and bill_to_gstin and bill_to_gstin != '-' %}<br>GSTIN {{ bill_to_gstin }}{% endif %}
+            </div>
         </td>
         <td style="width: 50%; padding: 5px 6px;">
             <div style="font-size: 9px; font-weight: bold; text-decoration: underline; margin-bottom: 3px;">Ship To</div>
             <div style="font-weight: bold; font-size: 11px; margin-bottom: 2px;">{{ ship_to_name }}</div>
-            <div style="font-size: 9.5px; line-height: 1.4;">{{ ship_to_address }}<br>GSTIN {{ ship_to_gstin }}</div>
+            <div style="font-size: 9.5px; line-height: 1.4;">
+                {{ ship_to_address }}
+                {% if not export_invoice and ship_to_gstin and ship_to_gstin != '-' %}<br>GSTIN {{ ship_to_gstin }}{% endif %}
+            </div>
         </td>
     </tr>
 </table>
 
 <!-- ITEMS TABLE -->
+{% if show_batch_columns %}
+    {% if export_invoice %}
+        {% set col_sr = 3 %}
+        {% set col_desc = 21 %}
+        {% set col_batch = 8 %}
+        {% set col_mfg = 7 %}
+        {% set col_exp = 7 %}
+        {% set col_hsn = 6 %}
+        {% set col_qty = 7 %}
+        {% set col_free = 4 %}
+        {% set col_base = 6 %}
+        {% set col_rate = 12 %}
+        {% set col_disc = 5 %}
+        {% set col_cgst = 0 %}
+        {% set col_sgst = 0 %}
+        {% set col_amount = 14 %}
+    {% else %}
+        {% set col_sr = 3 %}
+        {% set col_desc = 15 %}
+        {% set col_batch = 8 %}
+        {% set col_mfg = 7 %}
+        {% set col_exp = 7 %}
+        {% set col_hsn = 6 %}
+        {% set col_qty = 5 %}
+        {% set col_free = 4 %}
+        {% set col_base = 6 %}
+        {% set col_rate = 9 %}
+        {% set col_disc = 5 %}
+        {% set col_cgst = 7 %}
+        {% set col_sgst = 7 %}
+        {% set col_amount = 11 %}
+    {% endif %}
+{% else %}
+    {% if export_invoice %}
+        {% set col_sr = 3 %}
+        {% set col_desc = 34 %}
+        {% set col_hsn = 8 %}
+        {% set col_qty = 8 %}
+        {% set col_free = 5 %}
+        {% set col_base = 8 %}
+        {% set col_rate = 12 %}
+        {% set col_disc = 7 %}
+        {% set col_cgst = 0 %}
+        {% set col_sgst = 0 %}
+        {% set col_amount = 15 %}
+    {% else %}
+        {% set col_sr = 3 %}
+        {% set col_desc = 24 %}
+        {% set col_hsn = 8 %}
+        {% set col_qty = 7 %}
+        {% set col_free = 5 %}
+        {% set col_base = 8 %}
+        {% set col_rate = 11 %}
+        {% set col_disc = 6 %}
+        {% set col_cgst = 8 %}
+        {% set col_sgst = 8 %}
+        {% set col_amount = 12 %}
+    {% endif %}
+{% endif %}
+
 <table style="table-layout: fixed; width: 100%; border-left: 1px solid #000; border-right: 1px solid #000; border-bottom: 1px solid #000;">
     <thead>
         <tr style="background: #f2f2f2; border-bottom: 1px solid #000;">
-            <th style="width: 3%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Sr</th>
-            <th style="width: {% if show_batch_columns %}15%{% else %}24%{% endif %}; border-right: 1px solid #000; padding: 3px 2px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Item &amp; Description</th>
+            <th style="width: {{ col_sr }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Sr</th>
+            <th style="width: {{ col_desc }}%; border-right: 1px solid #000; padding: 3px 2px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Item &amp; Description</th>
             {% if show_batch_columns %}
-            <th style="width: 8%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Batch No</th>
-            <th style="width: 7%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">MFG Date</th>
-            <th style="width: 7%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">EXP Date</th>
+            <th style="width: {{ col_batch }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Batch No</th>
+            <th style="width: {{ col_mfg }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">MFG Date</th>
+            <th style="width: {{ col_exp }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">EXP Date</th>
             {% endif %}
-            <th style="width: {% if show_batch_columns %}6%{% else %}8%{% endif %}; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">HSN</th>
-            <th style="width: {% if show_batch_columns %}5%{% else %}7%{% endif %}; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Qty</th>
-            <th style="width: {% if show_batch_columns %}4%{% else %}5%{% endif %}; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Free</th>
-            <th style="width: {% if show_batch_columns %}6%{% else %}8%{% endif %}; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Base Unit</th>
-            <th style="width: {% if show_batch_columns %}9%{% else %}11%{% endif %}; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Rate</th>
-            <th style="width: {% if show_batch_columns %}5%{% else %}6%{% endif %}; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Disc%</th>
-            <th style="width: {% if show_batch_columns %}7%{% else %}8%{% endif %}; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">CGST %</th>
-            <th style="width: {% if show_batch_columns %}7%{% else %}8%{% endif %}; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">SGST %</th>
-            <th style="width: {% if show_batch_columns %}11%{% else %}12%{% endif %}; padding: 3px 2px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Amount</th>
+            <th style="width: {{ col_hsn }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">HSN</th>
+            <th style="width: {{ col_qty }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Qty</th>
+            <th style="width: {{ col_free }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Free</th>
+            <th style="width: {{ col_base }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Base Unit</th>
+            <th style="width: {{ col_rate }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Rate</th>
+            <th style="width: {{ col_disc }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Disc%</th>
+            {% if not export_invoice %}
+                {% if show_igst %}
+            <th style="width: {{ col_cgst + col_sgst }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">IGST %</th>
+                {% else %}
+            <th style="width: {{ col_cgst }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">{{ tax_col_1_label }}</th>
+            <th style="width: {{ col_sgst }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">{{ tax_col_2_label }}</th>
+                {% endif %}
+            {% endif %}
+            <th style="width: {{ col_amount }}%; padding: 3px 2px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Amount</th>
         </tr>
     </thead>
     <tbody>
@@ -371,8 +465,14 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
             <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.base_unit }}</td>
             <td style="border: 1px solid #000; padding: 2px 2px; text-align: right; font-size: 7px;">{{ row.rate }}</td>
             <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.disc }}</td>
+            {% if not export_invoice %}
+                {% if show_igst %}
+            <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.igst_pct }}</td>
+                {% else %}
             <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.cgst_pct }}</td>
             <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.sgst_pct }}</td>
+                {% endif %}
+            {% endif %}
             <td style="border: 1px solid #000; padding: 2px 2px; text-align: right; font-size: 7px; font-weight: bold;">{{ row.amount }}</td>
         </tr>
         {% endfor %}
@@ -391,8 +491,14 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
             <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
             <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
             <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
+            {% if not export_invoice %}
+                {% if show_igst %}
+            <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
+                {% else %}
             <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
             <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
+                {% endif %}
+            {% endif %}
             <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
         </tr>
     </tbody>
@@ -421,14 +527,23 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
                     <td style="padding: 3px 6px; font-size: 9.5px; border-bottom: 1px solid #000;">Sub Total</td>
                     <td style="padding: 3px 6px; font-size: 9.5px; text-align: right; border-bottom: 1px solid #000;">{{ subtotal }}</td>
                 </tr>
+                {% if not export_invoice %}
+                    {% if show_igst %}
+                <tr>
+                    <td style="padding: 3px 6px; font-size: 9.5px; border-bottom: 1px solid #000;">{{ igst_label }}</td>
+                    <td style="padding: 3px 6px; font-size: 9.5px; text-align: right; border-bottom: 1px solid #000;">{{ igst_total }}</td>
+                </tr>
+                    {% else %}
                 <tr>
                     <td style="padding: 3px 6px; font-size: 9.5px; border-bottom: 1px solid #000;">{{ cgst_label }}</td>
                     <td style="padding: 3px 6px; font-size: 9.5px; text-align: right; border-bottom: 1px solid #000;">{{ cgst_total }}</td>
                 </tr>
                 <tr>
-                    <td style="padding: 3px 6px; font-size: 9.5px; border-bottom: 1px solid #000;">{{ sgst_label }}</td>
-                    <td style="padding: 3px 6px; font-size: 9.5px; text-align: right; border-bottom: 1px solid #000;">{{ sgst_total }}</td>
+                    <td style="padding: 3px 6px; font-size: 9.5px; border-bottom: 1px solid #000;">{{ tax_secondary_label }}</td>
+                    <td style="padding: 3px 6px; font-size: 9.5px; text-align: right; border-bottom: 1px solid #000;">{{ tax_secondary_total }}</td>
                 </tr>
+                    {% endif %}
+                {% endif %}
                 <tr>
                     <td style="padding: 4px 6px; font-size: 10px; font-weight: bold; border-bottom: 1px solid #000;">Total</td>
                     <td style="padding: 4px 6px; font-size: 10px; font-weight: bold; text-align: right; border-bottom: 1px solid #000;">{{ grand_total_rupee }}</td>
@@ -497,6 +612,22 @@ def _format_currency(paise: int, currency_code: str = "INR") -> str:
     return f"{symbol}{amount:,.2f}"
 
 
+def _format_order_currency_display(currency_code_or_label: str | None) -> str:
+    """Format currency label once; avoid duplicates like 'JPY (¥) (JPY (¥))'."""
+    raw = (currency_code_or_label or "").strip()
+    if not raw:
+        return "-"
+    if "(" in raw and ")" in raw:
+        return raw
+
+    code = raw.upper()
+    symbols = {"INR": "Rs.", "USD": "$", "EUR": "€", "GBP": "£", "JPY": "¥"}
+    symbol = symbols.get(code)
+    if symbol:
+        return f"{code} ({symbol})"
+    return raw
+
+
 def _format_currency_rupee(paise: int) -> str:
     """Format with Rs. symbol for grand total / balance due rows."""
     amount = (paise or 0) / 100
@@ -514,6 +645,23 @@ def _gst_label(prefix: str, rate_pct: float) -> str:
     return f"{prefix}{rate_str} ({rate_str}%)"
 
 
+def _invoice_type_label(invoice_type: str | None) -> str:
+    mapping = {
+        "export_invoice": "Export Invoice",
+        "within_state": "Sales Invoice - Within State",
+        "other_states": "Sales Invoice - Other States",
+        "union_territory": "Sales Invoice - Union Territory",
+    }
+    return mapping.get((invoice_type or "").strip().lower(), "Sales Invoice - Within State")
+
+
+def _invoice_doc_title(invoice_type: str | None) -> str:
+    token = (invoice_type or "").strip().lower()
+    if token == "export_invoice":
+        return "EXPORT INVOICE"
+    return "SALES INVOICE"
+
+
 def _decimal_to_str(value: Decimal | float | int | None) -> str:
     if value is None:
         return "0"
@@ -521,7 +669,9 @@ def _decimal_to_str(value: Decimal | float | int | None) -> str:
 
 
 def _get_corrected_cgst(doc, should_be_igst: bool = False) -> float:
-    """Get CGST total (in rupees).  Always splits any legacy IGST into CGST+SGST."""
+    """Get CGST total (in rupees), honoring target mode."""
+    if should_be_igst:
+        return 0.0
     cgst = int(doc.total_cgst or 0)
     sgst = int(doc.total_sgst or 0)
     igst = int(doc.total_igst or 0)
@@ -532,7 +682,9 @@ def _get_corrected_cgst(doc, should_be_igst: bool = False) -> float:
 
 
 def _get_corrected_sgst(doc, should_be_igst: bool = False) -> float:
-    """Get SGST total (in rupees).  Always splits any legacy IGST into CGST+SGST."""
+    """Get SGST/UTGST total (in rupees), honoring target mode."""
+    if should_be_igst:
+        return 0.0
     cgst = int(doc.total_cgst or 0)
     sgst = int(doc.total_sgst or 0)
     igst = int(doc.total_igst or 0)
@@ -543,8 +695,15 @@ def _get_corrected_sgst(doc, should_be_igst: bool = False) -> float:
 
 
 def _get_corrected_igst(doc, should_be_igst: bool = False) -> float:
-    """IGST is disabled — always returns 0."""
-    return 0.0
+    """Get IGST total (in rupees), with fallback for legacy split storage."""
+    if not should_be_igst:
+        return 0.0
+    cgst = int(doc.total_cgst or 0)
+    sgst = int(doc.total_sgst or 0)
+    igst = int(doc.total_igst or 0)
+    if igst > 0:
+        return igst / 100
+    return (cgst + sgst) / 100
 
 
 
@@ -751,7 +910,7 @@ def generate_po_pdf(db: Session, po_id: UUID) -> bytes:
         igst_paise = int(item.igst_amount or 0)
         total_paise = int(item.total_amount or 0)
 
-        # Always split as CGST+SGST — convert any legacy IGST data
+        # Always split as CGST+SGST for purchase print format.
         if cgst_paise == 0 and sgst_paise == 0 and igst_paise > 0:
             cgst_paise = round(igst_paise / 2)
             sgst_paise = igst_paise - cgst_paise
@@ -795,6 +954,7 @@ def generate_po_pdf(db: Session, po_id: UUID) -> bytes:
         )
 
     notes_text = _safe_text(po.notes)
+    watermark_text = "Approved" if (po.status or "").strip().lower() != "draft" else "Not Approved"
 
     dominant_gst = 0.0
     for item in items:
@@ -821,7 +981,7 @@ def generate_po_pdf(db: Session, po_id: UUID) -> bytes:
         "doc_date": _format_date(po.order_date),
         "expected_delivery_date": _format_date(po.expected_delivery_date) if po.expected_delivery_date else "-",
         "terms": _get_payment_terms_label(supplier),
-        "order_currency": f"{currency} ({cs})",
+        "order_currency": _format_order_currency_display(currency),
         "cs": cs,
         "company_logo": _resolve_logo_src(company),
         "company_name": _safe_text(company.name if company else None),
@@ -832,15 +992,18 @@ def generate_po_pdf(db: Session, po_id: UUID) -> bytes:
         "bill_to_state": _safe_text(supplier.state if supplier else None),
         "bill_to_name": _safe_text(supplier.company_name if supplier else None),
         "bill_to_address": supplier_address,
+        "under_delivery_tolerance": f"{float(po.under_delivery_tolerance or 0):.2f}",
+        "over_delivery_tolerance": f"{float(po.over_delivery_tolerance or 0):.2f}",
         "rows": rows,
         "subtotal": f"{cs}{(int(po.subtotal or 0) / 100):,.2f}",
-        "cgst_label": _gst_label("CGST", dominant_gst) if dominant_gst else "CGST Total",
+        "cgst_label": "CGST",
         "cgst_total": f"{cs}{_get_corrected_cgst(po):,.2f}",
-        "sgst_label": _gst_label("SGST", dominant_gst) if dominant_gst else "SGST Total",
+        "sgst_label": "SGST",
         "sgst_total": f"{cs}{_get_corrected_sgst(po):,.2f}",
         "grand_total_rupee": f"{cs}{(int(po.total_amount or 0) / 100):,.2f}",
         "total_in_words": _amount_in_words(int(po.total_amount or 0)),
         "notes": notes_text,
+        "watermark_text": watermark_text,
     }
     return _render_pdf_with_pagination(context, PO_TEMPLATE, rows, items_per_page=BILLING_PDF_ITEMS_PER_PAGE)
 
@@ -869,6 +1032,12 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
     currency_symbols = {"INR": "Rs.", "USD": "$", "EUR": "€", "GBP": "£"}
     cs = currency_symbols.get(currency, currency)
 
+    invoice_type_token = (getattr(invoice, "invoice_type", "") or "").strip().lower()
+    invoice_type_label = _invoice_type_label(invoice_type_token)
+    export_invoice = invoice_type_token == "export_invoice"
+    show_igst = invoice_type_token == "other_states"
+    show_utgst = invoice_type_token == "union_territory"
+
     for idx, item in enumerate(items, start=1):
         product = db.query(Product).filter(Product.id == item.product_id).first()
         gst_rate = int(item.gst_rate or 0)
@@ -881,8 +1050,8 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
         igst_paise = int(item.igst_amount or 0)
         total_paise = int(item.total_amount or 0)
 
-        # Always split as CGST+SGST — convert any legacy IGST data
-        if cgst_paise == 0 and sgst_paise == 0 and igst_paise > 0:
+        # For non-IGST layouts, split any legacy IGST for display consistency.
+        if not show_igst and cgst_paise == 0 and sgst_paise == 0 and igst_paise > 0:
             cgst_paise = round(igst_paise / 2)
             sgst_paise = igst_paise - cgst_paise
 
@@ -907,6 +1076,7 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
                 "disc": f"{float(item.discount_percent or 0):.1f}%",
                 "cgst_pct": f"{half_rate:.1f}%",
                 "sgst_pct": f"{half_rate:.1f}%",
+                "igst_pct": f"{gst_rate}%",
                 "amount": f"{(total_paise / 100):,.2f}",
             }
         )
@@ -916,7 +1086,7 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
             {
                 "sr": "1", "description": "-", "batch_no": "-", "mfg_date": "-", "exp_date": "-",
                 "hsn": "-", "qty": "0.00", "free": "0", "base_unit": "-",
-                "rate": "0.00", "disc": "0.0%", "cgst_pct": "0.0%", "sgst_pct": "0.0%", "amount": "0.00",
+                "rate": "0.00", "disc": "0.0%", "cgst_pct": "0.0%", "sgst_pct": "0.0%", "igst_pct": "0%", "amount": "0.00",
             }
         )
 
@@ -947,8 +1117,16 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
         if r > dominant_gst:
             dominant_gst = r
 
+    tax_col_1_label = "CGST %"
+    tax_col_2_label = "UTGST %" if show_utgst else "SGST %"
+    tax_secondary_prefix = "UTGST" if show_utgst else "SGST"
+
     context = {
-        "doc_title": "TAX INVOICE",
+        "doc_title": _invoice_doc_title(invoice_type_token),
+        "export_invoice": export_invoice,
+        "show_igst": show_igst,
+        "tax_col_1_label": tax_col_1_label,
+        "tax_col_2_label": tax_col_2_label,
         "show_batch_columns": True,
         "doc_number_label": "Invoice Number",
         "doc_date_label": "Invoice Date",
@@ -956,17 +1134,20 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
         "doc_date": _format_date(invoice.invoice_date),
         "due_date": _format_date(invoice.due_date),
         "payment_terms": _get_payment_terms_label(customer),
-        "order_currency": f"{currency} ({cs})",
+        "order_currency": _format_order_currency_display(currency),
         "company_logo": _resolve_logo_src(company),
         "company_name": _safe_text(company.name if company else None),
         "company_address": _build_company_address(company),
         "company_gstin": _safe_text(company.gstin if company else None),
         "company_contact": _safe_text(company.phone if company and company.phone else (company.email if company else None)),
+        "company_import_export_number": _optional_text(getattr(company, "import_export_number", None) if company else None),
         "account_holder_name": _optional_text(company.account_holder_name if company else None),
         "company_bank_name": _optional_text(company.bank_name if company else None),
         "company_bank_account_no": _optional_text(company.bank_account_no if company else None),
         "company_bank_ifsc": _optional_text(company.bank_ifsc if company else None),
         "company_bank_branch": _optional_text(company.bank_branch if company else None),
+        "invoice_type_label": invoice_type_label,
+        "import_export_code": _optional_text(getattr(invoice, "import_export_code", None)),
         "party_gstin": _safe_text(customer.gstin if customer else None),
         "bill_to_state": _safe_text(customer.billing_state if customer else None),
         "bill_to_name": _safe_text(customer.company_name if customer else None),
@@ -978,9 +1159,11 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
         "rows": rows,
         "subtotal": f"{cs}{(int(invoice.subtotal or 0) / 100):,.2f}",
         "cgst_label": _gst_label("CGST", dominant_gst) if dominant_gst else "CGST Total",
-        "cgst_total": f"{cs}{_get_corrected_cgst(invoice):,.2f}",
-        "sgst_label": _gst_label("SGST", dominant_gst) if dominant_gst else "SGST Total",
-        "sgst_total": f"{cs}{_get_corrected_sgst(invoice):,.2f}",
+        "cgst_total": f"{cs}{_get_corrected_cgst(invoice, should_be_igst=show_igst):,.2f}",
+        "tax_secondary_label": _gst_label(tax_secondary_prefix, dominant_gst) if dominant_gst else f"{tax_secondary_prefix} Total",
+        "tax_secondary_total": f"{cs}{_get_corrected_sgst(invoice, should_be_igst=show_igst):,.2f}",
+        "igst_label": _gst_label("IGST", dominant_gst) if dominant_gst else "IGST Total",
+        "igst_total": f"{cs}{_get_corrected_igst(invoice, should_be_igst=show_igst):,.2f}",
         "grand_total_rupee": f"{cs}{(int(invoice.total_amount or 0) / 100):,.2f}",
         "balance_due_rupee": f"{cs}{(int(invoice.amount_due or invoice.total_amount or 0) / 100):,.2f}",
         "total_in_words": _amount_in_words(int(invoice.total_amount or 0)),
@@ -1094,7 +1277,7 @@ def generate_quotation_pdf(db: Session, quotation_id: UUID) -> bytes:
         "doc_date": _format_date(quotation.quotation_date),
         "due_date": valid_until_text,
         "payment_terms": _get_payment_terms_label(customer),
-        "order_currency": f"{currency} ({cs})",
+        "order_currency": _format_order_currency_display(currency),
         "company_logo": _resolve_logo_src(company),
         "company_name": _safe_text(company.name if company else None),
         "company_address": _build_company_address(company),

@@ -186,7 +186,7 @@ const buildDefaultValues = (): SupplierForm => ({
   city: '',
   state: '',
   state_code: '',
-  billing_country: '',
+  billing_country: 'India',
   pincode: '',
   place_of_supply: '',
   payment_terms_days: undefined,
@@ -411,7 +411,7 @@ const SuppliersPage = () => {
     setValue('city', item.city ?? '');
     setValue('state', item.state ?? '');
     setValue('state_code', item.state_code ?? '');
-    setValue('billing_country', item.billing_country ?? '');
+    setValue('billing_country', item.billing_country ?? (item.business_type === 'domestic' ? 'India' : ''));
     setValue('pincode', item.pincode ?? '');
     setValue('place_of_supply', item.place_of_supply ?? '');
     setValue('payment_terms_days', item.payment_terms_days ?? undefined);
@@ -457,7 +457,7 @@ const SuppliersPage = () => {
       city: normalizeOptional(parsed.data.city),
       state: normalizeOptional(parsed.data.state),
       state_code: normalizeStateCodeOptional(parsed.data.state_code),
-      billing_country: normalizeOptional(parsed.data.billing_country),
+      billing_country: normalizeOptional(parsed.data.billing_country) ?? (parsed.data.business_type === 'domestic' ? 'India' : null),
       pincode: normalizeOptional(parsed.data.pincode),
       bank_name: null,
       bank_account_no: null,
@@ -563,7 +563,6 @@ const SuppliersPage = () => {
   const isDeleting = deleteMutation.isPending;
   const businessType = watch('business_type');
   const gstinStatus = watch('gstin_status');
-  const phoneValue = watch('phone') ?? '';
   const state = watch('state') ?? '';
   const stateCode = watch('state_code');
   const country = watch('billing_country') ?? '';

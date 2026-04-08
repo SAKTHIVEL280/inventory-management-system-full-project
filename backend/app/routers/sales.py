@@ -51,7 +51,7 @@ from app.services.order_number_service import (
     generate_invoice_number,
     generate_sales_return_number,
 )
-from app.services.gst_service import determine_is_igst, calc_line_item, split_tax
+from app.services.gst_service import determine_tax_mode, determine_default_invoice_type, invoice_type_tax_mode, is_india_country, calc_line_item, split_tax
 from app.services.stock_service import get_current_stock, add_stock_entry, refresh_materialized_view
 
 router = APIRouter(tags=["sales"])
@@ -77,6 +77,21 @@ def _calculate_invoice_due_date(invoice_date: date, customer: Customer) -> date:
     if payment_terms_days < 0:
         payment_terms_days = 0
     return invoice_date + timedelta(days=payment_terms_days)
+
+
+def _validate_invoice_type_for_country(invoice_type: str, customer: Customer) -> None:
+    """Validate invoice type against customer country rules."""
+    customer_in_india = is_india_country(customer.billing_country)
+    if customer_in_india and invoice_type == "export_invoice":
+        raise HTTPException(
+            status_code=400,
+            detail="Export Invoice is allowed only for non-India customers.",
+        )
+    if (not customer_in_india) and invoice_type != "export_invoice":
+        raise HTTPException(
+            status_code=400,
+            detail="For non-India customers, only Export Invoice is allowed.",
+        )
 
 
 # ────────────────────────────── Quotations ───────────────────────────────────
@@ -133,8 +148,10 @@ async def create_quotation(
     if payload.valid_until and payload.valid_until <= date.today():
         raise HTTPException(status_code=400, detail="Valid Until date must be a future date")
 
-    # BUG-02: Auto-detect IGST
-    is_igst = determine_is_igst(db, "customer", payload.customer_id)
+    # BUG-02: Auto-detect GST mode
+    tax_mode = determine_tax_mode(db, "customer", payload.customer_id)
+    is_igst = tax_mode["is_igst"]
+    gst_applicable = tax_mode["gst_applicable"]
 
     q = Quotation(
         quotation_number=generate_quotation_number(db),
@@ -154,7 +171,14 @@ async def create_quotation(
 
     subtotal = total_discount = total_taxable = total_cgst = total_sgst = total_igst = 0
     for item in payload.items:
-        calc = calc_line_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst)
+        calc = calc_line_item(
+            item.quantity,
+            item.unit_price,
+            item.discount_percent,
+            item.gst_rate,
+            is_igst,
+            gst_applicable,
+        )
         db.add(QuotationItem(
             quotation_id=q.id,
             product_id=item.product_id,
@@ -164,7 +188,7 @@ async def create_quotation(
             discount_percent=item.discount_percent,
             discount_amount=calc["discount"],
             taxable_amount=calc["taxable"],
-            gst_rate=item.gst_rate,
+            gst_rate=calc["gst_rate"],
             cgst_amount=calc["cgst"],
             sgst_amount=calc["sgst"],
             igst_amount=calc["igst"],
@@ -226,8 +250,10 @@ async def update_quotation(
     if payload.valid_until and payload.valid_until <= date.today():
         raise HTTPException(status_code=400, detail="Valid Until date must be a future date")
 
-    # BUG-02: Auto-detect IGST
-    is_igst = determine_is_igst(db, "customer", payload.customer_id)
+    # BUG-02: Auto-detect GST mode
+    tax_mode = determine_tax_mode(db, "customer", payload.customer_id)
+    is_igst = tax_mode["is_igst"]
+    gst_applicable = tax_mode["gst_applicable"]
 
     q.customer_id = payload.customer_id
     q.quotation_date = payload.quotation_date
@@ -243,7 +269,14 @@ async def update_quotation(
 
     subtotal = total_discount = total_taxable = total_cgst = total_sgst = total_igst = 0
     for item in payload.items:
-        calc = calc_line_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst)
+        calc = calc_line_item(
+            item.quantity,
+            item.unit_price,
+            item.discount_percent,
+            item.gst_rate,
+            is_igst,
+            gst_applicable,
+        )
         db.add(QuotationItem(
             quotation_id=q.id,
             product_id=item.product_id,
@@ -253,7 +286,7 @@ async def update_quotation(
             discount_percent=item.discount_percent,
             discount_amount=calc["discount"],
             taxable_amount=calc["taxable"],
-            gst_rate=item.gst_rate,
+            gst_rate=calc["gst_rate"],
             cgst_amount=calc["cgst"],
             sgst_amount=calc["sgst"],
             igst_amount=calc["igst"],
@@ -440,8 +473,10 @@ async def create_sales_order(
     if not customer:
         raise HTTPException(status_code=400, detail="Invalid customer")
 
-    # BUG-02: Auto-detect IGST
-    is_igst = determine_is_igst(db, "customer", payload.customer_id)
+    # BUG-02: Auto-detect GST mode
+    tax_mode = determine_tax_mode(db, "customer", payload.customer_id)
+    is_igst = tax_mode["is_igst"]
+    gst_applicable = tax_mode["gst_applicable"]
 
     so = SalesOrder(
         so_number=generate_so_number(db),
@@ -464,7 +499,14 @@ async def create_sales_order(
 
     subtotal = total_discount = total_taxable = total_cgst = total_sgst = total_igst = 0
     for item in payload.items:
-        calc = calc_line_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst)
+        calc = calc_line_item(
+            item.quantity,
+            item.unit_price,
+            item.discount_percent,
+            item.gst_rate,
+            is_igst,
+            gst_applicable,
+        )
         db.add(SalesOrderItem(
             sales_order_id=so.id,
             product_id=item.product_id,
@@ -474,7 +516,7 @@ async def create_sales_order(
             discount_percent=item.discount_percent,
             discount_amount=calc["discount"],
             taxable_amount=calc["taxable"],
-            gst_rate=item.gst_rate,
+            gst_rate=calc["gst_rate"],
             cgst_amount=calc["cgst"],
             sgst_amount=calc["sgst"],
             igst_amount=calc["igst"],
@@ -539,8 +581,10 @@ async def update_sales_order(
     if so.status != "draft":
         raise HTTPException(status_code=400, detail="Only draft sales order can be edited")
 
-    # BUG-02: Auto-detect IGST
-    is_igst = determine_is_igst(db, "customer", payload.customer_id)
+    # BUG-02: Auto-detect GST mode
+    tax_mode = determine_tax_mode(db, "customer", payload.customer_id)
+    is_igst = tax_mode["is_igst"]
+    gst_applicable = tax_mode["gst_applicable"]
 
     so.customer_id = payload.customer_id
     so.quotation_id = payload.quotation_id
@@ -559,7 +603,14 @@ async def update_sales_order(
 
     subtotal = total_discount = total_taxable = total_cgst = total_sgst = total_igst = 0
     for item in payload.items:
-        calc = calc_line_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst)
+        calc = calc_line_item(
+            item.quantity,
+            item.unit_price,
+            item.discount_percent,
+            item.gst_rate,
+            is_igst,
+            gst_applicable,
+        )
         db.add(SalesOrderItem(
             sales_order_id=so.id,
             product_id=item.product_id,
@@ -569,7 +620,7 @@ async def update_sales_order(
             discount_percent=item.discount_percent,
             discount_amount=calc["discount"],
             taxable_amount=calc["taxable"],
-            gst_rate=item.gst_rate,
+            gst_rate=calc["gst_rate"],
             cgst_amount=calc["cgst"],
             sgst_amount=calc["sgst"],
             igst_amount=calc["igst"],
@@ -702,8 +753,14 @@ async def convert_so_to_invoice(
 
     invoice_date = date.today()
 
-    # BUG-02: Auto-detect IGST
-    is_igst = determine_is_igst(db, "customer", so.customer_id)
+    invoice_type = determine_default_invoice_type(db, so.customer_id)
+    tax_mode = determine_tax_mode(db, "customer", so.customer_id)
+    invoice_tax_mode = invoice_type_tax_mode(invoice_type, fallback_is_igst=tax_mode["is_igst"])
+    is_igst = invoice_tax_mode["is_igst"]
+    gst_applicable = invoice_tax_mode["gst_applicable"]
+    if not tax_mode["gst_applicable"]:
+        is_igst = False
+        gst_applicable = False
 
     invoice = SalesInvoice(
         invoice_number=generate_invoice_number(db),
@@ -716,17 +773,10 @@ async def convert_so_to_invoice(
         sold_to_customer_id=so.sold_to_customer_id,
         bill_to_customer_id=so.bill_to_customer_id,
         ship_to_customer_id=so.ship_to_customer_id,
+        invoice_type=invoice_type,
         is_igst=is_igst,
-        subtotal=so.subtotal,
-        total_discount=so.total_discount,
-        total_taxable_amount=so.total_taxable_amount,
-        total_cgst=so.total_cgst,
-        total_sgst=so.total_sgst,
-        total_igst=so.total_igst,
-        total_gst=so.total_gst,
-        total_amount=so.total_amount,
         amount_paid=0,
-        amount_due=so.total_amount,
+        amount_due=0,
         notes=so.notes,
         terms_conditions=so.terms_conditions,
         created_by=current_user.id,
@@ -735,8 +785,17 @@ async def convert_so_to_invoice(
     db.flush()
 
     so_items = db.query(SalesOrderItem).filter(SalesOrderItem.sales_order_id == so.id).all()
+    subtotal = total_discount = total_taxable = total_cgst = total_sgst = total_igst = 0
     for item in so_items:
         product = db.query(Product).filter(Product.id == item.product_id).first()
+        calc = calc_line_item(
+            item.quantity,
+            item.unit_price,
+            item.discount_percent,
+            item.gst_rate,
+            is_igst,
+            gst_applicable,
+        )
         db.add(SalesInvoiceItem(
             invoice_id=invoice.id,
             product_id=item.product_id,
@@ -745,14 +804,30 @@ async def convert_so_to_invoice(
             unit_price=item.unit_price,
             mrp=product.mrp if product else 0,
             discount_percent=item.discount_percent,
-            discount_amount=item.discount_amount,
-            taxable_amount=item.taxable_amount,
-            gst_rate=item.gst_rate,
-            cgst_amount=item.cgst_amount,
-            sgst_amount=item.sgst_amount,
-            igst_amount=item.igst_amount,
-            total_amount=item.total_amount,
+            discount_amount=calc["discount"],
+            taxable_amount=calc["taxable"],
+            gst_rate=calc["gst_rate"],
+            cgst_amount=calc["cgst"],
+            sgst_amount=calc["sgst"],
+            igst_amount=calc["igst"],
+            total_amount=calc["total"],
         ))
+        subtotal += calc["gross"]
+        total_discount += calc["discount"]
+        total_taxable += calc["taxable"]
+        total_cgst += calc["cgst"]
+        total_sgst += calc["sgst"]
+        total_igst += calc["igst"]
+
+    invoice.subtotal = subtotal
+    invoice.total_discount = total_discount
+    invoice.total_taxable_amount = total_taxable
+    invoice.total_cgst = total_cgst
+    invoice.total_sgst = total_sgst
+    invoice.total_igst = total_igst
+    invoice.total_gst = total_cgst + total_sgst + total_igst
+    invoice.total_amount = total_taxable + invoice.total_gst
+    invoice.amount_due = invoice.total_amount
 
     db.commit()
     db.refresh(invoice)
@@ -800,11 +875,16 @@ async def create_invoice(
         if so and so.status not in {"confirmed", "fulfilled", "partial"}:
             raise HTTPException(status_code=400, detail="Only confirmed, partial, or fulfilled sales orders can generate invoices")
 
-    # BUG-02: Auto-detect IGST from state codes (override payload if customer has state code)
-    is_igst = payload.is_igst
-    auto_igst = determine_is_igst(db, "customer", payload.customer_id)
-    if customer.billing_state_code:
-        is_igst = auto_igst
+    # BUG-02: Auto-detect GST mode from country + state/state-code
+    tax_mode = determine_tax_mode(db, "customer", payload.customer_id)
+    invoice_type = payload.invoice_type or determine_default_invoice_type(db, payload.customer_id)
+    _validate_invoice_type_for_country(invoice_type, customer)
+    invoice_tax_mode = invoice_type_tax_mode(invoice_type, fallback_is_igst=tax_mode["is_igst"])
+    is_igst = invoice_tax_mode["is_igst"]
+    gst_applicable = invoice_tax_mode["gst_applicable"]
+    if not tax_mode["gst_applicable"]:
+        is_igst = False
+        gst_applicable = False
 
     invoice = SalesInvoice(
         invoice_number=generate_invoice_number(db),
@@ -819,6 +899,8 @@ async def create_invoice(
         ship_to_customer_id=payload.ship_to_customer_id or payload.customer_id,
         supply_state=payload.supply_state,
         supply_state_code=payload.supply_state_code,
+        invoice_type=invoice_type,
+        import_export_code=payload.import_export_code,
         is_igst=is_igst,
         notes=payload.notes,
         terms_conditions=payload.terms_conditions,
@@ -832,7 +914,14 @@ async def create_invoice(
         product = db.query(Product).filter(Product.id == item.product_id, Product.is_deleted == False).first()
         if not product:
             raise HTTPException(status_code=400, detail="Invalid product")
-        calc = calc_line_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst)
+        calc = calc_line_item(
+            item.quantity,
+            item.unit_price,
+            item.discount_percent,
+            item.gst_rate,
+            is_igst,
+            gst_applicable,
+        )
         db.add(SalesInvoiceItem(
             invoice_id=invoice.id,
             product_id=item.product_id,
@@ -848,7 +937,7 @@ async def create_invoice(
             discount_percent=item.discount_percent,
             discount_amount=calc["discount"],
             taxable_amount=calc["taxable"],
-            gst_rate=item.gst_rate,
+            gst_rate=calc["gst_rate"],
             cgst_amount=calc["cgst"],
             sgst_amount=calc["sgst"],
             igst_amount=calc["igst"],
@@ -908,8 +997,17 @@ async def update_invoice(
 
     calculated_due_date = _calculate_invoice_due_date(payload.invoice_date, customer)
 
-    # BUG-02: Auto-detect IGST (initialize before conditional SO check)
-    is_igst = determine_is_igst(db, "customer", payload.customer_id)
+    # BUG-02: Auto-detect GST mode (country + state/state-code)
+    tax_mode = determine_tax_mode(db, "customer", payload.customer_id)
+    default_invoice_type = determine_default_invoice_type(db, payload.customer_id)
+    invoice_type = payload.invoice_type or invoice.invoice_type or default_invoice_type
+    _validate_invoice_type_for_country(invoice_type, customer)
+    invoice_tax_mode = invoice_type_tax_mode(invoice_type, fallback_is_igst=tax_mode["is_igst"])
+    is_igst = invoice_tax_mode["is_igst"]
+    gst_applicable = invoice_tax_mode["gst_applicable"]
+    if not tax_mode["gst_applicable"]:
+        is_igst = False
+        gst_applicable = False
         
     if payload.sales_order_id:
         so = db.query(SalesOrder).filter(SalesOrder.id == payload.sales_order_id).first()
@@ -926,6 +1024,8 @@ async def update_invoice(
     invoice.ship_to_customer_id = payload.ship_to_customer_id or payload.customer_id
     invoice.supply_state = payload.supply_state
     invoice.supply_state_code = payload.supply_state_code
+    invoice.invoice_type = invoice_type
+    invoice.import_export_code = payload.import_export_code
     invoice.is_igst = is_igst
     invoice.notes = payload.notes
     invoice.terms_conditions = payload.terms_conditions
@@ -938,7 +1038,14 @@ async def update_invoice(
         product = db.query(Product).filter(Product.id == item.product_id, Product.is_deleted == False).first()
         if not product:
             raise HTTPException(status_code=400, detail="Invalid product")
-        calc = calc_line_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst)
+        calc = calc_line_item(
+            item.quantity,
+            item.unit_price,
+            item.discount_percent,
+            item.gst_rate,
+            is_igst,
+            gst_applicable,
+        )
         db.add(SalesInvoiceItem(
             invoice_id=invoice.id,
             product_id=item.product_id,
@@ -954,7 +1061,7 @@ async def update_invoice(
             discount_percent=item.discount_percent,
             discount_amount=calc["discount"],
             taxable_amount=calc["taxable"],
-            gst_rate=item.gst_rate,
+            gst_rate=calc["gst_rate"],
             cgst_amount=calc["cgst"],
             sgst_amount=calc["sgst"],
             igst_amount=calc["igst"],
@@ -1083,8 +1190,10 @@ async def create_sales_return(
     if not invoice:
         raise HTTPException(status_code=400, detail="Invalid invoice")
 
-    # BUG-19: Use the IGST flag from the original invoice
-    is_igst = invoice.is_igst
+    # BUG-19: Keep return tax mode aligned with India-only GST applicability.
+    tax_mode = determine_tax_mode(db, "customer", payload.customer_id)
+    gst_applicable = tax_mode["gst_applicable"]
+    is_igst = invoice.is_igst if gst_applicable else False
 
     ret = SalesReturn(
         return_number=generate_sales_return_number(db),
@@ -1106,7 +1215,8 @@ async def create_sales_return(
 
         taxable = round(item.unit_price * item.quantity)
         # BUG-19: Use invoice's IGST flag for consistent tax
-        cgst, sgst, igst = split_tax(taxable, item.gst_rate, is_igst)
+        effective_gst_rate = item.gst_rate if gst_applicable else 0
+        cgst, sgst, igst = split_tax(taxable, effective_gst_rate, is_igst, gst_applicable)
         total = taxable + cgst + sgst + igst
         db.add(SalesReturnItem(
             sales_return_id=ret.id,
@@ -1115,7 +1225,7 @@ async def create_sales_return(
             quantity=item.quantity,
             unit_price=item.unit_price,
             taxable_amount=taxable,
-            gst_rate=item.gst_rate,
+            gst_rate=effective_gst_rate,
             cgst_amount=cgst,
             sgst_amount=sgst,
             igst_amount=igst,

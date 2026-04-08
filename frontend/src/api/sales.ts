@@ -10,6 +10,12 @@
 
 import { apiClient } from './client';
 
+export type InvoiceTypeValue =
+  | 'export_invoice'
+  | 'within_state'
+  | 'other_states'
+  | 'union_territory';
+
 // Request payload types (matching backend schemas)
 export interface SalesLineItem {
   product_id: string;
@@ -84,6 +90,8 @@ export interface CreateInvoicePayload {
   ship_to_customer_id?: string;
   supply_state?: string;
   supply_state_code?: string;
+  invoice_type?: InvoiceTypeValue;
+  import_export_code?: string;
   is_igst?: boolean;
   notes?: string;
   terms_conditions?: string;
@@ -172,6 +180,8 @@ export interface SalesInvoice {
   ship_to_customer_id?: string;
   supply_state?: string;
   supply_state_code?: string;
+  invoice_type: InvoiceTypeValue;
+  import_export_code?: string;
   is_igst: boolean;
   subtotal: number;
   total_discount: number;

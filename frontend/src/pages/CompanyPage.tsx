@@ -16,6 +16,7 @@ const schema = z.object({
   gstin: z.string().optional(),
   gstin_status: z.string().optional(),
   pan: z.string().optional(),
+  import_export_number: z.string().optional(),
   company_director_name: z.string().optional(),
   company_director_contact: z.string().optional(),
   state_code: z.string().optional(),
@@ -61,6 +62,7 @@ const mapCompanyToFormValues = (company?: Company): CompanyForm => ({
   gstin: company?.gstin ?? '',
   gstin_status: company?.gstin_status ?? 'non-registered',
   pan: company?.pan ?? '',
+  import_export_number: company?.import_export_number ?? '',
   company_director_name: company?.company_director_name ?? '',
   company_director_contact: company?.company_director_contact ?? '',
   state_code: company?.state_code ?? '',
@@ -152,6 +154,7 @@ const CompanyPage = () => {
       gstin: normalizeOptional(parsed.data.gstin)?.toUpperCase() ?? null,
       gstin_status: parsed.data.gstin_status ?? 'non-registered',
       pan: normalizeOptional(parsed.data.pan)?.toUpperCase() ?? null,
+      import_export_number: normalizeOptional(parsed.data.import_export_number),
       company_director_name: normalizeOptional(parsed.data.company_director_name),
       company_director_contact: normalizeOptional(parsed.data.company_director_contact),
       state_code: normalizeOptional(parsed.data.state_code)?.toUpperCase() ?? null,
@@ -243,6 +246,10 @@ const CompanyPage = () => {
                 <div>
                   <label htmlFor="company_pan" className="hms-label">PAN</label>
                   <input id="company_pan" className="hms-input" placeholder="e.g. AABCT1234F" {...register('pan')} />
+                </div>
+                <div>
+                  <label htmlFor="import_export_number" className="hms-label">Import &amp; Export Number</label>
+                  <input id="import_export_number" className="hms-input" placeholder="e.g. 0310001234" {...register('import_export_number')} />
                 </div>
                 <div>
                   <label htmlFor="state_code" className="hms-label">State code</label>

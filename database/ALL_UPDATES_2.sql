@@ -91,6 +91,12 @@ ADD COLUMN IF NOT EXISTS currency_code VARCHAR(3) NOT NULL DEFAULT 'INR';
 ALTER TABLE purchase_orders
 ADD COLUMN IF NOT EXISTS exchange_rate NUMERIC(12, 6) NOT NULL DEFAULT 1.0;
 
+ALTER TABLE purchase_orders
+ADD COLUMN IF NOT EXISTS under_delivery_tolerance NUMERIC(10, 2) NOT NULL DEFAULT 0;
+
+ALTER TABLE purchase_orders
+ADD COLUMN IF NOT EXISTS over_delivery_tolerance NUMERIC(10, 2) NOT NULL DEFAULT 0;
+
 ALTER TABLE sales_orders
 ADD COLUMN IF NOT EXISTS currency_code VARCHAR(3) NOT NULL DEFAULT 'INR';
 
@@ -117,6 +123,12 @@ ADD COLUMN IF NOT EXISTS expiry_date DATE;
 -- Add payment_due_date column to goods_receipt_notes table
 ALTER TABLE goods_receipt_notes
 ADD COLUMN IF NOT EXISTS payment_due_date DATE;
+
+ALTER TABLE goods_receipt_notes
+ADD COLUMN IF NOT EXISTS under_delivery_tolerance NUMERIC(10, 2) NOT NULL DEFAULT 0;
+
+ALTER TABLE goods_receipt_notes
+ADD COLUMN IF NOT EXISTS over_delivery_tolerance NUMERIC(10, 2) NOT NULL DEFAULT 0;
 
 COMMENT ON COLUMN goods_receipt_notes.payment_due_date IS 'Auto-calculated: Receipt Date + Supplier Payment Terms (Days)';
 
@@ -262,6 +274,23 @@ ALTER COLUMN alternate_phone TYPE VARCHAR(20);
 
 ALTER TABLE suppliers
 ADD COLUMN IF NOT EXISTS currency_code VARCHAR(10) NOT NULL DEFAULT 'INR';
+
+-- ============================================================================
+-- 13. Sales Invoice Type Classification (SAL-029)
+-- ============================================================================
+
+ALTER TABLE sales_invoices
+ADD COLUMN IF NOT EXISTS invoice_type VARCHAR(30) NOT NULL DEFAULT 'within_state';
+
+-- ============================================================================
+-- 14. Export Invoice Enhancements (SAL-030)
+-- ============================================================================
+
+ALTER TABLE sales_invoices
+ADD COLUMN IF NOT EXISTS import_export_code VARCHAR(50);
+
+ALTER TABLE company
+ADD COLUMN IF NOT EXISTS import_export_number VARCHAR(50);
 
 -- ============================================================================
 COMMIT;

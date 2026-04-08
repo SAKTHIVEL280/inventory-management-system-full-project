@@ -23,7 +23,6 @@ const productSchema = z.object({
   selling_price: z.coerce.number().min(0),
   mrp: z.coerce.number().min(0),
   safety_stock: z.coerce.number().min(0),
-  opening_stock: z.coerce.number().min(0),
   category_id: z.string().min(1, 'Category required'),
   uom_id: z.string().optional(),
   is_active: z.boolean(),
@@ -42,13 +41,13 @@ const productSchema = z.object({
 });
 
 type ProductForm = z.infer<typeof productSchema>;
-type NumericProductField = 'unit_price' | 'base_unit_qty' | 'selling_price' | 'mrp' | 'safety_stock' | 'opening_stock';
+type NumericProductField = 'unit_price' | 'base_unit_qty' | 'selling_price' | 'mrp' | 'safety_stock';
 
 const defaultProductValues: ProductForm = {
   name: '', description: '', sku: '', hsn_code: '', gst_rate: '18',
   unit_price: 0, base_unit_qty: 1, alt_uom_id: '', alt_uom_conversion: undefined,
   selling_price: 0, mrp: 0,
-  safety_stock: 0, opening_stock: 0, category_id: '', uom_id: '',
+  safety_stock: 0, category_id: '', uom_id: '',
   is_active: true, status: 'active',
 };
 
@@ -255,7 +254,6 @@ const ProductsPage = () => {
       selling_price: item.selling_price / 100,
       mrp: item.mrp / 100,
       safety_stock: item.safety_stock ?? 0,
-      opening_stock: item.opening_stock,
       category_id: item.category_id,
       uom_id: item.uom_id,
       is_active: item.status === 'active',
@@ -318,7 +316,7 @@ const ProductsPage = () => {
       safety_stock: Math.round(parsed.data.safety_stock),
       opening_stock: editingProduct
         ? editingProduct.opening_stock  // Preserve original on edit
-        : Math.round(parsed.data.opening_stock),
+        : 0,
       status: parsed.data.status,
       is_active: parsed.data.status === 'active',
     };
@@ -500,20 +498,6 @@ const ProductsPage = () => {
                   <label htmlFor="safety_stock" className="hms-label">Min Safety Stock</label>
                   <input id="safety_stock" type="number" className="hms-input" placeholder="0" {...registerNumericField('safety_stock')} />
                   {getFieldError('safety_stock') && <p className="mt-1 text-xs text-danger">{getFieldError('safety_stock')}</p>}
-                </div>
-                <div>
-                  <label htmlFor="opening_stock" className="hms-label">
-                    Opening stock {editingProduct && <span className="text-xs text-neutral-400">(read-only)</span>}
-                  </label>
-                  <input
-                    id="opening_stock"
-                    type="number"
-                    className="hms-input"
-                    placeholder="0"
-                    disabled={!!editingProduct}
-                    {...registerNumericField('opening_stock')}
-                  />
-                  {getFieldError('opening_stock') && <p className="mt-1 text-xs text-danger">{getFieldError('opening_stock')}</p>}
                 </div>
                 <div>
                   <label htmlFor="status" className="hms-label">Status</label>

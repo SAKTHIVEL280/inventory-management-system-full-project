@@ -2,7 +2,7 @@
 from typing import List, Optional
 from uuid import UUID
 from datetime import date
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
 
 class PurchaseLineItemRequest(BaseModel):
@@ -27,7 +27,17 @@ class PurchaseOrderCreateRequest(BaseModel):
     status: str = "draft"
     currency_code: str = "INR"
     exchange_rate: float = 1.0
+    under_delivery_tolerance: Optional[float] = Field(default=0, ge=0)
+    over_delivery_tolerance: Optional[float] = Field(default=0, ge=0)
     items: List[PurchaseLineItemRequest]
+
+    @model_validator(mode="after")
+    def validate_tolerance_range(self):
+        self.under_delivery_tolerance = float(self.under_delivery_tolerance or 0)
+        self.over_delivery_tolerance = float(self.over_delivery_tolerance or 0)
+        if self.under_delivery_tolerance > self.over_delivery_tolerance:
+            raise ValueError("Under Delivery Tolerance must be less than or equal to Over Delivery Tolerance")
+        return self
 
 
 class PurchaseOrderStatusRequest(BaseModel):
@@ -41,7 +51,17 @@ class GRNCreateRequest(BaseModel):
     supplier_invoice_date: Optional[date] = None
     receipt_date: date
     notes: Optional[str] = None
+    under_delivery_tolerance: Optional[float] = Field(default=0, ge=0)
+    over_delivery_tolerance: Optional[float] = Field(default=0, ge=0)
     items: List[PurchaseLineItemRequest]
+
+    @model_validator(mode="after")
+    def validate_tolerance_range(self):
+        self.under_delivery_tolerance = float(self.under_delivery_tolerance or 0)
+        self.over_delivery_tolerance = float(self.over_delivery_tolerance or 0)
+        if self.under_delivery_tolerance > self.over_delivery_tolerance:
+            raise ValueError("Under Delivery Tolerance must be less than or equal to Over Delivery Tolerance")
+        return self
 
 
 class PurchaseReturnLineItemRequest(BaseModel):

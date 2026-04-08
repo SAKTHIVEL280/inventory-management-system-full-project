@@ -44,6 +44,7 @@ export interface Company {
   gstin?: string | null;
   gstin_status?: string;
   pan?: string | null;
+  import_export_number?: string | null;
   company_director_name?: string | null;
   company_director_contact?: string | null;
   address_line1?: string | null;

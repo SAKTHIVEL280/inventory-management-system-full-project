@@ -25,6 +25,20 @@ import { emptyWhenZero } from '../utils/numberInput';
 interface ProductOption { id: string; name: string; product_code: string; purchase_price: number; gst_rate: number; }
 interface SupplierOption { id: string; company_name: string; supplier_code: string; payment_terms_days: number; }
 
+interface LinkedPOItemOption {
+  purchase_order_item_id: string;
+  product_id: string;
+  product_name: string;
+  product_code: string;
+  sku?: string;
+  ordered_qty: number;
+  received_qty: number;
+  pending_qty: number;
+  unit_price: number;
+  discount_percent: number;
+  gst_rate: number;
+}
+
 /** Internal line item — unit_price always in PAISE */
 interface GRNLineItem {
   product_id: string;
@@ -40,6 +54,15 @@ interface GRNLineItem {
   // Display-only context from PO
   po_ordered_qty?: number;
   po_received_qty?: number;
+}
+
+interface TolerancePopupData {
+  title: 'Under delivery exceeded allowed tolerance' | 'Over delivery exceeded allowed tolerance';
+  itemLabel: string;
+  rowNumber: number;
+  receivedQty: number;
+  minAllowed: number;
+  maxAllowed: number;
 }
 
 const GRNPage = () => {
@@ -67,15 +90,23 @@ const GRNPage = () => {
   const [supplierId, setSupplierId] = useState('');
   const [paymentTermsDays, setPaymentTermsDays] = useState(30);
   const [paymentDueDate, setPaymentDueDate] = useState('');
+  const [underDeliveryTolerance, setUnderDeliveryTolerance] = useState(0);
+  const [overDeliveryTolerance, setOverDeliveryTolerance] = useState(0);
   const [purchaseOrderId, setPurchaseOrderId] = useState<string | undefined>(undefined);
   const [receiptDate, setReceiptDate] = useState(todayLocalDateInputValue());
   const [supplierInvoiceNumber, setSupplierInvoiceNumber] = useState('');
   const [supplierInvoiceDate, setSupplierInvoiceDate] = useState('');
   const [notes, setNotes] = useState('');
+  const [itemSearchQuery, setItemSearchQuery] = useState('');
   const [items, setItems] = useState<GRNLineItem[]>([]);
+  const [linkedPOItemOptions, setLinkedPOItemOptions] = useState<LinkedPOItemOption[]>([]);
+  const [searchMatchedRowIndex, setSearchMatchedRowIndex] = useState<number | null>(null);
+  const [tolerancePopup, setTolerancePopup] = useState<TolerancePopupData | null>(null);
+  const [toleranceErrorItemIndex, setToleranceErrorItemIndex] = useState<number | null>(null);
 
   const masterLoaded = useRef(false);
   const pendingPoId = useRef<string | null>(null);
+  const itemRowRefs = useRef<Array<HTMLTableRowElement | null>>([]);
 
   // Calculate payment due date from receipt date + payment terms
   const calculateDueDate = useCallback((receipt: string, terms: number) => {
@@ -190,9 +221,33 @@ const GRNPage = () => {
         })
         .filter((item) => item.quantity > 0);
 
+      const poLinkedOptions: LinkedPOItemOption[] = poItems
+        .map((item) => {
+          const product = products.find((p) => p.id === item.product_id);
+          const orderedQty = Number(item.quantity) || 0;
+          const receivedQty = Number(item.received_quantity || 0);
+          const pendingQty = Number((orderedQty - receivedQty).toFixed(4));
+          return {
+            purchase_order_item_id: item.id || '',
+            product_id: item.product_id,
+            product_name: product?.name || 'Unknown Product',
+            product_code: product?.product_code || '-',
+            sku: (product as ProductOption & { sku?: string })?.sku,
+            ordered_qty: orderedQty,
+            received_qty: receivedQty,
+            pending_qty: pendingQty > 0 ? pendingQty : 0,
+            unit_price: Number(item.unit_price || 0),
+            discount_percent: Number(item.discount_percent || 0),
+            gst_rate: Number(item.gst_rate || 0),
+          };
+        })
+        .filter((row) => row.pending_qty > 0);
+
       setSelectedPO(po);
       setPurchaseOrderId(poId);
       setSupplierId(po.supplier_id);
+      setUnderDeliveryTolerance(Number(po.under_delivery_tolerance || 0));
+      setOverDeliveryTolerance(Number(po.over_delivery_tolerance || 0));
       
       // Auto-fill payment terms from supplier
       const supplier = suppliers.find(s => s.id === po.supplier_id);
@@ -200,7 +255,11 @@ const GRNPage = () => {
         setPaymentTermsDays(supplier.payment_terms_days ?? 30);
       }
       
+      setLinkedPOItemOptions(poLinkedOptions);
       setItems(prefilledItems);
+      setItemSearchQuery('');
+      setTolerancePopup(null);
+      setToleranceErrorItemIndex(null);
       setShowForm(true);
       toast.success('PO loaded. Verify received quantities and supplier invoice details.');
     } catch {
@@ -209,13 +268,16 @@ const GRNPage = () => {
   };
 
   const resetForm = () => {
-    setSupplierId(''); setPaymentTermsDays(30); setPaymentDueDate(''); setPurchaseOrderId(undefined); setSelectedPO(null);
+    setSupplierId(''); setPaymentTermsDays(30); setPaymentDueDate(''); setUnderDeliveryTolerance(0); setOverDeliveryTolerance(0); setPurchaseOrderId(undefined); setSelectedPO(null);
     setReceiptDate(todayLocalDateInputValue());
     setSupplierInvoiceNumber(''); setSupplierInvoiceDate('');
-    setNotes(''); setItems([]); setError('');
+    setNotes(''); setItemSearchQuery(''); setLinkedPOItemOptions([]); setItems([]); setError(''); setTolerancePopup(null); setToleranceErrorItemIndex(null); setSearchMatchedRowIndex(null);
   };
 
   const addItem = () => {
+    setTolerancePopup(null);
+    setToleranceErrorItemIndex(null);
+    setSearchMatchedRowIndex(null);
     setItems([...items, { product_id: '', batch_no: '', manufacture_date: '', expiry_date: '', quantity: 1, unit_price: 0, discount_percent: 0, gst_rate: 18 }]);
   };
 
@@ -230,10 +292,46 @@ const GRNPage = () => {
         updated[idx].gst_rate = p.gst_rate;
       }
     }
+    if (field === 'quantity' && toleranceErrorItemIndex === idx) {
+      setTolerancePopup(null);
+      setToleranceErrorItemIndex(null);
+      setError('');
+    }
     setItems(updated);
   };
 
-  const removeItem = (idx: number) => setItems(items.filter((_, i) => i !== idx));
+  const updateItemFromPOOption = (idx: number, purchaseOrderItemId: string) => {
+    const option = linkedPOItemOptions.find((row) => row.purchase_order_item_id === purchaseOrderItemId);
+    if (!option) return;
+
+    const updated = [...items];
+    updated[idx] = {
+      ...updated[idx],
+      product_id: option.product_id,
+      purchase_order_item_id: option.purchase_order_item_id,
+      quantity: option.pending_qty > 0 ? option.pending_qty : 0,
+      unit_price: option.unit_price,
+      discount_percent: option.discount_percent,
+      gst_rate: option.gst_rate,
+      po_ordered_qty: option.ordered_qty,
+      po_received_qty: option.received_qty,
+    };
+
+    if (toleranceErrorItemIndex === idx) {
+      setTolerancePopup(null);
+      setToleranceErrorItemIndex(null);
+      setError('');
+    }
+
+    setItems(updated);
+  };
+
+  const removeItem = (idx: number) => {
+    setTolerancePopup(null);
+    setToleranceErrorItemIndex(null);
+    setSearchMatchedRowIndex(null);
+    setItems(items.filter((_, i) => i !== idx));
+  };
 
   // All calculations in PAISE — unit_price is always in paise
   const calcTotal = (i: GRNLineItem) => {
@@ -244,6 +342,12 @@ const GRNPage = () => {
   };
 
   const formatPaise = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+  const formatQty = (qty: number) => Number(qty || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const openTolerancePopup = (payload: TolerancePopupData) => {
+    setToleranceErrorItemIndex(payload.rowNumber - 1);
+    setTolerancePopup(payload);
+  };
 
   // Convert paise to rupees for display in input fields
   const paiseToRupees = (paise: number) => (paise / 100).toFixed(2);
@@ -251,9 +355,15 @@ const GRNPage = () => {
   const rupeesToPaise = (rupees: string) => Math.round((parseFloat(rupees) || 0) * 100);
 
   const handleSubmit = async () => {
+    setTolerancePopup(null);
+    setToleranceErrorItemIndex(null);
     if (!supplierId) { setError('Please select a supplier'); return; }
     if (items.length === 0) { setError('Please add at least one item'); return; }
     if (!receiptDate) { setError('Please select a receipt date'); return; }
+    if (underDeliveryTolerance > overDeliveryTolerance) {
+      setError('Under Delivery Tolerance must be less than or equal to Over Delivery Tolerance');
+      return;
+    }
     
     // Validate receipt date is not in the future
     const today = new Date();
@@ -269,6 +379,36 @@ const GRNPage = () => {
     if (invalidItems.length > 0) { setError('Please select a product for all line items'); return; }
     const zeroQtyItems = items.filter(i => !i.quantity || i.quantity <= 0);
     if (zeroQtyItems.length > 0) { setError('All items must have a quantity greater than 0'); return; }
+
+    if (selectedPO) {
+      const qtyOutOfRangeIndex = items.findIndex((i) => {
+        const orderedQty = Number(i.po_ordered_qty || 0);
+        const minimumAllowed = Math.max(0, orderedQty - Number(underDeliveryTolerance || 0));
+        const maximumAllowed = orderedQty + Number(overDeliveryTolerance || 0);
+        const receivedQty = Number(i.quantity || 0);
+        return receivedQty < minimumAllowed || receivedQty > maximumAllowed;
+      });
+
+      if (qtyOutOfRangeIndex >= 0) {
+        const qtyOutOfRange = items[qtyOutOfRangeIndex];
+        const orderedQty = Number(qtyOutOfRange.po_ordered_qty || 0);
+        const minimumAllowed = Math.max(0, orderedQty - Number(underDeliveryTolerance || 0));
+        const maximumAllowed = orderedQty + Number(overDeliveryTolerance || 0);
+        const receivedQty = Number(qtyOutOfRange.quantity || 0);
+        const isUnderDelivery = receivedQty < minimumAllowed;
+        const productName = products.find((p) => p.id === qtyOutOfRange.product_id)?.name || `Line item ${qtyOutOfRangeIndex + 1}`;
+
+        openTolerancePopup({
+          title: isUnderDelivery ? 'Under delivery exceeded allowed tolerance' : 'Over delivery exceeded allowed tolerance',
+          itemLabel: productName,
+          rowNumber: qtyOutOfRangeIndex + 1,
+          receivedQty,
+          minAllowed: minimumAllowed,
+          maxAllowed: maximumAllowed,
+        });
+        return;
+      }
+    }
 
     const invalidDateItemIndex = items.findIndex(
       (i) => i.manufacture_date && i.expiry_date && i.expiry_date < i.manufacture_date,
@@ -311,6 +451,8 @@ const GRNPage = () => {
         receipt_date: receiptDate,
         supplier_invoice_number: supplierInvoiceNumber || undefined,
         supplier_invoice_date: supplierInvoiceDate || undefined,
+        under_delivery_tolerance: underDeliveryTolerance,
+        over_delivery_tolerance: overDeliveryTolerance,
         notes: notes || undefined,
         items: items.map(i => ({
           product_id: i.product_id,
@@ -423,6 +565,48 @@ const GRNPage = () => {
     }
   };
 
+  const handleLinkedPOChange = async (nextPoId: string) => {
+    const currentPoId = purchaseOrderId || '';
+    if (nextPoId === currentPoId) return;
+
+    const hasUnsavedData =
+      items.length > 0 ||
+      Boolean(supplierInvoiceNumber.trim()) ||
+      Boolean(supplierInvoiceDate) ||
+      Boolean(notes.trim());
+
+    if (hasUnsavedData) {
+      const confirmed = await confirmWithToast('Changing the PO will reset current items. Do you want to continue?', {
+        type: 'warning',
+      });
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    setTolerancePopup(null);
+    setToleranceErrorItemIndex(null);
+    setSearchMatchedRowIndex(null);
+    setError('');
+    setItemSearchQuery('');
+    setItems([]);
+    setLinkedPOItemOptions([]);
+    setSupplierInvoiceNumber('');
+    setSupplierInvoiceDate('');
+    setNotes('');
+
+    if (nextPoId) {
+      await loadPOData(nextPoId);
+      return;
+    }
+
+    setPurchaseOrderId(undefined);
+    setSelectedPO(null);
+    setSupplierId('');
+    setUnderDeliveryTolerance(0);
+    setOverDeliveryTolerance(0);
+  };
+
   const filteredGRNs = grns.filter((g) => {
     const q = searchQuery.trim().toLowerCase();
     const supplierName = supplierNameById(g.supplier_id);
@@ -446,6 +630,36 @@ const GRNPage = () => {
   const availableProducts = selectedPO
     ? products.filter(p => items.some(i => i.product_id === p.id))
     : products;
+
+  useEffect(() => {
+    const query = itemSearchQuery.trim().toLowerCase();
+    if (!query) {
+      setSearchMatchedRowIndex(null);
+      return;
+    }
+
+    const matchedIndex = items.findIndex((item) => {
+      const linked = item.purchase_order_item_id
+        ? linkedPOItemOptions.find((row) => row.purchase_order_item_id === item.purchase_order_item_id)
+        : undefined;
+      const product = products.find((p) => p.id === item.product_id);
+      const name = product?.name || linked?.product_name || '';
+      const code = product?.product_code || linked?.product_code || '';
+      const haystack = `${name} ${code}`.toLowerCase();
+      return haystack.includes(query);
+    });
+
+    if (matchedIndex < 0) {
+      setSearchMatchedRowIndex(null);
+      return;
+    }
+
+    setSearchMatchedRowIndex(matchedIndex);
+    const rowEl = itemRowRefs.current[matchedIndex];
+    if (rowEl) {
+      rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [itemSearchQuery, items, products, linkedPOItemOptions]);
 
   return (
     <AppLayout title="Goods Receipt Notes (GRN)">
@@ -558,12 +772,14 @@ const GRNPage = () => {
                 <button onClick={() => setDetailGRN(null)} className="text-neutral-400 hover:text-neutral-600 text-2xl">&times;</button>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 bg-neutral-50 p-4 rounded-lg">
+              <div className="grid grid-cols-2 md:grid-cols-7 gap-4 bg-neutral-50 p-4 rounded-lg">
                 <div><p className="text-xs text-neutral-600">Receipt Date</p><p className="font-medium">{detailGRN.receipt_date}</p></div>
                 <div><p className="text-xs text-neutral-600">Payment Due Date</p><p className="font-medium">{detailGRN.payment_due_date || '-'}</p></div>
                 <div><p className="text-xs text-neutral-600">Status</p><span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${sc[detailGRN.status] || 'bg-gray-100'}`}>{detailGRN.status}</span></div>
                 <div><p className="text-xs text-neutral-600">Total Amount</p><p className="font-medium">{formatPaise(detailGRN.total_amount)}</p></div>
                 <div><p className="text-xs text-neutral-600">Supplier Invoice</p><p className="font-medium">{detailGRN.supplier_invoice_number || '—'}</p></div>
+                <div><p className="text-xs text-neutral-600">Under Delivery Tol. (Qty)</p><p className="font-medium">{Number(detailGRN.under_delivery_tolerance || 0).toFixed(2)}</p></div>
+                <div><p className="text-xs text-neutral-600">Over Delivery Tol. (Qty)</p><p className="font-medium">{Number(detailGRN.over_delivery_tolerance || 0).toFixed(2)}</p></div>
               </div>
 
               {/* Tax Breakdown */}
@@ -697,11 +913,8 @@ const GRNPage = () => {
                   <label className="mb-1 block text-sm font-semibold text-neutral-700">Linked PO</label>
                   <select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={purchaseOrderId || ''}
                     onChange={e => {
-                      const nextPoId = e.target.value;
-                      if (nextPoId) { loadPOData(nextPoId); }
-                      else { setPurchaseOrderId(undefined); setSelectedPO(null); setItems([]); setSupplierId(''); }
+                      void handleLinkedPOChange(e.target.value);
                     }}
-                    disabled={!!selectedPO}
                   >
                     <option value="">Standalone GRN</option>
                     {purchaseOrders.filter(po => !supplierId || po.supplier_id === supplierId).map(po =>
@@ -729,6 +942,30 @@ const GRNPage = () => {
                     title="Auto-calculated: Receipt Date + Payment Terms"
                   />
                 </div>
+                <div>
+                  <label className="mb-1 block text-sm font-semibold text-neutral-700">Under Delivery Tolerance (Qty)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className={`w-full rounded-lg border px-3 py-2 text-sm ${selectedPO ? 'border-neutral-200 bg-neutral-50' : 'border-neutral-200'}`}
+                    value={underDeliveryTolerance}
+                    onChange={e => setUnderDeliveryTolerance(parseFloat(e.target.value) || 0)}
+                    readOnly={!!selectedPO}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-semibold text-neutral-700">Over Delivery Tolerance (Qty)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    className={`w-full rounded-lg border px-3 py-2 text-sm ${selectedPO ? 'border-neutral-200 bg-neutral-50' : 'border-neutral-200'}`}
+                    value={overDeliveryTolerance}
+                    onChange={e => setOverDeliveryTolerance(parseFloat(e.target.value) || 0)}
+                    readOnly={!!selectedPO}
+                  />
+                </div>
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Receipt Date *</label><input type="date" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={receiptDate} onChange={e => setReceiptDate(e.target.value)} /></div>
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Supplier Invoice #</label><input type="text" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={supplierInvoiceNumber} onChange={e => setSupplierInvoiceNumber(e.target.value)} placeholder="e.g., SI-12345" /></div>
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Supplier Invoice Date</label><input type="date" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={supplierInvoiceDate} onChange={e => setSupplierInvoiceDate(e.target.value)} /></div>
@@ -738,13 +975,23 @@ const GRNPage = () => {
               <div>
                 <div className="mb-2 flex items-center justify-between">
                   <h3 className="text-sm font-semibold">Items</h3>
-                  {!selectedPO && (
-                    <button onClick={addItem} className="rounded bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary">+ Add Item</button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      className="w-72 rounded border border-neutral-200 px-2.5 py-1.5 text-xs"
+                      placeholder={selectedPO ? 'Search PO items by name/code' : 'Search item by product or code'}
+                      value={itemSearchQuery}
+                      onChange={(e) => setItemSearchQuery(e.target.value)}
+                    />
+                    {!selectedPO && (
+                      <button onClick={addItem} className="rounded bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary">+ Add Item</button>
+                    )}
+                  </div>
                 </div>
                 <div className="max-h-[52vh] overflow-auto rounded-lg border border-neutral-200">
                   <table className="w-full text-sm">
                     <thead><tr className="bg-neutral-50">
+                      <th className="px-3 py-2 text-right w-14">S.No</th>
                       <th className="px-3 py-2 text-left">Product Code</th>
                       <th className="px-3 py-2 text-left">Product</th>
                       <th className="px-3 py-2 text-right w-36">Received Qty</th>
@@ -760,35 +1007,56 @@ const GRNPage = () => {
                     </tr></thead>
                     <tbody>
                       {items.map((item, idx) => (
-                        <tr key={idx} className="border-t border-neutral-100">
+                        <tr
+                          key={idx}
+                          ref={(el) => {
+                            itemRowRefs.current[idx] = el;
+                          }}
+                          className={`border-t border-neutral-100 ${searchMatchedRowIndex === idx ? 'bg-amber-50' : ''}`}
+                        >
+                          <td className="px-3 py-2 text-right text-xs font-semibold text-neutral-600">{idx + 1}</td>
                           <td className="px-3 py-2">
-                            <span className="text-xs font-semibold text-neutral-700">{products.find(p => p.id === item.product_id)?.product_code || '-'}</span>
+                            <span className="text-xs font-semibold text-neutral-700">{products.find(p => p.id === item.product_id)?.product_code || linkedPOItemOptions.find((row) => row.purchase_order_item_id === item.purchase_order_item_id)?.product_code || '-'}</span>
                           </td>
                           <td className="px-3 py-2">
                             {selectedPO ? (
-                              <span className="text-sm font-medium">{products.find(p => p.id === item.product_id)?.name || 'Unknown'}</span>
+                              <select
+                                className="w-full rounded border px-2 py-1.5 text-sm"
+                                value={item.purchase_order_item_id || ''}
+                                onChange={e => updateItemFromPOOption(idx, e.target.value)}
+                              >
+                                <option value="">Select PO Item</option>
+                                {linkedPOItemOptions.map((row) => (
+                                  <option key={row.purchase_order_item_id} value={row.purchase_order_item_id}>
+                                    {row.product_name} ({row.product_code})
+                                  </option>
+                                ))}
+                              </select>
                             ) : (
                               <select className="w-full rounded border px-2 py-1.5 text-sm" value={item.product_id} onChange={e => updateItem(idx, 'product_id', e.target.value)}>
                                 <option value="">Select</option>
-                                {availableProducts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                {availableProducts.map(p => <option key={p.id} value={p.id}>{p.name} ({p.product_code})</option>)}
                               </select>
                             )}
                           </td>
                           <td className="px-3 py-2">
                             {selectedPO ? (
-                              <div className="flex items-center gap-1.5 justify-end">
-                                <span className="text-[10px] text-neutral-500 whitespace-nowrap shrink-0">
-                                  (Ord: {item.po_ordered_qty ?? 0} | Prev: {item.po_received_qty ?? 0})
-                                </span>
+                              <div className="flex flex-col items-end gap-1">
+                                <div className="text-[10px] text-neutral-500 whitespace-nowrap shrink-0">
+                                  (Ord: {formatQty(item.po_ordered_qty ?? 0)} | Prev: {formatQty(item.po_received_qty ?? 0)})
+                                </div>
                                 <input
                                   type="number"
                                   min="0.01"
                                   step="0.01"
-                                  className="w-20 rounded border px-2 py-1.5 text-right text-sm"
+                                  className={`w-24 rounded border px-2 py-1.5 text-right text-sm ${toleranceErrorItemIndex === idx ? 'border-red-400 bg-red-50 ring-1 ring-red-200' : ''}`}
                                   value={item.quantity}
                                   onChange={e => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)}
                                   title={`Ordered: ${item.po_ordered_qty ?? 0}, Previously received: ${item.po_received_qty ?? 0}`}
                                 />
+                                <div className="text-[10px] text-neutral-500 whitespace-nowrap shrink-0">
+                                  Allowed: {formatQty(Math.max(0, Number(item.po_ordered_qty || 0) - Number(underDeliveryTolerance || 0)))} - {formatQty(Number(item.po_ordered_qty || 0) + Number(overDeliveryTolerance || 0))}
+                                </div>
                               </div>
                             ) : (
                               <input type="number" min="0.01" step="0.01" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={item.quantity}
@@ -855,11 +1123,11 @@ const GRNPage = () => {
                           )}
                         </tr>
                       ))}
-                      {items.length === 0 && <tr><td colSpan={selectedPO ? 11 : 12} className="px-3 py-4 text-center text-neutral-400">No items — {selectedPO ? 'link a PO to prefill items' : 'click "+ Add Item" to add items'}</td></tr>}
+                      {items.length === 0 && <tr><td colSpan={selectedPO ? 12 : 13} className="px-3 py-4 text-center text-neutral-400">No items — {selectedPO ? 'link a PO to prefill items' : 'click "+ Add Item" to add items'}</td></tr>}
                     </tbody>
                     {items.length > 0 && (
                       <tfoot><tr className="border-t-2 bg-neutral-50">
-                        <td colSpan={10} className="px-3 py-2 text-right font-semibold">Total:</td>
+                        <td colSpan={11} className="px-3 py-2 text-right font-semibold">Total:</td>
                         <td className="px-3 py-2 text-right font-bold text-primary">{formatPaise(items.reduce((s, i) => s + calcTotal(i), 0))}</td>
                         {!selectedPO && <td></td>}
                       </tr></tfoot>
@@ -872,6 +1140,39 @@ const GRNPage = () => {
               <div className="flex justify-end gap-3">
                 <button onClick={() => { setShowForm(false); resetForm(); }} className="rounded-lg border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-600">Cancel</button>
                 <button onClick={handleSubmit} disabled={submitting || suppliers.length === 0} className="rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/20 disabled:opacity-50">{submitting ? 'Saving...' : 'Create GRN'}</button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+        {tolerancePopup && createPortal(
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm" onClick={() => setTolerancePopup(null)}>
+            <div className="hms-card w-full max-w-lg space-y-4 p-6" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-start justify-between gap-3">
+                <h3 className="text-base font-bold text-red-700">Error: {tolerancePopup.title}</h3>
+                <button
+                  onClick={() => setTolerancePopup(null)}
+                  className="text-xl leading-none text-neutral-400 hover:text-neutral-700"
+                  aria-label="Close tolerance error"
+                >
+                  &times;
+                </button>
+              </div>
+
+              <div className="space-y-2 rounded-lg border border-red-100 bg-red-50 p-4 text-sm text-red-900">
+                <p><span className="font-semibold">Item:</span> {tolerancePopup.itemLabel} (Row {tolerancePopup.rowNumber})</p>
+                <p><span className="font-semibold">Received:</span> {formatQty(tolerancePopup.receivedQty)}</p>
+                <p><span className="font-semibold">Allowed:</span> {formatQty(tolerancePopup.minAllowed)} - {formatQty(tolerancePopup.maxAllowed)}</p>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setTolerancePopup(null)}
+                  className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary/90"
+                >
+                  OK
+                </button>
               </div>
             </div>
           </div>,

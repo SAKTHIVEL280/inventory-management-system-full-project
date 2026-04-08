@@ -1,5 +1,484 @@
 # Frontend Updates Log
 
+## FE-64: GRN Item Search Non-Destructive Locate Mode (Highlight + Scroll)
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: GRN
+**Type**: Bug Fix / UX Enhancement
+
+### Overview
+Changed GRN item search behavior from filtering to locate mode so existing line items are never removed/altered while searching.
+
+### Changes Made
+- Removed search-driven filtering from item dropdown option sets.
+- Kept full line-item list visible at all times (non-destructive search).
+- Implemented locate behavior:
+  - matches by product name or product code
+  - highlights first matched row
+  - auto-scrolls smoothly to matched row
+- Clears row highlight when search text is cleared.
+- Preserved linked-PO restrictions and normal dropdown selection behavior.
+
+### Files Modified
+- `frontend/src/pages/GRNPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified file.
+- Verified frontend build succeeds.
+
+## FE-63: GRN Linked PO Reselection Unlock + Reset Flow
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: GRN
+**Type**: Bug Fix
+
+### Overview
+Fixed GRN linked PO dropdown lock so users can change selected PO before save, with safe reset and reload behavior.
+
+### Changes Made
+- Removed hard lock/disabled state from Linked PO dropdown after initial selection.
+- Added PO-change handler with confirmation prompt:
+  - `Changing the PO will reset current items. Do you want to continue?`
+- On confirmation and PO change:
+  - clears current items
+  - clears linked PO item options
+  - clears tolerance popup/error state
+  - clears item search state
+  - clears unsaved supplier invoice + notes
+  - reloads line items/tolerance data from newly selected PO
+- On switching to standalone:
+  - clears linked PO state and resets PO-dependent fields.
+
+### Files Modified
+- `frontend/src/pages/GRNPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified file.
+- Verified frontend build succeeds.
+
+## FE-62: GRN Linked-PO Item Search Visibility and Dropdown Fix
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: GRN
+**Type**: Bug Fix
+
+### Overview
+Fixed GRN item search and selection behavior when GRN is linked to a Purchase Order.
+
+### Changes Made
+- Kept item search box visible in linked PO mode.
+- Enabled product field as a clickable/searchable dropdown even for linked PO rows.
+- Restricted linked-PO dropdown options to selected PO items only.
+- Applied dynamic filtering by product name/code (and SKU token when present) within PO items.
+- Ensured unlinking PO clears linked options and item-search state cleanly.
+- Preserved PO-only item selection constraints (no outside product options).
+
+### Files Modified
+- `frontend/src/pages/GRNPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified file.
+- Verified frontend build succeeds.
+
+## FE-60: GRN-012 Line Item S.No and Dynamic Item Search
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: GRN
+**Type**: Enhancement
+
+### Overview
+Added GRN line item serial numbering and a dynamic item search box for faster product selection.
+
+### Changes Made
+- Added `S.No` column in GRN line items table with auto-increment numbering starting at 1.
+- Ensured numbering updates automatically on add/remove.
+- Added item search box in GRN item section.
+- Implemented dynamic dropdown filtering by:
+  - product name
+  - product code / SKU-style token (when present)
+- Updated empty/table footer column spans to match new structure.
+
+### Files Modified
+- `frontend/src/pages/GRNPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified file.
+- Verified frontend build succeeds.
+
+## FE-61: GRN-013 Delivery Tolerance Validation Enforcement UX
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: GRN
+**Type**: Bug Fix / Validation
+
+### Overview
+Confirmed and tightened GRN linked-PO quantity validation to enforce delivery tolerance range with blocking UX.
+
+### Changes Made
+- Validation formula enforced in GRN create flow for linked PO items:
+  - `minimum_allowed = ordered_qty - under_tolerance`
+  - `maximum_allowed = ordered_qty + over_tolerance`
+- Prevented save when received quantity is outside allowed range.
+- Preserved popup error behavior with detailed context:
+  - under/over tolerance message
+  - item and row reference
+  - received quantity and allowed range
+- Preserved invalid field highlight for faster correction.
+- Edge handling retained:
+  - tolerance `0` enforces exact match range
+  - negative values prevented via numeric input constraints and validation rules
+
+### Files Modified
+- `frontend/src/pages/GRNPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified file.
+- Verified frontend build succeeds.
+
+## FE-59: PUR-006 PO GST Field No Longer Prefills Before Product Selection
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Purchase Order
+**Type**: Bug Fix
+
+### Overview
+Fixed PO line-item composer behavior where GST showed `18%` before selecting a product.
+
+### Changes Made
+- Removed default `gst_rate` prefill from new line-item state.
+- Updated GST dropdown to start empty with `Select GST` placeholder.
+- Kept GST auto-fill from Product Master when product is selected.
+- Reset line-item composer to empty GST after item add/save.
+
+### Files Modified
+- `frontend/src/pages/PurchaseOrderPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified file.
+
+## FE-58: GRN Received Qty Column Structure Refinement
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: GRN
+**Type**: UI Refinement
+
+### Overview
+Adjusted the visual structure of the PO-linked `Received Qty` cell to improve readability and match intended flow.
+
+### Changes Made
+- Reordered content in `Received Qty` for linked PO rows to:
+  - `(Ord | Prev)` context
+  - quantity input field
+  - `Allowed: Min - Max` range
+- Preserved existing tolerance validation and row highlight behavior.
+
+### Files Modified
+- `frontend/src/pages/GRNPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified file.
+
+## FE-57: GRN Delivery Tolerance Popup with Item-Level Details
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: GRN
+**Type**: Validation UX Enhancement
+
+### Overview
+Added a blocking popup for delivery tolerance validation failures in GRN creation, including clear item-level context so users can correct errors immediately.
+
+### Changes Made
+- Added popup modal when tolerance validation fails with required messages:
+  - `Under delivery exceeded allowed tolerance`
+  - `Over delivery exceeded allowed tolerance`
+- Included detailed error context in popup:
+  - item name and row number
+  - received quantity
+  - allowed range (min-max)
+- Kept submission blocked until the issue is resolved.
+- Added optional row-level visual highlight for invalid `Received Qty` field.
+- Added explicit `OK`/close action (popup does not auto-dismiss).
+
+### Files Modified
+- `frontend/src/pages/GRNPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified file.
+
+## FE-56: Supplier Country Default + Build Cleanup for PO GST Consistency
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Supplier Master
+**Type**: Bug Fix / Data Consistency
+
+### Overview
+Improved supplier defaults to reduce accidental GST suppression in PO flow and resolved a TypeScript build blocker.
+
+### Changes Made
+- Defaulted new supplier country to `India` in Supplier form defaults.
+- For existing domestic suppliers with blank country during edit flow, prefilled country as `India`.
+- Ensured domestic supplier save payload writes `India` when country is left blank.
+- Removed unused `phoneValue` variable causing TypeScript compile failure.
+
+### Files Modified
+- `frontend/src/pages/SuppliersPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified file.
+- Verified frontend build succeeds.
+
+## FE-55: Quantity-Based Delivery Tolerance UX and GRN Validation
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Purchase Order, GRN
+**Type**: Validation + UI Enhancement
+
+### Overview
+Aligned PO/GRN tolerance behavior and UI with quantity-based delivery rules and added client-side GRN validation for allowed received range.
+
+### Changes Made
+- Updated tolerance labels to quantity units:
+  - `Under Delivery Tolerance (Qty)`
+  - `Over Delivery Tolerance (Qty)`
+- Added GRN create-form validation for linked PO line items using:
+  - `minimum_allowed = ordered_qty - under_tolerance`
+  - `maximum_allowed = ordered_qty + over_tolerance`
+- Added required user-facing errors:
+  - `Under delivery exceeded allowed tolerance`
+  - `Over delivery exceeded allowed tolerance`
+- Displayed allowed quantity range inline in GRN item rows for PO-linked GRNs.
+- Kept null/blank tolerance behavior safe by defaulting to `0` in form handling.
+
+### Files Modified
+- `frontend/src/pages/GRNPage.tsx`
+- `frontend/src/pages/PurchaseOrderPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified frontend files.
+
+## FE-54: Purchase Order Line-Item Composer Alignment Fix
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Purchase Order
+**Type**: UI Bug Fix
+
+### Overview
+Fixed broken/cramped line-item input composer layout where labels and fields were overlapping due to constrained form column span.
+
+### Changes Made
+- Expanded line-items section to full-width within PO form grid.
+- Replaced mixed responsive sub-grid with explicit six-column composer layout:
+  - Product | Quantity | Unit Price | Disc % | GST % | Add Item
+- Added minimum composer width with horizontal scroll to prevent overlap on small viewports.
+- Standardized label positioning above inputs and consistent field spacing.
+- Corrected action button alignment and fixed height to align with input row.
+- Expanded error and submit-action rows to full width for proper visual balance.
+
+### Files Modified
+- `frontend/src/pages/PurchaseOrderPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified file.
+
+## FE-53: Purchase Order Line Items UI Layout Cleanup
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Purchase Order
+**Type**: UI Enhancement
+
+### Overview
+Refined the Purchase Order line-items section into a structured, readable, and responsive tabular layout.
+
+### Changes Made
+- Replaced card-style line-item list with a proper table layout.
+- Added explicit column widths for stable alignment across rows.
+- Added sticky table header for better usability while scrolling.
+- Added horizontal scroll support for narrow screens (`min-width` table inside scroll container).
+- Enabled wrapping/breaking in item description cells to avoid overflow.
+- Right-aligned numeric and amount columns for readability.
+- Kept totals block aligned and visually separated from item rows.
+
+### Files Modified
+- `frontend/src/pages/PurchaseOrderPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified file.
+
+## FE-52: PO/GRN Delivery Tolerance UI and Flow (PUR-003)
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Test Case**: PUR-003
+**Module**: Purchase Order, GRN
+**Type**: Enhancement
+
+### Overview
+Added Under/Over Delivery Tolerance fields in PO UI, propagated values to GRN flow, and exposed values in PO/GRN details.
+
+### Changes Made
+- Added PO form fields:
+  - Under Delivery Tolerance
+  - Over Delivery Tolerance
+- Added frontend validation: under tolerance must be less than or equal to over tolerance.
+- Included tolerance values in PO create payload.
+- Displayed tolerance values in PO detail modal.
+- Extended GRN form state/payload with tolerance values.
+- Auto-filled and locked tolerance values when GRN is created from linked PO.
+- Displayed tolerance values in GRN detail modal.
+
+### Files Modified
+- `frontend/src/pages/PurchaseOrderPage.tsx`
+- `frontend/src/pages/GRNPage.tsx`
+- `frontend/src/api/purchase.ts`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified frontend files.
+
+## FE-51: Remove Opening Stock Field from Products Master (PRO-014)
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Test Case**: PRO-014
+**Module**: Products Master
+**Type**: Enhancement
+
+### Overview
+Removed the Opening Stock field from Products Master form UI as it is no longer required for user input.
+
+### Changes Made
+- Removed Opening Stock form field and validation binding from Product create/modify UI.
+- Kept API payload compatibility by sending `opening_stock: 0` for new product creation.
+- Preserved existing `opening_stock` values when modifying existing products.
+
+### Files Modified
+- `frontend/src/pages/ProductsPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in the modified frontend file.
+
+## FE-50: Country-Based Invoice Type Dropdown Restriction (SAL-030)
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Test Case**: SAL-030
+**Module**: Sales Invoice
+**Type**: Enhancement
+
+### Overview
+Updated invoice-type dropdown behavior to enforce country-based invoice type selection in UI.
+
+### Changes Made
+- Added country-scoped invoice-type option sets:
+  - India -> Within State, Other State, Union Territory
+  - Non-India -> Export Invoice only
+- Wired dynamic dropdown option rendering based on selected customer country.
+- Added automatic invoice-type reset when customer changes to an incompatible country/type combination.
+- Preserved export behavior for non-India (GST hidden/0%).
+
+### Files Modified
+- `frontend/src/pages/InvoicesPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors after implementation.
+
+## FE-49: SAL-030 GST Type-Aware Invoice UI Labels
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Test Case**: SAL-030
+**Module**: Sales Invoice
+**Type**: Enhancement
+
+### Overview
+Updated Sales Invoice UI to reflect applicable GST type labels dynamically for within-state, other-state, and union-territory invoice types.
+
+### Changes Made
+- Added dynamic GST column labels:
+  - `IGST %` for `other_states`
+  - `GST % (CGST+UTGST)` for `union_territory`
+  - `GST % (CGST+SGST)` for `within_state`
+- Added inline form hint showing current applied tax type (non-export only).
+- Applied same dynamic GST label in invoice detail modal item table.
+
+### Files Modified
+- `frontend/src/pages/InvoicesPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors after implementation.
+
+## FE-48: SAL-030 Export Invoice Import & Export Code UI
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Test Case**: SAL-030
+**Module**: Sales Invoice, Company Profile
+**Type**: Enhancement
+
+### Overview
+Added Import & Export fields in frontend forms so export invoice data and company profile number can be captured and sent to backend/PDF.
+
+### Changes Made
+- Added optional **Import & Export Code** field in Sales Invoice form.
+- Included `import_export_code` in invoice create/update payload.
+- Loaded/saved Import & Export Code during invoice edit flow.
+- Displayed Import & Export Code in invoice detail modal when present.
+- Added optional **Import & Export Number** field in Company Profile form.
+
+### Files Modified
+- `frontend/src/pages/InvoicesPage.tsx`
+- `frontend/src/api/sales.ts`
+- `frontend/src/pages/CompanyPage.tsx`
+- `frontend/src/types/index.ts`
+
+### Validation
+- Verified no TypeScript/IDE errors after implementation.
+
+## FE-47: Export Invoice GST UI Suppression and Zero-Tax Calculation
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Sales Invoice
+**Type**: Bug Fix / UX + Calculation Alignment
+
+### Overview
+Aligned Sales Invoice form and detail rendering for export invoices so GST controls are hidden and totals exclude GST.
+
+### Changes Made
+- Added export-invoice flag-driven behavior in invoice form logic.
+- Forced line-item GST rate to `0` in total calculation for export invoices.
+- Submitted line items with `gst_rate: 0` when invoice type is export.
+- Hid GST % column/input in invoice line-item entry table for export invoices.
+- Adjusted table colspans to keep totals row alignment correct when GST column is hidden.
+- Hid GST % column in invoice detail modal line-item table for export invoices.
+
+### Files Modified
+- `frontend/src/pages/InvoicesPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors after implementation.
+
+## FE-46: SAL-029 Sales Invoice Type Dropdown and Display
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Test Case**: SAL-029
+**Module**: Sales Invoice
+**Type**: Enhancement
+
+### Overview
+Added invoice type classification UX to Sales Invoice creation and display flows with automatic defaulting and manual override.
+
+### Changes Made
+- Added **Invoice Type** dropdown in Sales Invoice form with 4 options:
+  - Export Invoice
+  - Sales Invoice - Within State
+  - Sales Invoice - Other States
+  - Sales Invoice - Union Territory
+- Added default invoice type derivation in UI based on customer country/state and company state data.
+- Included selected invoice type in create/update payload submission.
+- Displayed invoice type in invoice list grid.
+- Displayed invoice type in invoice detail modal.
+- Preserved existing invoice type during edit mode.
+
+### Files Modified
+- `frontend/src/pages/InvoicesPage.tsx`
+- `frontend/src/api/sales.ts`
+
+---
+
 ## FE-45: Phone Input Split Refinement and Supplier Prefill Removal
 **Date**: April 8, 2026
 **Status**: ✅ Completed

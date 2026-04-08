@@ -2,6 +2,323 @@
 
 ---
 
+## BE-52: Purchase GST Fallback for Domestic Suppliers with Blank Country
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: GST Service, Purchase Order
+**Type**: Bug Fix
+
+### Overview
+Fixed PO line tax unexpectedly saving as `0%` when supplier country was blank, even though supplier was domestic and line GST was selected.
+
+### Changes Made
+- Added backward-compatible country fallback in tax mode resolution:
+  - for `supplier` with blank country and `business_type = domestic`, treat as India for GST applicability.
+- Preserved non-India behavior for international suppliers.
+- Prevented PO line `gst_rate` from being auto-zeroed for this domestic legacy-data scenario.
+
+### Files Modified
+- `backend/app/services/gst_service.py`
+
+### Validation
+- Verified no backend/IDE errors in modified file.
+
+## BE-51: GRN Quantity-Based Delivery Tolerance Validation (PO -> GRN)
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Purchase Order, GRN
+**Type**: Validation Enhancement
+
+### Overview
+Implemented strict quantity-based delivery tolerance validation for linked PO to GRN flow.
+
+### Changes Made
+  - `minimum_allowed = ordered_qty - under_delivery_tolerance`
+  - `maximum_allowed = ordered_qty + over_delivery_tolerance`
+  - `Under delivery exceeded allowed tolerance`
+  - `Over delivery exceeded allowed tolerance`
+
+### Files Modified
+
+### Validation
+
+## BE-50: PO PDF Watermark Minor Size Reduction
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Purchase Order PDF
+**Type**: UI/Print Refinement
+
+### Overview
+Applied a minor follow-up reduction to PO watermark size for improved readability balance.
+
+### Changes Made
+
+### Files Modified
+
+### Validation
+
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Purchase Order PDF
+**Type**: UI/Print Refinement
+
+### Overview
+Refined PO PDF watermark styling to be smaller and subtler so it remains visible without overpowering content.
+
+### Changes Made
+- Reduced watermark font size from `84px` to `48px`.
+- Softened watermark appearance:
+  - moderate opacity
+- Kept same styling for both `Approved` and `Not Approved` states.
+- Preserved fixed-position rendering so watermark remains consistent on all pages.
+### Files Modified
+- `backend/app/services/pdf_service.py`
+### Validation
+- Verified no backend/IDE errors in modified file.
+
+## BE-48: Purchase Order Tolerance + PO PDF Watermark/Footer Updates (PUR-003/004/005)
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Test Cases**: PUR-003, PUR-004, PUR-005
+**Module**: Purchase Order, GRN, PO PDF
+**Type**: Enhancement
+
+### Overview
+Implemented delivery tolerance support across Purchase Order and GRN, added approval-based PO PDF watermark behavior, and updated PO PDF footer CGST/SGST display to amount-value labels without percent suffix.
+
+### Changes Made
+- Added PO-level fields:
+  - `under_delivery_tolerance`
+  - `over_delivery_tolerance`
+- Added GRN-level fields:
+  - `under_delivery_tolerance`
+  - `over_delivery_tolerance`
+- Added backend validation for tolerance values:
+  - numeric and non-negative
+  - `under_delivery_tolerance <= over_delivery_tolerance`
+- Mapped tolerance values from PO to GRN automatically when GRN is created/updated with a linked PO.
+- Added PO PDF watermark by status:
+  - `draft` -> `Not Approved`
+  - non-draft -> `Approved`
+- Updated PO PDF footer labels to show `CGST` and `SGST` amount rows (no percentage suffix in labels).
+
+### Files Modified
+- `backend/app/models/purchase.py`
+- `backend/app/schemas/purchase.py`
+- `backend/app/routers/purchase.py`
+- `backend/app/services/pdf_service.py`
+
+### Validation
+- Verified no backend/IDE errors in all modified files.
+
+## BE-47: Country-Based Invoice Type Validation (SAL-030)
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Test Case**: SAL-030
+**Module**: Sales Invoice Validation
+**Type**: Enhancement
+
+### Overview
+Added backend validation to enforce valid invoice type selection based on customer country.
+
+### Changes Made
+- Added shared country helper exposure for India-country checks.
+- Added invoice-type validation rules in invoice create/update flows:
+  - India customer -> disallow `export_invoice`
+  - Non-India customer -> allow only `export_invoice`
+- Returned explicit API error messages for invalid country/invoice-type combinations.
+
+### Files Modified
+- `backend/app/services/gst_service.py`
+- `backend/app/routers/sales.py`
+
+## BE-46: Invoice PDF NameError Hotfix (`show_utgst`)
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Sales Invoice PDF
+**Type**: Bug Fix
+
+### Overview
+Fixed runtime 500 error on invoice PDF generation caused by undefined `show_utgst` during context preparation.
+
+### Changes Made
+- Added missing invoice tax-mode variable initialization (`invoice_type_token`, `show_igst`, `show_utgst`) inside `generate_invoice_pdf()` before use.
+- Removed accidentally injected invoice-mode snippet from `generate_po_pdf()`.
+- Restored purchase-order tax row fallback behavior for legacy IGST split display.
+
+### Files Modified
+- `backend/app/services/pdf_service.py`
+
+## BE-45: SAL-030 GST Auto-Mode Enforcement (Within/Other/UT/Export)
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Test Case**: SAL-030
+**Module**: Sales Invoice GST + PDF
+**Type**: Enhancement
+
+### Overview
+Implemented invoice-type aligned GST behavior so Sales Invoice tax mode and PDF display now match Within State, Other State, Union Territory, and Export scenarios.
+
+### Changes Made
+- Added `invoice_type_tax_mode()` in GST service to map invoice type to tax mode:
+  - `within_state` -> CGST+SGST
+  - `other_states` -> IGST
+  - `union_territory` -> CGST+UTGST (using secondary state-tax slot)
+  - `export_invoice` -> no GST
+- Enforced country-first override in invoice create/update/convert flows: non-India always no GST.
+- Updated Sales Order -> Invoice conversion to recalculate line-item tax totals based on invoice tax mode.
+- Updated invoice PDF table/totals rendering:
+  - IGST-only column and total for `other_states`
+  - CGST + UTGST labels/totals for `union_territory`
+  - CGST + SGST for `within_state`
+  - no tax columns for export
+
+### Files Modified
+- `backend/app/services/gst_service.py`
+- `backend/app/routers/sales.py`
+- `backend/app/services/pdf_service.py`
+
+## BE-44: SAL-030 Export Invoice Import/Export Fields and PDF Integration
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Test Case**: SAL-030
+**Module**: Sales Invoice, Company Profile, PDF
+**Type**: Enhancement
+
+### Overview
+Implemented export-invoice enhancements for optional Import & Export Code on invoices and Import & Export Number from Company Profile, including PDF rendering.
+
+### Changes Made
+- Added `import_export_code` to Sales Invoice model/schema and invoice create/update persistence.
+- Added `import_export_number` to Company model/schema for profile-level storage.
+- Added export-invoice PDF rendering for:
+  - Company `Import & Export Number` (from Company Profile)
+  - Invoice `Import & Export Code` (from Sales Invoice data)
+- Kept export GST tax behavior unchanged (GST already forced to zero/no tax rows).
+
+### Files Modified
+- `backend/app/models/sales.py`
+- `backend/app/schemas/sales.py`
+- `backend/app/routers/sales.py`
+- `backend/app/models/company.py`
+- `backend/app/schemas/company.py`
+- `backend/app/services/pdf_service.py`
+
+## BE-43: Export Invoice PDF - Hide Party GSTIN Lines
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Sales Invoice PDF
+**Type**: Layout/Content Fix
+
+### Overview
+Removed `GSTIN` display from Bill To and Ship To sections for export invoices and prevented placeholder GSTIN output when value is missing.
+
+### Changes Made
+- Added conditional rendering to Bill To GSTIN line: show only for non-export invoices with valid GSTIN.
+- Added conditional rendering to Ship To GSTIN line: show only for non-export invoices with valid GSTIN.
+
+### Files Modified
+- `backend/app/services/pdf_service.py`
+
+## BE-42: Export Invoice PDF Dynamic Full-Width Table Layout
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Sales Invoice PDF
+**Type**: Layout Fix / Readability
+
+### Overview
+Fixed export-invoice item-table shrink by introducing dynamic width redistribution when GST columns are hidden.
+
+### Changes Made
+- Added dynamic Jinja width variables for invoice item columns.
+- Ensured visible columns always total `100%` width in all layout modes.
+- Reallocated removed GST width to primary columns for export invoices (Description, Qty, Rate, Amount).
+- Kept alignment and wrapping behavior consistent with other invoice types.
+
+### Files Modified
+- `backend/app/services/pdf_service.py`
+
+## BE-41: Export Invoice GST Suppression and Currency Display Cleanup
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: Sales Invoice PDF + Invoice API
+**Type**: Bug Fix / Compliance Alignment
+
+### Overview
+Fixed export-invoice behavior so GST is not applied/rendered and order currency is displayed once in a clean format.
+
+### Changes Made
+- Enforced no-GST mode in invoice create/update flows when `invoice_type` is `export_invoice`.
+- Updated invoice PDF rendering context with `export_invoice` flag and conditional GST sections.
+- Removed GST table columns and GST totals from invoice PDF for export invoices.
+- Added centralized order-currency formatter to prevent duplicate display labels like `JPY (¥) (JPY (¥))`.
+
+### Files Modified
+- `backend/app/routers/sales.py`
+- `backend/app/services/pdf_service.py`
+
+## BE-40: SAL-029 Sales Invoice Type Classification
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Test Case**: SAL-029
+**Module**: Sales Invoice
+**Type**: Enhancement
+
+### Overview
+Implemented invoice type classification with four supported values and integrated default derivation logic into invoice flows.
+
+### Changes Made
+- Added `invoice_type` field to `SalesInvoice` model.
+- Added schema support with validated values:
+  - `export_invoice`
+  - `within_state`
+  - `other_states`
+  - `union_territory`
+- Added `determine_default_invoice_type()` in GST service to derive default based on:
+  - customer country (India vs non-India)
+  - company/customer state code and state fallback
+  - union-territory detection
+- Integrated invoice type persistence into:
+  - `POST /api/v1/sales-orders/{so_id}/convert-to-invoice`
+  - `POST /api/v1/invoices`
+  - `PUT /api/v1/invoices/{invoice_id}`
+
+### Files Modified
+- `backend/app/models/sales.py`
+- `backend/app/schemas/sales.py`
+- `backend/app/services/gst_service.py`
+- `backend/app/routers/sales.py`
+
+---
+
+## BE-39: India-Only GST Logic with Country and State Fallback
+**Date**: April 8, 2026
+**Status**: ✅ Completed
+**Module**: GST Service, Sales, Purchase
+**Type**: Enhancement / Compliance Logic
+
+### Overview
+Implemented GST mode resolution so GST is applied only for India and correctly split as CGST+SGST or IGST using state code/state fallback logic.
+
+### Changes Made
+- Added centralized `determine_tax_mode()` in GST service to enforce country-first validation.
+- GST applies only when customer/supplier country is India.
+- For India:
+  - Uses normalized state code comparison when available.
+  - Falls back to normalized state-name comparison when state code is missing.
+  - Defaults to IGST when location is incomplete.
+- For non-India:
+  - Disables GST application entirely (CGST/SGST/IGST all zero).
+- Updated purchase and sales workflows to consume tax mode and persist effective GST rate (`0` for non-India rows).
+
+### Files Modified
+- `backend/app/services/gst_service.py`
+- `backend/app/routers/purchase.py`
+- `backend/app/routers/sales.py`
+- `docs/BACKEND_UPDATES_2.md`
+
+---
+
 ## BE-38: Standardized Migration Runner to run_migration.py
 **Date**: April 8, 2026
 **Status**: ✅ Completed

@@ -20,7 +20,17 @@ const poSchema = z.object({
   expected_delivery_date: z.string().optional(),
   currency_code: z.string().default('INR'),
   exchange_rate: z.coerce.number().min(0.000001).default(1.0),
+  under_delivery_tolerance: z.coerce.number().min(0, 'Under delivery tolerance must be 0 or more').default(0),
+  over_delivery_tolerance: z.coerce.number().min(0, 'Over delivery tolerance must be 0 or more').default(0),
   notes: z.string().optional(),
+}).superRefine((value, ctx) => {
+  if (value.under_delivery_tolerance > value.over_delivery_tolerance) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['under_delivery_tolerance'],
+      message: 'Under delivery tolerance must be less than or equal to over delivery tolerance',
+    });
+  }
 });
 
 type POForm = z.infer<typeof poSchema>;
@@ -75,7 +85,6 @@ const PurchaseOrderPage = () => {
   const [lineItems, setLineItems] = useState<POLineItem[]>([]);
   const [newItem, setNewItem] = useState<Partial<POLineItem>>({
     discount_percent: 0,
-    gst_rate: 18,
   });
   const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null);
   const [showPODetail, setShowPODetail] = useState(false);
@@ -97,6 +106,8 @@ const PurchaseOrderPage = () => {
       expected_delivery_date: '',
       currency_code: 'INR',
       exchange_rate: 1.0,
+      under_delivery_tolerance: 0,
+      over_delivery_tolerance: 0,
       notes: '',
     },
   });
@@ -116,7 +127,7 @@ const PurchaseOrderPage = () => {
       queryClient.invalidateQueries({ queryKey: ['purchase-orders'] });
       form.reset();
       setLineItems([]);
-      setNewItem({ discount_percent: 0, gst_rate: 18 });
+      setNewItem({ discount_percent: 0 });
       setFormError('');
       setIsFormOpen(false);
       if (submitMode === 'draft') {
@@ -271,7 +282,7 @@ const PurchaseOrderPage = () => {
     }
 
     setLineItems([...lineItems, newItem as POLineItem]);
-    setNewItem({ discount_percent: 0, gst_rate: 18 });
+    setNewItem({ discount_percent: 0 });
     toast.success('Item added to purchase order');
   };
 
@@ -314,7 +325,7 @@ const PurchaseOrderPage = () => {
     ) {
       finalLineItems = [...finalLineItems, newItem as POLineItem];
       setLineItems(finalLineItems);
-      setNewItem({ discount_percent: 0, gst_rate: 18 });
+      setNewItem({ discount_percent: 0 });
     }
 
     if (finalLineItems.length === 0) {
@@ -335,6 +346,8 @@ const PurchaseOrderPage = () => {
       expected_delivery_date: parsed.data.expected_delivery_date || undefined,
       currency_code: parsed.data.currency_code,
       exchange_rate: parsed.data.exchange_rate,
+      under_delivery_tolerance: parsed.data.under_delivery_tolerance,
+      over_delivery_tolerance: parsed.data.over_delivery_tolerance,
       notes: parsed.data.notes || undefined,
       status: submitMode,
       items: finalLineItems.map((item) => ({
@@ -418,188 +431,262 @@ const PurchaseOrderPage = () => {
           </div>
 
           {isFormOpen && (
-            <form className="grid grid-cols-1 gap-4 p-5 md:grid-cols-2 xl:grid-cols-4" onSubmit={form.handleSubmit(onSubmit)}>
-            <div>
-              <label htmlFor="supplier_id" className="hms-label">
-                Supplier
-              </label>
-              <select id="supplier_id" className="hms-input" {...form.register('supplier_id')}>
-                <option value="">Select supplier</option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.company_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label htmlFor="order_date" className="hms-label">
-                Order Date
-              </label>
-              <input id="order_date" type="date" className="hms-input" {...form.register('order_date')} />
-            </div>
-
-            <div>
-              <label htmlFor="expected_delivery_date" className="hms-label">
-                Expected Delivery Date
-              </label>
-              <input id="expected_delivery_date" type="date" className="hms-input" {...form.register('expected_delivery_date')} />
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label htmlFor="currency_code" className="hms-label">Currency</label>
-                <select id="currency_code" className="hms-input" {...form.register('currency_code')}>
-                  <option value="INR">INR (₹)</option>
-                  <option value="USD">USD ($)</option>
-                  <option value="EUR">EUR (€)</option>
-                  <option value="GBP">GBP (£)</option>
-                </select>
+            <form className="grid grid-cols-1 gap-4 p-5 xl:grid-cols-12" onSubmit={form.handleSubmit(onSubmit)}>
+            <div className="xl:col-span-12 rounded-lg border border-neutral-200 bg-neutral-50/60 p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-neutral-800">Order Details</h3>
+                <span className="text-xs text-neutral-500">Fill supplier, dates, tolerance, and currency settings</span>
               </div>
-              <div>
-                <label htmlFor="exchange_rate" className="hms-label">Exchange Rate</label>
-                <input id="exchange_rate" type="number" step="0.0001" className="hms-input" {...form.register('exchange_rate')} disabled={form.watch('currency_code') === 'INR'} />
-              </div>
-            </div>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-12">
+                <div className="xl:col-span-4">
+                  <label htmlFor="supplier_id" className="hms-label">
+                    Supplier
+                  </label>
+                  <select id="supplier_id" className="hms-input" {...form.register('supplier_id')}>
+                    <option value="">Select supplier</option>
+                    {suppliers.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.company_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-            <div>
-              <label htmlFor="notes" className="hms-label">
-                Notes
-              </label>
-              <textarea id="notes" className="hms-input" rows={3} {...form.register('notes')} />
+                <div className="xl:col-span-2">
+                  <label htmlFor="order_date" className="hms-label">
+                    Order Date
+                  </label>
+                  <input id="order_date" type="date" className="hms-input" {...form.register('order_date')} />
+                </div>
+
+                <div className="xl:col-span-2">
+                  <label htmlFor="expected_delivery_date" className="hms-label">
+                    Expected Delivery Date
+                  </label>
+                  <input id="expected_delivery_date" type="date" className="hms-input" {...form.register('expected_delivery_date')} />
+                </div>
+
+                <div className="xl:col-span-2">
+                  <label htmlFor="currency_code" className="hms-label">Currency</label>
+                  <select id="currency_code" className="hms-input" {...form.register('currency_code')}>
+                    <option value="INR">INR (₹)</option>
+                    <option value="USD">USD ($)</option>
+                    <option value="EUR">EUR (€)</option>
+                    <option value="GBP">GBP (£)</option>
+                  </select>
+                </div>
+
+                <div className="xl:col-span-2">
+                  <label htmlFor="exchange_rate" className="hms-label">Exchange Rate</label>
+                  <input id="exchange_rate" type="number" step="0.0001" className="hms-input" {...form.register('exchange_rate')} disabled={form.watch('currency_code') === 'INR'} />
+                </div>
+
+                <div className="md:col-span-2 xl:col-span-6 grid grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="under_delivery_tolerance" className="hms-label">Under Delivery Tolerance (Qty)</label>
+                    <input
+                      id="under_delivery_tolerance"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      className="hms-input"
+                      placeholder="Enter under tolerance"
+                      value={emptyWhenZero(form.watch('under_delivery_tolerance'))}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        form.setValue('under_delivery_tolerance', raw === '' ? 0 : (parseFloat(raw) || 0), {
+                          shouldDirty: true,
+                          shouldValidate: true,
+                        });
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="over_delivery_tolerance" className="hms-label">Over Delivery Tolerance (Qty)</label>
+                    <input
+                      id="over_delivery_tolerance"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      className="hms-input"
+                      placeholder="Enter over tolerance"
+                      value={emptyWhenZero(form.watch('over_delivery_tolerance'))}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        form.setValue('over_delivery_tolerance', raw === '' ? 0 : (parseFloat(raw) || 0), {
+                          shouldDirty: true,
+                          shouldValidate: true,
+                        });
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="md:col-span-2 xl:col-span-6">
+                  <label htmlFor="notes" className="hms-label">
+                    Notes
+                  </label>
+                  <textarea id="notes" className="hms-input" rows={3} {...form.register('notes')} />
+                </div>
+              </div>
             </div>
 
             {/* Line Items Section */}
-            <div className="border-t border-neutral-200 pt-4 md:col-span-2 xl:col-span-4">
+            <div className="border-t border-neutral-200 pt-4 xl:col-span-12">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-semibold text-sm">Line Items</h3>
                 <span className="text-xs text-neutral-500">{lineItems.length} item(s) added</span>
               </div>
 
-              <div className="space-y-2 mb-4">
-                <div>
-                  <label className="hms-label">Product *</label>
-                  <select
-                    className="hms-input"
-                    value={newItem.product_id || ''}
-                    onChange={(e) => handleProductSelect(e.target.value)}
-                  >
-                    <option value="">Select product</option>
-                    {products
-                      .slice()
-                      .sort((a, b) => a.name.localeCompare(b.name))
-                      .map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} (₹{(p.purchase_price / 100).toFixed(2)} | GST: {p.gst_rate}%)
-                        </option>
-                      ))}
-                  </select>
-                </div>
+              <div className="mb-4 rounded-lg border border-neutral-200 bg-neutral-50/60 p-4">
+                <div className="overflow-x-auto">
+                  <div className="grid min-w-[980px] grid-cols-[minmax(260px,2fr)_110px_150px_110px_110px_160px] items-end gap-3">
+                    <div>
+                      <label className="mb-1 block text-sm font-semibold text-neutral-700">Product *</label>
+                      <select
+                        className="hms-input"
+                        value={newItem.product_id || ''}
+                        onChange={(e) => handleProductSelect(e.target.value)}
+                      >
+                        <option value="">Select product</option>
+                        {products
+                          .slice()
+                          .sort((a, b) => a.name.localeCompare(b.name))
+                          .map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name} (₹{(p.purchase_price / 100).toFixed(2)} | GST: {p.gst_rate}%)
+                            </option>
+                          ))}
+                      </select>
+                    </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="hms-label">Quantity *</label>
-                    <input
-                      type="number"
-                      className="hms-input"
-                      value={newItem.quantity || ''}
-                      onChange={(e) => setNewItem({ ...newItem, quantity: parseFloat(e.target.value) || 0 })}
-                      min="0.01"
-                      step="0.01"
-                    />
-                  </div>
-                  <div>
-                    <label className="hms-label">Unit Price (₹) *</label>
-                    <input
-                      type="number"
-                      className="hms-input"
-                      value={newItem.unit_price || ''}
-                      onChange={(e) => setNewItem({ ...newItem, unit_price: parseFloat(e.target.value) || 0 })}
-                      min="0"
-                      step="0.01"
-                    />
+                    <div>
+                      <label className="mb-1 block text-sm font-semibold text-neutral-700">Quantity *</label>
+                      <input
+                        type="number"
+                        className="hms-input"
+                        value={newItem.quantity || ''}
+                        onChange={(e) => setNewItem({ ...newItem, quantity: parseFloat(e.target.value) || 0 })}
+                        min="0.01"
+                        step="0.01"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-sm font-semibold text-neutral-700">Unit Price (₹) *</label>
+                      <input
+                        type="number"
+                        className="hms-input"
+                        value={newItem.unit_price || ''}
+                        onChange={(e) => setNewItem({ ...newItem, unit_price: parseFloat(e.target.value) || 0 })}
+                        min="0"
+                        step="0.01"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-sm font-semibold text-neutral-700">Disc %</label>
+                      <input
+                        type="number"
+                        className="hms-input"
+                        value={emptyWhenZero(newItem.discount_percent)}
+                        onChange={(e) => setNewItem({ ...newItem, discount_percent: parseFloat(e.target.value) || 0 })}
+                        min="0"
+                        max="100"
+                        step="0.01"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-sm font-semibold text-neutral-700">GST % *</label>
+                      <select
+                        className="hms-input"
+                        value={newItem.gst_rate ?? ''}
+                        onChange={(e) => setNewItem({ ...newItem, gst_rate: e.target.value === '' ? undefined : parseInt(e.target.value, 10) })}
+                      >
+                        <option value="">Select GST</option>
+                        <option value="0">0%</option>
+                        <option value="5">5%</option>
+                        <option value="12">12%</option>
+                        <option value="18">18%</option>
+                        <option value="28">28%</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <button
+                        type="button"
+                        onClick={handleAddLineItem}
+                        className="h-[42px] w-full rounded bg-secondary px-3 text-sm font-semibold text-white transition hover:bg-secondary/90"
+                        style={{ backgroundColor: '#059669' }}
+                      >
+                        <span className="inline-flex items-center gap-2">
+                          <span className="material-icons text-sm">add_circle</span>
+                          Add Item
+                        </span>
+                      </button>
+                    </div>
                   </div>
                 </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="hms-label">Discount %</label>
-                    <input
-                      type="number"
-                      className="hms-input"
-                      value={emptyWhenZero(newItem.discount_percent)}
-                      onChange={(e) => setNewItem({ ...newItem, discount_percent: parseFloat(e.target.value) || 0 })}
-                      min="0"
-                      max="100"
-                      step="0.01"
-                    />
-                  </div>
-                  <div>
-                    <label className="hms-label">GST % *</label>
-                    <select
-                      className="hms-input"
-                      value={newItem.gst_rate || 18}
-                      onChange={(e) => setNewItem({ ...newItem, gst_rate: parseInt(e.target.value) })}
-                    >
-                      <option value="0">0%</option>
-                      <option value="5">5%</option>
-                      <option value="12">12%</option>
-                      <option value="18">18%</option>
-                      <option value="28">28%</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* ADD ITEM BUTTON - This should be visible */}
-                <button
-                  type="button"
-                  onClick={handleAddLineItem}
-                  className="w-full bg-secondary text-white px-3 py-2.5 rounded text-sm font-semibold hover:bg-secondary/90 transition flex items-center justify-center gap-2 mt-2"
-                  style={{ backgroundColor: '#059669' }}
-                >
-                  <span className="material-icons text-sm">add_circle</span>
-                  Add Item to PO
-                </button>
               </div>
 
               {lineItems.length > 0 && (
-                <div className="bg-neutral-50 rounded-lg p-4 mb-4">
-                  <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {lineItems.map((item, idx) => {
-                      const product = products.find((p) => p.id === item.product_id);
-                      const lineTotal = calculateLineTotal(item);
-                      return (
-                        <div key={idx} className="flex justify-between items-start bg-white p-3 rounded border border-neutral-200">
-                          <div className="flex-1">
-                            <div className="font-medium text-neutral-900">{product?.name || 'Unknown Product'}</div>
-                            <div className="text-neutral-600 text-xs mt-1 space-x-2">
-                              <span>Qty: {item.quantity}</span>
-                              <span>•</span>
-                              <span>₹{item.unit_price.toFixed(2)}/unit</span>
-                              <span>•</span>
-                              <span>Disc: {item.discount_percent}%</span>
-                              <span>•</span>
-                              <span>GST: {item.gst_rate}%</span>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <div className="font-semibold text-neutral-900">₹{lineTotal.toFixed(2)}</div>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveLineItem(idx)}
-                              className="text-danger hover:text-danger/80 text-xs mt-1 font-medium"
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
+                <div className="mb-4 overflow-hidden rounded-lg border border-neutral-200 bg-white">
+                  <div className="max-h-72 overflow-auto">
+                    <table className="w-full min-w-[860px] table-fixed text-sm">
+                      <thead className="sticky top-0 z-10 bg-neutral-100">
+                        <tr className="border-b border-neutral-200">
+                          <th className="w-[34%] px-3 py-2 text-left text-xs font-bold uppercase tracking-wide text-neutral-600">Item</th>
+                          <th className="w-[10%] px-3 py-2 text-right text-xs font-bold uppercase tracking-wide text-neutral-600">Qty</th>
+                          <th className="w-[14%] px-3 py-2 text-right text-xs font-bold uppercase tracking-wide text-neutral-600">Unit Price</th>
+                          <th className="w-[10%] px-3 py-2 text-right text-xs font-bold uppercase tracking-wide text-neutral-600">Disc %</th>
+                          <th className="w-[8%] px-3 py-2 text-right text-xs font-bold uppercase tracking-wide text-neutral-600">GST %</th>
+                          <th className="w-[14%] px-3 py-2 text-right text-xs font-bold uppercase tracking-wide text-neutral-600">Line Total</th>
+                          <th className="w-[10%] px-3 py-2 text-center text-xs font-bold uppercase tracking-wide text-neutral-600">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-neutral-100">
+                        {lineItems.map((item, idx) => {
+                          const product = products.find((p) => p.id === item.product_id);
+                          const lineTotal = calculateLineTotal(item);
+                          return (
+                            <tr key={idx} className="align-top hover:bg-neutral-50/70">
+                              <td className="px-3 py-2 text-sm text-neutral-900">
+                                <div className="whitespace-normal break-words font-medium">{product?.name || 'Unknown Product'}</div>
+                              </td>
+                              <td className="px-3 py-2 text-right text-sm tabular-nums text-neutral-800">
+                                {Number(item.quantity || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td className="px-3 py-2 text-right text-sm tabular-nums text-neutral-800">
+                                ₹{Number(item.unit_price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td className="px-3 py-2 text-right text-sm tabular-nums text-neutral-800">
+                                {Number(item.discount_percent || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
+                              </td>
+                              <td className="px-3 py-2 text-right text-sm tabular-nums text-neutral-800">
+                                {item.gst_rate}%
+                              </td>
+                              <td className="px-3 py-2 text-right text-sm font-semibold tabular-nums text-neutral-900">
+                                ₹{Number(lineTotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td className="px-3 py-2 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveLineItem(idx)}
+                                  className="rounded px-2 py-1 text-xs font-semibold text-danger transition hover:bg-red-50"
+                                >
+                                  Remove
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
 
                   {/* Totals Summary */}
-                  <div className="mt-4 pt-4 border-t border-neutral-200 space-y-1">
+                  <div className="space-y-1 border-t border-neutral-200 bg-neutral-50 px-4 py-3">
                     {(() => {
                       const totals = calculateTotals(lineItems);
                       return (
@@ -632,13 +719,13 @@ const PurchaseOrderPage = () => {
               )}
             </div>
 
-            <div className="md:col-span-2 xl:col-span-4">
+            <div className="xl:col-span-12">
               {formError && <p className="text-sm text-danger">{formError}</p>}
               {createMutation.isError && <p className="text-sm text-danger">Failed to create PO</p>}
               {createMutation.isSuccess && <p className="text-sm text-success">PO created successfully</p>}
             </div>
 
-            <div className="flex flex-col gap-3 md:col-span-2 xl:col-span-4 sm:flex-row">
+            <div className="flex flex-col gap-3 xl:col-span-12 sm:flex-row">
               <button
                 type="submit"
                 onClick={() => setSubmitMode('draft')}
@@ -829,7 +916,7 @@ const PurchaseOrderPage = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-neutral-50 p-4 rounded-lg">
+              <div className="grid grid-cols-2 md:grid-cols-6 gap-4 bg-neutral-50 p-4 rounded-lg">
                 <div>
                   <p className="text-xs text-neutral-600">Order Date</p>
                   <p className="font-medium">{new Date(selectedPO.order_date).toLocaleDateString('en-IN')}</p>
@@ -852,6 +939,14 @@ const PurchaseOrderPage = () => {
                     {selectedPO.currency_code === 'INR' ? '₹' : selectedPO.currency_code}{' '}
                     {(selectedPO.total_amount / 100).toFixed(2)}
                   </p>
+                </div>
+                <div>
+                  <p className="text-xs text-neutral-600">Under Delivery Tolerance (Qty)</p>
+                  <p className="font-medium">{Number(selectedPO.under_delivery_tolerance || 0).toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-neutral-600">Over Delivery Tolerance (Qty)</p>
+                  <p className="font-medium">{Number(selectedPO.over_delivery_tolerance || 0).toFixed(2)}</p>
                 </div>
               </div>
 

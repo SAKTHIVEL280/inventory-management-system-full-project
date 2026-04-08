@@ -12,6 +12,7 @@ class CompanyBase(BaseModel):
     gstin: Optional[str] = None
     gstin_status: str = 'non-registered'
     pan: Optional[str] = None
+    import_export_number: Optional[str] = None
     company_director_name: Optional[str] = None
     company_director_contact: Optional[str] = None
 

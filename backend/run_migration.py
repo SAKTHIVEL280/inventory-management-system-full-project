@@ -87,11 +87,15 @@ def main() -> int:
         "ALTER TABLE customers ADD COLUMN IF NOT EXISTS shipping_country VARCHAR(100)",
         "ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS currency_code VARCHAR(3) NOT NULL DEFAULT 'INR'",
         "ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS exchange_rate NUMERIC(12, 6) NOT NULL DEFAULT 1.0",
+        "ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS under_delivery_tolerance NUMERIC(10, 2) NOT NULL DEFAULT 0",
+        "ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS over_delivery_tolerance NUMERIC(10, 2) NOT NULL DEFAULT 0",
         "ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS currency_code VARCHAR(3) NOT NULL DEFAULT 'INR'",
         "ALTER TABLE sales_orders ADD COLUMN IF NOT EXISTS exchange_rate NUMERIC(12, 6) NOT NULL DEFAULT 1.0",
 
         # GRN batch tracking fields
         "ALTER TABLE goods_receipt_notes ADD COLUMN IF NOT EXISTS payment_due_date DATE",
+        "ALTER TABLE goods_receipt_notes ADD COLUMN IF NOT EXISTS under_delivery_tolerance NUMERIC(10, 2) NOT NULL DEFAULT 0",
+        "ALTER TABLE goods_receipt_notes ADD COLUMN IF NOT EXISTS over_delivery_tolerance NUMERIC(10, 2) NOT NULL DEFAULT 0",
         "ALTER TABLE grn_items ADD COLUMN IF NOT EXISTS batch_no VARCHAR(100)",
         "ALTER TABLE grn_items ADD COLUMN IF NOT EXISTS manufacture_date DATE",
         "ALTER TABLE grn_items ADD COLUMN IF NOT EXISTS expiry_date DATE",
@@ -103,6 +107,9 @@ def main() -> int:
         "ALTER TABLE sales_invoice_items ADD COLUMN IF NOT EXISTS manufacture_date DATE",
         "ALTER TABLE sales_invoice_items ADD COLUMN IF NOT EXISTS expiry_date DATE",
         "ALTER TABLE sales_invoice_items ADD COLUMN IF NOT EXISTS free_quantity NUMERIC(12, 4) NOT NULL DEFAULT 0",
+        "ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS invoice_type VARCHAR(30) NOT NULL DEFAULT 'within_state'",
+        "ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS import_export_code VARCHAR(50)",
+        "ALTER TABLE company ADD COLUMN IF NOT EXISTS import_export_number VARCHAR(50)",
 
                 # Customer country/currency customization options
                 """

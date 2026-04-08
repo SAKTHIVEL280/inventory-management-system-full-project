@@ -1,6 +1,6 @@
 -- ALL DATABASE UPDATES 03 - Consolidated updates from CUS-012 onward
 -- Date: April 8, 2026
--- Coverage: CUS-012, DB-30, DB-31, DB-32, DB-33
+-- Coverage: CUS-012, DB-30, DB-31, DB-32, DB-33, DB-36
 
 BEGIN;
 
@@ -98,6 +98,39 @@ ALTER COLUMN alternate_phone TYPE VARCHAR(20);
 
 ALTER TABLE suppliers
 ADD COLUMN IF NOT EXISTS currency_code VARCHAR(10) NOT NULL DEFAULT 'INR';
+
+-- ============================================================================
+-- DB-36: Sales Invoice Type Classification (SAL-029)
+-- ============================================================================
+
+ALTER TABLE sales_invoices
+ADD COLUMN IF NOT EXISTS invoice_type VARCHAR(30) NOT NULL DEFAULT 'within_state';
+
+-- ============================================================================
+-- DB-37: Export Invoice Enhancements (SAL-030)
+-- ============================================================================
+
+ALTER TABLE sales_invoices
+ADD COLUMN IF NOT EXISTS import_export_code VARCHAR(50);
+
+ALTER TABLE company
+ADD COLUMN IF NOT EXISTS import_export_number VARCHAR(50);
+
+-- ============================================================================
+-- DB-38: Purchase/GRN Delivery Tolerance Fields (PUR-003)
+-- ============================================================================
+
+ALTER TABLE purchase_orders
+ADD COLUMN IF NOT EXISTS under_delivery_tolerance NUMERIC(10, 2) NOT NULL DEFAULT 0;
+
+ALTER TABLE purchase_orders
+ADD COLUMN IF NOT EXISTS over_delivery_tolerance NUMERIC(10, 2) NOT NULL DEFAULT 0;
+
+ALTER TABLE goods_receipt_notes
+ADD COLUMN IF NOT EXISTS under_delivery_tolerance NUMERIC(10, 2) NOT NULL DEFAULT 0;
+
+ALTER TABLE goods_receipt_notes
+ADD COLUMN IF NOT EXISTS over_delivery_tolerance NUMERIC(10, 2) NOT NULL DEFAULT 0;
 
 -- ============================================================================
 COMMIT;

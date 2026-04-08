@@ -1,8 +1,16 @@
 """Sales workflow schemas."""
 from datetime import date, datetime
-from typing import List, Optional
+from typing import List, Optional, Literal
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict
+
+
+InvoiceTypeLiteral = Literal[
+    "export_invoice",
+    "within_state",
+    "other_states",
+    "union_territory",
+]
 
 
 class SalesLineItemRequest(BaseModel):
@@ -119,6 +127,8 @@ class SalesInvoiceCreateRequest(BaseModel):
     ship_to_customer_id: Optional[UUID] = None
     supply_state: Optional[str] = None
     supply_state_code: Optional[str] = None
+    invoice_type: Optional[InvoiceTypeLiteral] = None
+    import_export_code: Optional[str] = None
     is_igst: bool = False
     notes: Optional[str] = None
     terms_conditions: Optional[str] = None
@@ -133,6 +143,8 @@ class SalesInvoiceResponse(BaseModel):
     customer_id: UUID
     invoice_date: Optional[date]
     due_date: Optional[date]
+    invoice_type: InvoiceTypeLiteral
+    import_export_code: Optional[str] = None
     status: str
     total_amount: int
     amount_paid: int

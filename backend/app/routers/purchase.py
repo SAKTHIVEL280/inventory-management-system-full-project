@@ -41,7 +41,7 @@ from app.services.order_number_service import (
     generate_grn_number,
     generate_purchase_return_number,
 )
-from app.services.gst_service import determine_is_igst, calc_line_item, split_tax
+from app.services.gst_service import determine_tax_mode, calc_line_item, split_tax
 from app.services.stock_service import add_stock_entry, refresh_materialized_view
 
 router = APIRouter(tags=["purchase"])
@@ -84,8 +84,10 @@ async def create_purchase_order(
     if not supplier:
         raise HTTPException(status_code=400, detail="Invalid supplier")
 
-    # BUG-02: Auto-detect IGST based on company vs supplier state codes
-    is_igst = determine_is_igst(db, "supplier", payload.supplier_id)
+    # BUG-02: Auto-detect GST mode based on supplier country/state
+    tax_mode = determine_tax_mode(db, "supplier", payload.supplier_id)
+    is_igst = tax_mode["is_igst"]
+    gst_applicable = tax_mode["gst_applicable"]
 
     # BUG-03: Thread-safe number generation with FOR UPDATE lock
     po_number = generate_po_number(db)
@@ -98,6 +100,8 @@ async def create_purchase_order(
         status="draft",  # BUG-13: Always force draft on create
         currency_code=payload.currency_code,
         exchange_rate=payload.exchange_rate,
+        under_delivery_tolerance=payload.under_delivery_tolerance,
+        over_delivery_tolerance=payload.over_delivery_tolerance,
         notes=payload.notes,
         created_by=current_user.id,
     )
@@ -109,7 +113,14 @@ async def create_purchase_order(
         product = db.query(Product).filter(Product.id == item.product_id, Product.is_deleted == False).first()
         if not product:
             raise HTTPException(status_code=400, detail=f"Invalid product: {item.product_id}")
-        calc = calc_line_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst)
+        calc = calc_line_item(
+            item.quantity,
+            item.unit_price,
+            item.discount_percent,
+            item.gst_rate,
+            is_igst,
+            gst_applicable,
+        )
         row = PurchaseOrderItem(
             purchase_order_id=po.id,
             product_id=item.product_id,
@@ -119,7 +130,7 @@ async def create_purchase_order(
             discount_percent=item.discount_percent,
             discount_amount=calc["discount"],
             taxable_amount=calc["taxable"],
-            gst_rate=item.gst_rate,
+            gst_rate=calc["gst_rate"],
             cgst_amount=calc["cgst"],
             sgst_amount=calc["sgst"],
             igst_amount=calc["igst"],
@@ -176,14 +187,18 @@ async def update_purchase_order(
     if not supplier:
         raise HTTPException(status_code=400, detail="Invalid supplier")
 
-    # BUG-02: Auto-detect IGST
-    is_igst = determine_is_igst(db, "supplier", payload.supplier_id)
+    # BUG-02: Auto-detect GST mode
+    tax_mode = determine_tax_mode(db, "supplier", payload.supplier_id)
+    is_igst = tax_mode["is_igst"]
+    gst_applicable = tax_mode["gst_applicable"]
 
     po.supplier_id = payload.supplier_id
     po.order_date = payload.order_date
     po.expected_delivery_date = payload.expected_delivery_date
     po.currency_code = payload.currency_code
     po.exchange_rate = payload.exchange_rate
+    po.under_delivery_tolerance = payload.under_delivery_tolerance
+    po.over_delivery_tolerance = payload.over_delivery_tolerance
     po.notes = payload.notes
 
     db.query(PurchaseOrderItem).filter(PurchaseOrderItem.purchase_order_id == po_id).delete()
@@ -195,7 +210,14 @@ async def update_purchase_order(
         product = db.query(Product).filter(Product.id == item.product_id, Product.is_deleted == False).first()
         if not product:
             raise HTTPException(status_code=400, detail=f"Invalid product: {item.product_id}")
-        calc = calc_line_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst)
+        calc = calc_line_item(
+            item.quantity,
+            item.unit_price,
+            item.discount_percent,
+            item.gst_rate,
+            is_igst,
+            gst_applicable,
+        )
         db.add(PurchaseOrderItem(
             purchase_order_id=po.id,
             product_id=item.product_id,
@@ -205,7 +227,7 @@ async def update_purchase_order(
             discount_percent=item.discount_percent,
             discount_amount=calc["discount"],
             taxable_amount=calc["taxable"],
-            gst_rate=item.gst_rate,
+            gst_rate=calc["gst_rate"],
             cgst_amount=calc["cgst"],
             sgst_amount=calc["sgst"],
             igst_amount=calc["igst"],
@@ -370,6 +392,10 @@ async def create_grn(
 
     po = None
     po_product_ids = set()
+    po_items_by_id: dict[UUID, PurchaseOrderItem] = {}
+    po_items_by_product: dict[UUID, list[PurchaseOrderItem]] = {}
+    under_delivery_tolerance = float(payload.under_delivery_tolerance or 0)
+    over_delivery_tolerance = float(payload.over_delivery_tolerance or 0)
     if payload.purchase_order_id:
         po = db.query(PurchaseOrder).filter(PurchaseOrder.id == payload.purchase_order_id, PurchaseOrder.is_deleted == False).first()
         if not po:
@@ -381,9 +407,16 @@ async def create_grn(
         # BUG-22: Collect valid product IDs from the PO
         po_items = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.purchase_order_id == po.id).all()
         po_product_ids = {item.product_id for item in po_items}
+        po_items_by_id = {item.id: item for item in po_items}
+        for po_item in po_items:
+            po_items_by_product.setdefault(po_item.product_id, []).append(po_item)
+        under_delivery_tolerance = float(po.under_delivery_tolerance or 0)
+        over_delivery_tolerance = float(po.over_delivery_tolerance or 0)
 
-    # BUG-02: Auto-detect IGST
-    is_igst = determine_is_igst(db, "supplier", payload.supplier_id)
+    # BUG-02: Auto-detect GST mode
+    tax_mode = determine_tax_mode(db, "supplier", payload.supplier_id)
+    is_igst = tax_mode["is_igst"]
+    gst_applicable = tax_mode["gst_applicable"]
 
     grn_number = generate_grn_number(db)
     grn = GoodsReceiptNote(
@@ -394,6 +427,8 @@ async def create_grn(
         supplier_invoice_date=payload.supplier_invoice_date,
         receipt_date=payload.receipt_date,
         payment_due_date=payment_due_date,
+        under_delivery_tolerance=under_delivery_tolerance,
+        over_delivery_tolerance=over_delivery_tolerance,
         status="draft",
         notes=payload.notes,
         created_by=current_user.id,
@@ -436,7 +471,37 @@ async def create_grn(
                 detail=f"Product {product.name} is not part of the linked purchase order",
             )
 
-        calc = calc_line_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst)
+        # PUR-006: Validate received quantity using tolerance in quantity units
+        if payload.purchase_order_id:
+            po_item = None
+            if item.purchase_order_item_id:
+                po_item = po_items_by_id.get(item.purchase_order_item_id)
+            else:
+                po_candidates = po_items_by_product.get(item.product_id, [])
+                if len(po_candidates) == 1:
+                    po_item = po_candidates[0]
+
+            if not po_item:
+                raise HTTPException(status_code=400, detail="Unable to map GRN line item to purchase order line item")
+
+            ordered_qty = float(po_item.quantity or 0)
+            received_qty = float(item.quantity or 0)
+            minimum_allowed = max(0.0, ordered_qty - under_delivery_tolerance)
+            maximum_allowed = ordered_qty + over_delivery_tolerance
+
+            if received_qty < minimum_allowed:
+                raise HTTPException(status_code=400, detail="Under delivery exceeded allowed tolerance")
+            if received_qty > maximum_allowed:
+                raise HTTPException(status_code=400, detail="Over delivery exceeded allowed tolerance")
+
+        calc = calc_line_item(
+            item.quantity,
+            item.unit_price,
+            item.discount_percent,
+            item.gst_rate,
+            is_igst,
+            gst_applicable,
+        )
         db.add(GRNItem(
             grn_id=grn.id,
             product_id=item.product_id,
@@ -450,7 +515,7 @@ async def create_grn(
             discount_percent=item.discount_percent,
             discount_amount=calc["discount"],
             taxable_amount=calc["taxable"],
-            gst_rate=item.gst_rate,
+            gst_rate=calc["gst_rate"],
             cgst_amount=calc["cgst"],
             sgst_amount=calc["sgst"],
             igst_amount=calc["igst"],
@@ -517,6 +582,11 @@ async def update_grn(
         from datetime import timedelta
         grn.payment_due_date = payload.receipt_date + timedelta(days=supplier.payment_terms_days)
 
+    po = None
+    po_product_ids = set()
+    po_items_by_id: dict[UUID, PurchaseOrderItem] = {}
+    po_items_by_product: dict[UUID, list[PurchaseOrderItem]] = {}
+
     if payload.purchase_order_id:
         po = db.query(PurchaseOrder).filter(PurchaseOrder.id == payload.purchase_order_id, PurchaseOrder.is_deleted == False).first()
         if not po:
@@ -525,9 +595,21 @@ async def update_grn(
             raise HTTPException(status_code=400, detail="GRN can be created only from sent or partial purchase orders")
         if po.supplier_id != payload.supplier_id:
             raise HTTPException(status_code=400, detail="Supplier does not match selected purchase order")
+        po_items = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.purchase_order_id == po.id).all()
+        po_product_ids = {item.product_id for item in po_items}
+        po_items_by_id = {item.id: item for item in po_items}
+        for po_item in po_items:
+            po_items_by_product.setdefault(po_item.product_id, []).append(po_item)
+        grn.under_delivery_tolerance = float(po.under_delivery_tolerance or 0)
+        grn.over_delivery_tolerance = float(po.over_delivery_tolerance or 0)
+    else:
+        grn.under_delivery_tolerance = float(payload.under_delivery_tolerance or 0)
+        grn.over_delivery_tolerance = float(payload.over_delivery_tolerance or 0)
 
-    # BUG-02: Auto-detect IGST
-    is_igst = determine_is_igst(db, "supplier", payload.supplier_id)
+    # BUG-02: Auto-detect GST mode
+    tax_mode = determine_tax_mode(db, "supplier", payload.supplier_id)
+    is_igst = tax_mode["is_igst"]
+    gst_applicable = tax_mode["gst_applicable"]
 
     grn.purchase_order_id = payload.purchase_order_id
     grn.supplier_id = payload.supplier_id
@@ -541,6 +623,10 @@ async def update_grn(
 
     subtotal = total_discount = total_taxable = total_cgst = total_sgst = total_igst = 0
     for idx, item in enumerate(payload.items, start=1):
+        product = db.query(Product).filter(Product.id == item.product_id, Product.is_deleted == False).first()
+        if not product:
+            raise HTTPException(status_code=400, detail=f"Invalid product: {item.product_id}")
+
         # Validate manufacture date is not today or in the future
         from datetime import date
         if item.manufacture_date and item.manufacture_date >= date.today():
@@ -561,7 +647,44 @@ async def update_grn(
                 status_code=400,
                 detail=f"Line item {idx}: expiry date cannot be earlier than manufacture date",
             )
-        calc = calc_line_item(item.quantity, item.unit_price, item.discount_percent, item.gst_rate, is_igst)
+
+        if payload.purchase_order_id and po_product_ids and item.product_id not in po_product_ids:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Product {product.name} is not part of the linked purchase order",
+            )
+
+        # PUR-006: Validate received quantity using tolerance in quantity units
+        if payload.purchase_order_id:
+            po_item = None
+            if item.purchase_order_item_id:
+                po_item = po_items_by_id.get(item.purchase_order_item_id)
+            else:
+                po_candidates = po_items_by_product.get(item.product_id, [])
+                if len(po_candidates) == 1:
+                    po_item = po_candidates[0]
+
+            if not po_item:
+                raise HTTPException(status_code=400, detail="Unable to map GRN line item to purchase order line item")
+
+            ordered_qty = float(po_item.quantity or 0)
+            received_qty = float(item.quantity or 0)
+            minimum_allowed = max(0.0, ordered_qty - float(grn.under_delivery_tolerance or 0))
+            maximum_allowed = ordered_qty + float(grn.over_delivery_tolerance or 0)
+
+            if received_qty < minimum_allowed:
+                raise HTTPException(status_code=400, detail="Under delivery exceeded allowed tolerance")
+            if received_qty > maximum_allowed:
+                raise HTTPException(status_code=400, detail="Over delivery exceeded allowed tolerance")
+
+        calc = calc_line_item(
+            item.quantity,
+            item.unit_price,
+            item.discount_percent,
+            item.gst_rate,
+            is_igst,
+            gst_applicable,
+        )
         db.add(GRNItem(
             grn_id=grn.id,
             product_id=item.product_id,
@@ -575,7 +698,7 @@ async def update_grn(
             discount_percent=item.discount_percent,
             discount_amount=calc["discount"],
             taxable_amount=calc["taxable"],
-            gst_rate=item.gst_rate,
+            gst_rate=calc["gst_rate"],
             cgst_amount=calc["cgst"],
             sgst_amount=calc["sgst"],
             igst_amount=calc["igst"],
@@ -752,8 +875,10 @@ async def create_purchase_return(
     if not grn:
         raise HTTPException(status_code=400, detail="Invalid confirmed GRN")
 
-    # BUG-02: Auto-detect IGST based on supplier
-    is_igst = determine_is_igst(db, "supplier", payload.supplier_id)
+    # BUG-02: Auto-detect GST mode based on supplier
+    tax_mode = determine_tax_mode(db, "supplier", payload.supplier_id)
+    is_igst = tax_mode["is_igst"]
+    gst_applicable = tax_mode["gst_applicable"]
 
     # BUG-04: Safe return number generation
     return_number = generate_purchase_return_number(db)
@@ -778,7 +903,8 @@ async def create_purchase_return(
 
         taxable = round(item.unit_price * item.quantity)
         # BUG-19: Use the correct IGST flag from the original transaction
-        cgst, sgst, igst = split_tax(taxable, item.gst_rate, is_igst)
+        effective_gst_rate = item.gst_rate if gst_applicable else 0
+        cgst, sgst, igst = split_tax(taxable, effective_gst_rate, is_igst, gst_applicable)
         total = taxable + cgst + sgst + igst
         db.add(PurchaseReturnItem(
             purchase_return_id=ret.id,
@@ -787,7 +913,7 @@ async def create_purchase_return(
             quantity=item.quantity,
             unit_price=item.unit_price,
             taxable_amount=taxable,
-            gst_rate=item.gst_rate,
+            gst_rate=effective_gst_rate,
             cgst_amount=cgst,
             sgst_amount=sgst,
             igst_amount=igst,

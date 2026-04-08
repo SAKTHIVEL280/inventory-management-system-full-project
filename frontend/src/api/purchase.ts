@@ -34,6 +34,8 @@ export interface CreatePOPayload {
   status?: string;
   currency_code?: string;
   exchange_rate?: number;
+  under_delivery_tolerance?: number;
+  over_delivery_tolerance?: number;
   items: PurchaseLineItem[];
 }
 
@@ -50,6 +52,8 @@ export interface CreateGRNPayload {
   supplier_invoice_date?: string;
   receipt_date: string;
   notes?: string;
+  under_delivery_tolerance?: number;
+  over_delivery_tolerance?: number;
   items: PurchaseLineItem[];
 }
 
@@ -89,6 +93,8 @@ export interface PurchaseOrder {
   total_amount: number;
   currency_code?: string;
   exchange_rate?: number;
+  under_delivery_tolerance?: number;
+  over_delivery_tolerance?: number;
   notes?: string;
   created_at: string;
   created_by?: string;
@@ -109,6 +115,8 @@ export interface GoodsReceiptNote {
   supplier_invoice_date?: string;
   receipt_date: string;
   payment_due_date?: string;
+  under_delivery_tolerance?: number;
+  over_delivery_tolerance?: number;
   status: string;
   subtotal: number;
   total_discount: number;

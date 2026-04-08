@@ -16,6 +16,7 @@ class Company(Base):
     gstin = Column(String(15), unique=True, nullable=True)
     gstin_status = Column(String(20), nullable=False, default='non-registered')
     pan = Column(String(10), nullable=True)
+    import_export_number = Column(String(50), nullable=True)
     company_director_name = Column(String(255), nullable=True)
     company_director_contact = Column(String(255), nullable=True)
 
