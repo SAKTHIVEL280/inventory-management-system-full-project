@@ -1,6 +1,0 @@
-to=qa@example.com
-subject=Quotation QTN-00003
-body=
-Please find attached Quotation QTN-00003.
-
-attachment=20260408195350952720_QTN-00003.pdf
