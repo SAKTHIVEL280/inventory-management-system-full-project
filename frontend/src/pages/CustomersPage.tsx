@@ -3,8 +3,7 @@ import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import { customersApi } from '../api/customers';
-import { companyApi } from '../api/company';
-import { Company, Customer } from '../types';
+import { Customer } from '../types';
 import { AppLayout } from '../components/AppLayout';
 import { PageEmpty, PageError, PageLoading } from '../components/PageState';
 import { showError, showSuccess, confirmWithToast } from '../utils/toastHelper';
@@ -181,7 +180,7 @@ const parsePhoneForEditing = (storedPhone?: string | null): { code: string; loca
   };
 };
 
-const buildDefaultValues = (companyProfile?: Company): CustomerForm => ({
+const buildDefaultValues = (): CustomerForm => ({
   company_name: '',
   phone: '',
   customer_type: 'regular',
@@ -192,13 +191,13 @@ const buildDefaultValues = (companyProfile?: Company): CustomerForm => ({
   email: '',
   gstin_status: 'non-registered',
   gstin: '',
-  billing_address_line1: companyProfile?.address_line1 ?? '',
-  billing_address_line2: companyProfile?.address_line2 ?? '',
-  billing_city: companyProfile?.city ?? '',
-  billing_state: companyProfile?.state ?? '',
-  billing_state_code: companyProfile?.state_code ?? '',
-  billing_country: 'India',
-  billing_pincode: companyProfile?.pincode ?? '',
+  billing_address_line1: '',
+  billing_address_line2: '',
+  billing_city: '',
+  billing_state: '',
+  billing_state_code: '',
+  billing_country: '',
+  billing_pincode: '',
   same_as_billing: true,
   shipping_address_line1: '',
   shipping_address_line2: '',
@@ -239,6 +238,7 @@ type TypeaheadInputProps = {
   onChange: (nextValue: string) => void;
   className?: string;
   showAllWhenFocused?: boolean;
+  autoComplete?: string;
 };
 
 const TypeaheadInput = ({
@@ -249,6 +249,7 @@ const TypeaheadInput = ({
   onChange,
   className = 'hms-input',
   showAllWhenFocused = false,
+  autoComplete = 'off',
 }: TypeaheadInputProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [hasTypedSinceFocus, setHasTypedSinceFocus] = useState(false);
@@ -280,6 +281,7 @@ const TypeaheadInput = ({
         className={className}
         value={value}
         placeholder={placeholder}
+        autoComplete={autoComplete}
         onFocus={() => {
           setHasTypedSinceFocus(false);
           setIsOpen(true);
@@ -330,6 +332,7 @@ const CustomersPage = () => {
   const [createdFrom, setCreatedFrom] = useState('');
   const [createdTo, setCreatedTo] = useState('');
   const [phoneCountryCode, setPhoneCountryCode] = useState('+91');
+  const [newFormSessionKey, setNewFormSessionKey] = useState(0);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['customers'],
@@ -347,26 +350,32 @@ const CustomersPage = () => {
     },
   });
 
-  const { data: companyProfile } = useQuery({
-    queryKey: ['company-profile'],
-    queryFn: async () => {
-      try {
-        return await companyApi.get();
-      } catch {
-        return null;
-      }
-    },
-  });
-
   const { register, handleSubmit, reset, setValue, watch } = useForm<CustomerForm>({
     defaultValues: buildDefaultValues(),
+    shouldUnregister: true,
   });
 
   useEffect(() => {
     if (!editingItem && !isFormOpen) {
-      reset(buildDefaultValues(companyProfile ?? undefined));
+      reset(buildDefaultValues());
     }
-  }, [companyProfile, editingItem, isFormOpen, reset]);
+  }, [editingItem, isFormOpen, reset]);
+
+  useEffect(() => {
+    if (!isFormOpen || editingItem) {
+      return;
+    }
+
+    const emptyValues = buildDefaultValues();
+    reset(emptyValues);
+    const frameId = window.requestAnimationFrame(() => {
+      reset(emptyValues);
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [editingItem, isFormOpen, reset]);
 
   const createMutation = useMutation({
     mutationFn: customersApi.create,
@@ -425,10 +434,20 @@ const CustomersPage = () => {
     },
   });
 
-  const resetForm = () => {
+  const resetToNewCustomerDefaults = () => {
     setEditingItem(null);
-    reset(buildDefaultValues(companyProfile ?? undefined));
+    reset(buildDefaultValues());
     setPhoneCountryCode('+91');
+    setNewFormSessionKey((prev) => prev + 1);
+  };
+
+  const openNewCustomerForm = () => {
+    resetToNewCustomerDefaults();
+    setIsFormOpen(true);
+  };
+
+  const resetForm = () => {
+    resetToNewCustomerDefaults();
     setIsFormOpen(false);
   };
 
@@ -694,12 +713,7 @@ const CustomersPage = () => {
                 {!isFormOpen && (
                   <button
                     type="button"
-                    onClick={() => {
-                      setEditingItem(null);
-                      reset(buildDefaultValues(companyProfile ?? undefined));
-                      setPhoneCountryCode('+91');
-                      setIsFormOpen(true);
-                    }}
+                    onClick={openNewCustomerForm}
                     className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary/90"
                   >
                     + New Customer
@@ -707,7 +721,19 @@ const CustomersPage = () => {
                 )}
                 <button
                   type="button"
-                  onClick={() => setIsFormOpen((prev) => !prev)}
+                  onClick={() => {
+                    if (isFormOpen) {
+                      setIsFormOpen(false);
+                      return;
+                    }
+
+                    if (editingItem) {
+                      setIsFormOpen(true);
+                      return;
+                    }
+
+                    openNewCustomerForm();
+                  }}
                   className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 px-3 py-2 text-sm font-semibold text-neutral-700 transition hover:bg-neutral-50"
                 >
                   <span className="material-icons text-base" aria-hidden="true">{isFormOpen ? 'expand_less' : 'expand_more'}</span>
@@ -727,7 +753,14 @@ const CustomersPage = () => {
                   </button>
                 </div>
               )}
-              <form className="space-y-3" onSubmit={handleSubmit(onSubmit)}>
+              <form
+                key={editingItem?.id ?? `new-${newFormSessionKey}`}
+                className="space-y-3"
+                onSubmit={handleSubmit(onSubmit)}
+                autoComplete="off"
+              >
+                <input type="text" className="hidden" tabIndex={-1} autoComplete="username" />
+                <input type="password" className="hidden" tabIndex={-1} autoComplete="new-password" />
                 <div>
                   <label htmlFor="company_name" className="hms-label">Company name</label>
                   <input id="company_name" className="hms-input" placeholder="Company name" {...register('company_name')} />
@@ -885,16 +918,16 @@ const CustomersPage = () => {
                 </div>
                 <div>
                   <label htmlFor="billing_address_line1" className="hms-label">Address</label>
-                  <input id="billing_address_line1" className="hms-input" placeholder="Address line 1" {...register('billing_address_line1')} />
+                  <input id="billing_address_line1" className="hms-input" placeholder="Address line 1" autoComplete="new-password" {...register('billing_address_line1')} />
                 </div>
                 <div>
                   <label htmlFor="billing_address_line2" className="hms-label">Address line 2</label>
-                  <input id="billing_address_line2" className="hms-input" placeholder="Address line 2" {...register('billing_address_line2')} />
+                  <input id="billing_address_line2" className="hms-input" placeholder="Address line 2" autoComplete="new-password" {...register('billing_address_line2')} />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label htmlFor="billing_city" className="hms-label">City</label>
-                    <input id="billing_city" className="hms-input" placeholder="City" {...register('billing_city')} />
+                    <input id="billing_city" className="hms-input" placeholder="City" autoComplete="new-password" {...register('billing_city')} />
                   </div>
                   <div>
                     <label htmlFor="billing_state" className="hms-label">State</label>
@@ -904,6 +937,7 @@ const CustomersPage = () => {
                       value={billingStateValue}
                       options={stateOptions}
                       placeholder="Type or select state"
+                      autoComplete="new-password"
                       onChange={(nextValue) => {
                         setValue('billing_state', nextValue, { shouldDirty: true });
                       }}
@@ -913,11 +947,11 @@ const CustomersPage = () => {
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label htmlFor="billing_state_code" className="hms-label">State Code</label>
-                    <input id="billing_state_code" className="hms-input" placeholder="e.g. 29 or N/A" maxLength={5} {...register('billing_state_code')} />
+                    <input id="billing_state_code" className="hms-input" placeholder="e.g. 29 or N/A" autoComplete="new-password" maxLength={5} {...register('billing_state_code')} />
                   </div>
                   <div>
                     <label htmlFor="billing_pincode" className="hms-label">Pincode</label>
-                    <input id="billing_pincode" className="hms-input" placeholder="Pincode" {...register('billing_pincode')} />
+                    <input id="billing_pincode" className="hms-input" placeholder="Pincode" autoComplete="new-password" {...register('billing_pincode')} />
                   </div>
                 </div>
                 <div>
@@ -928,6 +962,7 @@ const CustomersPage = () => {
                     value={billingCountryValue}
                     options={countryOptions}
                     placeholder="Type or select country"
+                    autoComplete="new-password"
                     onChange={(nextValue) => {
                       setValue('billing_country', nextValue, { shouldDirty: true });
                     }}
