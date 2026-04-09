@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type FocusEvent } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
@@ -19,12 +19,20 @@ interface InventoryCountDraftItem {
 
 const todayIso = new Date().toISOString().slice(0, 10);
 
+const clearLeadingZeroOnFocus = (event: FocusEvent<HTMLInputElement>) => {
+  const currentValue = event.currentTarget.value;
+  if (currentValue === '0') {
+    event.currentTarget.value = '';
+  }
+};
+
 const InventoryCountPage = () => {
   const user = useAuthStore((state) => state.user);
   const [countDate, setCountDate] = useState(todayIso);
   const [countNumber, setCountNumber] = useState('');
   const [countPerformedBy, setCountPerformedBy] = useState(user?.full_name || '');
   const [items, setItems] = useState<InventoryCountDraftItem[]>([]);
+  const [isQuantityFocused, setIsQuantityFocused] = useState(false);
 
   const [entry, setEntry] = useState<InventoryCountDraftItem>({
     serial_number: 1,
@@ -230,7 +238,12 @@ const InventoryCountPage = () => {
                 className="hms-input"
                 min={0}
                 step="0.0001"
-                value={entry.quantity}
+                value={isQuantityFocused && entry.quantity === 0 ? '' : entry.quantity}
+                onFocus={(event) => {
+                  setIsQuantityFocused(true);
+                  clearLeadingZeroOnFocus(event);
+                }}
+                onBlur={() => setIsQuantityFocused(false)}
                 onChange={(e) => setEntry((prev) => ({ ...prev, quantity: Number(e.target.value || 0) }))}
               />
             </div>

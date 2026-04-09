@@ -7,7 +7,7 @@ Production-ready with fixes for:
 from datetime import date
 from decimal import Decimal
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -22,6 +22,7 @@ from app.schemas.stock import (
     InventoryCountDifferenceItemResponse,
     InventoryCountDifferenceResponse,
     InventoryCountItemResponse,
+    InventoryCountNumberSearchResponse,
     InventoryCountResponse,
 )
 from app.services.stock_service import refresh_materialized_view
@@ -249,6 +250,130 @@ async def create_inventory_count(
         status=inventory_count.status,
         items=created_items,
     )
+
+
+@router.get("/inventory-counts/search", response_model=InventoryCountNumberSearchResponse)
+async def search_inventory_count_numbers(
+    q: str = Query(default="", max_length=60),
+    limit: int = Query(default=10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    token = (q or "").strip()
+
+    query = db.query(InventoryCount.count_number).filter(InventoryCount.is_deleted == False)
+    if token:
+        query = query.filter(InventoryCount.count_number.ilike(f"%{token}%"))
+
+    rows = (
+        query.order_by(InventoryCount.count_date.desc(), InventoryCount.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    return InventoryCountNumberSearchResponse(items=[row[0] for row in rows if row[0]])
+
+
+@router.get("/inventory-counts/differences", response_model=list[InventoryCountDifferenceResponse])
+async def list_inventory_count_differences(
+    limit: int = Query(default=300, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    inventory_counts = (
+        db.query(InventoryCount)
+        .filter(
+            InventoryCount.is_deleted == False,
+            InventoryCount.status == "confirmed",
+        )
+        .order_by(InventoryCount.count_date.desc(), InventoryCount.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    if not inventory_counts:
+        return []
+
+    count_ids = [row.id for row in inventory_counts]
+    count_items = (
+        db.query(InventoryCountItem)
+        .filter(
+            InventoryCountItem.inventory_count_id.in_(count_ids),
+            InventoryCountItem.is_deleted == False,
+        )
+        .order_by(InventoryCountItem.inventory_count_id.desc(), InventoryCountItem.serial_number.asc())
+        .all()
+    )
+
+    items_by_count: dict[str, list[InventoryCountItem]] = {}
+    product_ids = set()
+    for row in count_items:
+        key = str(row.inventory_count_id)
+        items_by_count.setdefault(key, []).append(row)
+        product_ids.add(row.product_id)
+
+    product_rows = (
+        db.query(Product.id, Product.product_code, Product.name)
+        .filter(Product.id.in_(list(product_ids)), Product.is_deleted == False)
+        .all()
+    ) if product_ids else []
+    product_meta = {
+        str(row.id): {
+            "product_code": row.product_code,
+            "product_name": row.name,
+        }
+        for row in product_rows
+    }
+
+    existing_stock_rows = (
+        db.query(
+            StockLedger.product_id,
+            func.coalesce(func.sum(StockLedger.quantity), 0).label("qty"),
+        )
+        .filter(
+            StockLedger.product_id.in_(list(product_ids)),
+            StockLedger.is_deleted == False,
+        )
+        .group_by(StockLedger.product_id)
+        .all()
+    ) if product_ids else []
+    existing_stock_map = {str(row.product_id): float(row.qty or 0) for row in existing_stock_rows}
+
+    responses: list[InventoryCountDifferenceResponse] = []
+    for count in inventory_counts:
+        rows = items_by_count.get(str(count.id), [])
+        items = []
+        for row in rows:
+            product_key = str(row.product_id)
+            counted_qty = float(row.quantity)
+            existing_qty = float(existing_stock_map.get(product_key, 0.0))
+            meta = product_meta.get(product_key, {})
+            items.append(
+                InventoryCountDifferenceItemResponse(
+                    serial_number=row.serial_number,
+                    product_id=product_key,
+                    product_code=meta.get("product_code"),
+                    product_name=meta.get("product_name"),
+                    product_description=row.product_description,
+                    batch_no=row.batch_no,
+                    manufacture_date=row.manufacture_date.isoformat() if row.manufacture_date else None,
+                    expiry_date=row.expiry_date.isoformat() if row.expiry_date else None,
+                    counted_quantity=counted_qty,
+                    existing_stock=existing_qty,
+                    difference=round(counted_qty - existing_qty, 4),
+                )
+            )
+
+        responses.append(
+            InventoryCountDifferenceResponse(
+                count_number=count.count_number,
+                count_date=count.count_date.isoformat(),
+                count_performed_by=count.count_performed_by,
+                total_items=len(items),
+                items=items,
+            )
+        )
+
+    return responses
 
 
 @router.get("/inventory-counts/{count_number}/difference", response_model=InventoryCountDifferenceResponse)

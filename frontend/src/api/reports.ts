@@ -6,6 +6,20 @@
 
 import { apiClient } from './client';
 
+export interface CashInFlowRow {
+  customer_id: string;
+  customer_name: string;
+  total_received_amount: number;
+  fully_settled_amount: number;
+  partially_settled_amount: number;
+}
+
+export interface CashInFlowSummary {
+  total_received_amount: number;
+  fully_settled_amount: number;
+  partially_settled_amount: number;
+}
+
 export interface DashboardStats {
   total_products: number;
   total_customers: number;
@@ -22,9 +36,14 @@ export interface DashboardStats {
   sales_trend: { date: string; amount: number }[];
   top_products: { product_name: string; quantity_sold: number; amount: number }[];
   cash_in_flow: {
-    daily: { customer_id: string; customer_name: string; receivables_amount: number }[];
-    weekly: { customer_id: string; customer_name: string; receivables_amount: number }[];
-    monthly: { customer_id: string; customer_name: string; receivables_amount: number }[];
+    daily: CashInFlowRow[];
+    weekly: CashInFlowRow[];
+    monthly: CashInFlowRow[];
+  };
+  cash_in_flow_summary: {
+    daily: CashInFlowSummary;
+    weekly: CashInFlowSummary;
+    monthly: CashInFlowSummary;
   };
   recent_invoices: { invoice_number: string; customer_name: string; amount: number; status: string; date: string }[];
 }

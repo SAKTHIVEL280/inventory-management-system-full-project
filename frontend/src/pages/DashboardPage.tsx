@@ -58,6 +58,11 @@ const DashboardPage = () => {
 
   const salesTrend = stats?.sales_trend || [];
   const cashInFlowRows = stats?.cash_in_flow?.[cashInFlowView] || [];
+  const cashInFlowSummary = stats?.cash_in_flow_summary?.[cashInFlowView] || {
+    total_received_amount: 0,
+    fully_settled_amount: 0,
+    partially_settled_amount: 0,
+  };
   const cashInFlow = cashInFlowRows.map((item) => ({
     ...item,
     customer_label: (item.customer_name || item.customer_id.slice(0, 8)).length > 14
@@ -170,7 +175,7 @@ const DashboardPage = () => {
 
           <div className="hms-card overflow-hidden p-6">
             <div className="mb-4 flex items-center justify-between gap-3">
-              <h3 className="text-sm font-bold text-neutral-700">Cash In Flow Graph</h3>
+              <h3 className="text-sm font-bold text-neutral-700">Cash In Flow Graph (Received Receipts)</h3>
               <div className="flex rounded-lg border border-neutral-200 bg-neutral-50 p-1">
                 {(['daily', 'weekly', 'monthly'] as const).map((view) => (
                   <button
@@ -188,7 +193,22 @@ const DashboardPage = () => {
                 ))}
               </div>
             </div>
+            <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div className="rounded-lg border border-neutral-200 bg-white px-3 py-2">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Total Received</p>
+                <p className="mt-1 text-sm font-semibold text-primary">{formatAmount(cashInFlowSummary.total_received_amount)}</p>
+              </div>
+              <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-green-700">Fully Received</p>
+                <p className="mt-1 text-sm font-semibold text-green-700">{formatAmount(cashInFlowSummary.fully_settled_amount)}</p>
+              </div>
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-amber-700">Partially Received</p>
+                <p className="mt-1 text-sm font-semibold text-amber-700">{formatAmount(cashInFlowSummary.partially_settled_amount)}</p>
+              </div>
+            </div>
             {!loading && cashInFlow.length > 0 ? (
+              <>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={cashInFlow} margin={{ top: 6, right: 8, left: 6, bottom: 20 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -204,15 +224,34 @@ const DashboardPage = () => {
                     tickFormatter={(v) => formatAmountShort(v)}
                   />
                   <Tooltip
-                    formatter={(v: number) => formatAmount(v)}
-                    labelFormatter={(_, payload) => payload?.[0]?.payload?.customer_full_name || ''}
+                    formatter={(value: number, name: string) => {
+                      if (name === 'fully_settled_amount' || name === 'Fully Received' || name === 'Fully Settled') {
+                        return [formatAmount(value), 'Fully Received'];
+                      }
+                      if (name === 'partially_settled_amount' || name === 'Partially Received' || name === 'Partially Settled') {
+                        return [formatAmount(value), 'Partially Received'];
+                      }
+                      return [formatAmount(value), 'Received'];
+                    }}
                     labelStyle={{ fontWeight: 600 }}
                   />
-                  <Bar dataKey="receivables_amount" fill="#1E3A5F" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="partially_settled_amount" name="Partially Received" stackId="received" fill="#f59e0b" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="fully_settled_amount" name="Fully Received" stackId="received" fill="#16a34a" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
+              <div className="mt-3 flex flex-wrap items-center gap-4 text-xs font-semibold text-neutral-600">
+                <span className="inline-flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-green-600" />
+                  Fully Received
+                </span>
+                <span className="inline-flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                  Partially Received
+                </span>
+              </div>
+              </>
             ) : (
-              <NoDataPlaceholder message="No receivables found for selected period in Cash In Flow graph." />
+              <NoDataPlaceholder message="No customer receipts found for selected period in Cash In Flow graph." />
             )}
           </div>
         </section>

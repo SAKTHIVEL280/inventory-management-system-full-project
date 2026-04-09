@@ -1,4 +1,5 @@
 """Reports router."""
+from collections import defaultdict
 from datetime import date, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, text
@@ -12,6 +13,7 @@ from app.models.sales import SalesInvoice, SalesInvoiceItem, SalesReturn, SalesR
 from app.models.purchase import GoodsReceiptNote, GRNItem, PurchaseOrder, PurchaseReturn, PurchaseReturnItem
 from app.models.customer import Customer
 from app.models.supplier import Supplier
+from app.models.payment import Payment, PaymentAllocation
 
 router = APIRouter(prefix="/api/v1/reports", tags=["reports"])
 
@@ -33,7 +35,7 @@ async def dashboard_report(
     today = date.today()
     month_start = today.replace(day=1)
     receivable_statuses = ["issued", "partial_paid"]
-    cash_flow_statuses = receivable_statuses
+    cash_receipt_statuses = ["pending", "cleared"]
 
     # Count totals
     total_products = db.query(func.count(Product.id)).filter(
@@ -138,49 +140,137 @@ async def dashboard_report(
         for row in top_products_query
     ]
 
-    def _cash_in_flow_rows(start_date: date | None = None):
-        query = db.query(
-            Customer.id,
-            Customer.company_name,
-            func.coalesce(func.sum(SalesInvoice.amount_due), 0).label("receivables_amount"),
-        ).join(
-            SalesInvoice,
-            SalesInvoice.customer_id == Customer.id,
-        ).filter(
-            SalesInvoice.status.in_(cash_flow_statuses),
-            SalesInvoice.amount_due > 0,
-            SalesInvoice.is_deleted == False,
-            Customer.is_deleted == False,
+    def _build_cash_in_flow_metrics(start_date: date):
+        payment_rows = (
+            db.query(
+                Payment.id,
+                Payment.customer_id,
+                Payment.amount,
+                Customer.company_name,
+            )
+            .join(Customer, Payment.customer_id == Customer.id)
+            .filter(
+                Payment.party_type == "customer",
+                Payment.payment_type == "receipt",
+                Payment.status.in_(cash_receipt_statuses),
+                Payment.is_deleted == False,
+                Customer.is_deleted == False,
+                Payment.payment_date >= start_date,
+                Payment.payment_date <= today,
+            )
+            .all()
         )
 
-        if start_date is not None:
-            query = query.filter(
-                SalesInvoice.invoice_date >= start_date,
-                SalesInvoice.invoice_date <= today,
-            )
-
-        return query.group_by(
-            Customer.id,
-            Customer.company_name,
-        ).order_by(
-            text("receivables_amount DESC")
-        ).limit(12).all()
-
-    def _build_cash_in_flow(start_date: date):
-        rows = _cash_in_flow_rows(start_date)
-        return [
-            {
-                "customer_id": str(row.id),
-                "customer_name": row.company_name,
-                "receivables_amount": int(row.receivables_amount),
+        if not payment_rows:
+            empty_summary = {
+                "total_received_amount": 0,
+                "fully_settled_amount": 0,
+                "partially_settled_amount": 0,
             }
-            for row in rows
-        ]
+            return [], empty_summary
+
+        payment_ids = [row.id for row in payment_rows]
+        allocation_rows = (
+            db.query(
+                PaymentAllocation.payment_id,
+                PaymentAllocation.invoice_id,
+                PaymentAllocation.allocated_amount,
+            )
+            .filter(
+                PaymentAllocation.payment_id.in_(payment_ids),
+                PaymentAllocation.is_deleted == False,
+                PaymentAllocation.invoice_id.isnot(None),
+            )
+            .all()
+        )
+
+        allocations_by_payment: dict[str, list[tuple[str, int]]] = defaultdict(list)
+        invoice_ids = set()
+        for row in allocation_rows:
+            if not row.invoice_id:
+                continue
+            amount = int(row.allocated_amount or 0)
+            if amount <= 0:
+                continue
+            payment_key = str(row.payment_id)
+            invoice_key = str(row.invoice_id)
+            allocations_by_payment[payment_key].append((invoice_key, amount))
+            invoice_ids.add(row.invoice_id)
+
+        invoice_due_map: dict[str, int] = {}
+        if invoice_ids:
+            invoice_rows = (
+                db.query(SalesInvoice.id, SalesInvoice.amount_due)
+                .filter(SalesInvoice.id.in_(list(invoice_ids)), SalesInvoice.is_deleted == False)
+                .all()
+            )
+            invoice_due_map = {str(row.id): int(row.amount_due or 0) for row in invoice_rows}
+
+        by_customer: dict[str, dict[str, int | str]] = {}
+        for row in payment_rows:
+            if not row.customer_id:
+                continue
+
+            customer_key = str(row.customer_id)
+            if customer_key not in by_customer:
+                by_customer[customer_key] = {
+                    "customer_id": customer_key,
+                    "customer_name": row.company_name or customer_key,
+                    "total_received_amount": 0,
+                    "fully_settled_amount": 0,
+                    "partially_settled_amount": 0,
+                }
+
+            entry = by_customer[customer_key]
+            receipt_amount = int(row.amount or 0)
+            entry["total_received_amount"] = int(entry["total_received_amount"]) + receipt_amount
+
+            allocations = allocations_by_payment.get(str(row.id), [])
+            allocated_total = 0
+            fully_settled = 0
+            partially_settled = 0
+            for invoice_id, allocated_amount in allocations:
+                allocated_total += allocated_amount
+                invoice_due = invoice_due_map.get(invoice_id)
+                if invoice_due is not None and invoice_due <= 0:
+                    fully_settled += allocated_amount
+                else:
+                    partially_settled += allocated_amount
+
+            # Any receipt value not mapped to invoice allocations is treated as partial.
+            unallocated = max(0, receipt_amount - allocated_total)
+            partially_settled += unallocated
+
+            entry["fully_settled_amount"] = int(entry["fully_settled_amount"]) + fully_settled
+            entry["partially_settled_amount"] = int(entry["partially_settled_amount"]) + partially_settled
+
+        rows = sorted(
+            by_customer.values(),
+            key=lambda row: int(row["total_received_amount"]),
+            reverse=True,
+        )
+        summary = {
+            "total_received_amount": int(sum(int(row["total_received_amount"]) for row in rows)),
+            "fully_settled_amount": int(sum(int(row["fully_settled_amount"]) for row in rows)),
+            "partially_settled_amount": int(sum(int(row["partially_settled_amount"]) for row in rows)),
+        }
+
+        return rows[:12], summary
+
+    daily_rows, daily_summary = _build_cash_in_flow_metrics(today)
+    weekly_rows, weekly_summary = _build_cash_in_flow_metrics(today - timedelta(days=6))
+    monthly_rows, monthly_summary = _build_cash_in_flow_metrics(month_start)
 
     cash_in_flow = {
-        "daily": _build_cash_in_flow(today),
-        "weekly": _build_cash_in_flow(today - timedelta(days=6)),
-        "monthly": _build_cash_in_flow(month_start),
+        "daily": daily_rows,
+        "weekly": weekly_rows,
+        "monthly": monthly_rows,
+    }
+
+    cash_in_flow_summary = {
+        "daily": daily_summary,
+        "weekly": weekly_summary,
+        "monthly": monthly_summary,
     }
 
     # Recent invoices with customer names
@@ -228,6 +318,7 @@ async def dashboard_report(
         "sales_trend": sales_trend,
         "top_products": top_products,
         "cash_in_flow": cash_in_flow,
+        "cash_in_flow_summary": cash_in_flow_summary,
         "recent_invoices": recent_invoices,
     }
 

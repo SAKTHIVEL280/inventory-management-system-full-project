@@ -54,6 +54,10 @@ export type InventoryCountDifferenceResponse = {
   items: InventoryCountDifferenceItem[];
 };
 
+export type InventoryCountNumberSearchResponse = {
+  items: string[];
+};
+
 export const stockApi = {
   /**
    * Adjust stock for a product
@@ -81,6 +85,20 @@ export const stockApi = {
 
   createInventoryCount: async (payload: InventoryCountCreatePayload): Promise<InventoryCountResponse> => {
     const response = await apiClient.post<InventoryCountResponse>('/api/v1/stock/inventory-counts', payload);
+    return response.data;
+  },
+
+  searchInventoryCountNumbers: async (query: string, limit = 10): Promise<InventoryCountNumberSearchResponse> => {
+    const response = await apiClient.get<InventoryCountNumberSearchResponse>('/api/v1/stock/inventory-counts/search', {
+      params: { q: query, limit },
+    });
+    return response.data;
+  },
+
+  getAllInventoryCountDifferences: async (limit = 300): Promise<InventoryCountDifferenceResponse[]> => {
+    const response = await apiClient.get<InventoryCountDifferenceResponse[]>('/api/v1/stock/inventory-counts/differences', {
+      params: { limit },
+    });
     return response.data;
   },
 

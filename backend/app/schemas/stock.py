@@ -64,6 +64,10 @@ class InventoryCountResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class InventoryCountNumberSearchResponse(BaseModel):
+    items: list[str]
+
+
 class InventoryCountDifferenceItemResponse(BaseModel):
     serial_number: int
     product_id: str
