@@ -2,6 +2,34 @@
 
 ---
 
+## DB-41: Company Country Field (Company Profile)
+**Date**: April 10, 2026
+**Status**: ✅ Completed
+**Module**: Company Profile
+**Type**: Enhancement
+
+### Overview
+Added optional `country` support in company profile persistence for new and existing databases.
+
+### Changes Made
+- Added `company.country` in base schema for fresh database setup.
+- Added dedicated migration SQL:
+	- `database/06_company_country_field.sql`
+- Added compatibility migration statements to:
+	- `database/ALL_UPDATES_2.sql`
+	- `database/ALL_UPDATES_03.sql`
+	- `backend/run_migration.py`
+
+### Files Modified
+- `database/01_schema.sql`
+- `database/06_company_country_field.sql`
+- `database/ALL_UPDATES_2.sql`
+- `database/ALL_UPDATES_03.sql`
+- `backend/run_migration.py`
+
+### Validation
+- Verified no SQL/editor errors in modified files.
+
 ## DB-40: Customer Payment Terms Optional (No Default 30 Preload)
 **Date**: April 8, 2026
 **Status**: ✅ Completed

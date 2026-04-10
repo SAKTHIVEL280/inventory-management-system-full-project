@@ -51,6 +51,7 @@ export interface Company {
   address_line2?: string | null;
   city?: string | null;
   state?: string | null;
+  country?: string | null;
   state_code?: string | null;
   pincode?: string | null;
   phone?: string | null;

@@ -21,6 +21,9 @@ interface CustomerOption {
   billing_state?: string;
   billing_state_code?: string;
   billing_country?: string;
+  shipping_state?: string;
+  shipping_state_code?: string;
+  shipping_country?: string;
 }
 interface CompanyLocation { state?: string; state_code?: string; }
 interface UomOption { id: string; name: string; abbreviation: string; }
@@ -39,16 +42,6 @@ const INVOICE_TYPE_OPTIONS: Array<{ value: InvoiceTypeValue; label: string }> = 
   { value: 'union_territory', label: INVOICE_TYPE_LABELS.union_territory },
 ];
 
-const INDIA_INVOICE_TYPE_OPTIONS: Array<{ value: InvoiceTypeValue; label: string }> = [
-  { value: 'within_state', label: INVOICE_TYPE_LABELS.within_state },
-  { value: 'other_states', label: INVOICE_TYPE_LABELS.other_states },
-  { value: 'union_territory', label: INVOICE_TYPE_LABELS.union_territory },
-];
-
-const EXPORT_ONLY_INVOICE_TYPE_OPTIONS: Array<{ value: InvoiceTypeValue; label: string }> = [
-  { value: 'export_invoice', label: INVOICE_TYPE_LABELS.export_invoice },
-];
-
 const UNION_TERRITORY_CODES = new Set(['01', '04', '07', '26', '31', '34', '35', '37', '38']);
 const UNION_TERRITORY_NAMES = new Set([
   'andaman and nicobar islands',
@@ -58,15 +51,72 @@ const UNION_TERRITORY_NAMES = new Set([
   'jammu and kashmir',
   'ladakh',
   'lakshadweep',
+  'pondicherry',
   'puducherry',
 ]);
 
+const STATE_CODE_ENTRIES: Array<[string, string, string]> = [
+  ['01', 'JK', 'jammu and kashmir'],
+  ['02', 'HP', 'himachal pradesh'],
+  ['03', 'PB', 'punjab'],
+  ['04', 'CH', 'chandigarh'],
+  ['05', 'UK', 'uttarakhand'],
+  ['06', 'HR', 'haryana'],
+  ['07', 'DL', 'delhi'],
+  ['08', 'RJ', 'rajasthan'],
+  ['09', 'UP', 'uttar pradesh'],
+  ['10', 'BR', 'bihar'],
+  ['11', 'SK', 'sikkim'],
+  ['12', 'AR', 'arunachal pradesh'],
+  ['13', 'NL', 'nagaland'],
+  ['14', 'MN', 'manipur'],
+  ['15', 'MZ', 'mizoram'],
+  ['16', 'TR', 'tripura'],
+  ['17', 'ML', 'meghalaya'],
+  ['18', 'AS', 'assam'],
+  ['19', 'WB', 'west bengal'],
+  ['20', 'JH', 'jharkhand'],
+  ['21', 'OR', 'odisha'],
+  ['22', 'CT', 'chhattisgarh'],
+  ['23', 'MP', 'madhya pradesh'],
+  ['24', 'GJ', 'gujarat'],
+  ['26', 'DD', 'dadra and nagar haveli and daman and diu'],
+  ['27', 'MH', 'maharashtra'],
+  ['28', 'AP', 'andhra pradesh'],
+  ['29', 'KA', 'karnataka'],
+  ['30', 'GA', 'goa'],
+  ['31', 'LD', 'lakshadweep'],
+  ['32', 'KL', 'kerala'],
+  ['33', 'TN', 'tamil nadu'],
+  ['34', 'PY', 'puducherry'],
+  ['35', 'AN', 'andaman and nicobar islands'],
+  ['36', 'TS', 'telangana'],
+  ['37', 'LA', 'ladakh'],
+  ['38', 'LA', 'ladakh'],
+];
+
+const STATE_CODE_MAP = STATE_CODE_ENTRIES.reduce<Record<string, string>>((acc, [numericCode, abbreviation, stateName]) => {
+  acc[numericCode] = numericCode;
+  acc[abbreviation] = numericCode;
+  acc[stateName] = numericCode;
+  return acc;
+}, {});
+
 const normalizeTextToken = (value?: string | null) => (value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 const normalizeStateCodeToken = (value?: string | null) => {
-  const raw = (value || '').trim().toUpperCase();
+  const raw = (value || '').trim();
   if (!raw) return '';
-  if (/^\d+$/.test(raw)) return raw.padStart(2, '0');
-  return raw;
+
+  const normalizedName = normalizeTextToken(raw);
+  if (STATE_CODE_MAP[normalizedName]) return STATE_CODE_MAP[normalizedName];
+
+  const upperRaw = raw.toUpperCase();
+  if (/^\d+$/.test(upperRaw)) {
+    const padded = upperRaw.padStart(2, '0');
+    return STATE_CODE_MAP[padded] || padded;
+  }
+
+  return STATE_CODE_MAP[upperRaw] || upperRaw;
 };
 const isIndiaCountry = (value?: string | null) => {
   const token = normalizeTextToken(value);
@@ -137,14 +187,6 @@ const InvoicesPage = () => {
   const lineItemColumnCount = isExportInvoice ? 15 : 16;
   const lineItemTotalLabelColSpan = isExportInvoice ? 13 : 14;
 
-  const selectedCustomer = customers.find((c) => c.id === customerId);
-  const selectedCustomerIsIndia = selectedCustomer ? isIndiaCountry(selectedCustomer.billing_country) : null;
-  const allowedInvoiceTypeOptions = selectedCustomerIsIndia === null
-    ? INVOICE_TYPE_OPTIONS
-    : selectedCustomerIsIndia
-      ? INDIA_INVOICE_TYPE_OPTIONS
-      : EXPORT_ONLY_INVOICE_TYPE_OPTIONS;
-
   const invoiceTypeLabel = (value?: string) => {
     if (!value) return INVOICE_TYPE_LABELS.within_state;
     return INVOICE_TYPE_LABELS[value as InvoiceTypeValue] || INVOICE_TYPE_LABELS.within_state;
@@ -160,12 +202,13 @@ const InvoicesPage = () => {
     const customer = customers.find((c) => c.id === selectedCustomerId);
     if (!customer) return 'within_state';
 
-    if (!isIndiaCountry(customer.billing_country)) {
+    if (!isIndiaCountry(customer.shipping_country || customer.billing_country)) {
       return 'export_invoice';
     }
 
-    const customerStateCode = normalizeStateCodeToken(customer.billing_state_code);
-    const customerStateName = normalizeTextToken(customer.billing_state);
+    const customerStateCode = normalizeStateCodeToken(customer.shipping_state_code || customer.billing_state_code);
+    const customerStateName = normalizeTextToken(customer.shipping_state || customer.billing_state);
+
     if (UNION_TERRITORY_CODES.has(customerStateCode) || UNION_TERRITORY_NAMES.has(customerStateName)) {
       return 'union_territory';
     }
@@ -173,14 +216,25 @@ const InvoicesPage = () => {
     const companyStateCode = normalizeStateCodeToken(companyLocation?.state_code);
     const companyStateName = normalizeTextToken(companyLocation?.state);
     if (companyStateCode && customerStateCode) {
-      return companyStateCode === customerStateCode ? 'within_state' : 'other_states';
+      if (companyStateCode !== customerStateCode) return 'other_states';
+      return UNION_TERRITORY_CODES.has(customerStateCode) ? 'union_territory' : 'within_state';
     }
     if (companyStateName && customerStateName) {
-      return companyStateName === customerStateName ? 'within_state' : 'other_states';
+      if (companyStateName !== customerStateName) return 'other_states';
+      return UNION_TERRITORY_NAMES.has(customerStateName) ? 'union_territory' : 'within_state';
     }
 
     return 'other_states';
   }, [customers, companyLocation]);
+
+  const selectedCustomer = customers.find((c) => c.id === customerId);
+  const expectedInvoiceType = selectedCustomer
+    ? deriveDefaultInvoiceType(selectedCustomer.id)
+    : null;
+  const allowedInvoiceTypeOptions = expectedInvoiceType
+    ? INVOICE_TYPE_OPTIONS.filter((opt) => opt.value === expectedInvoiceType)
+    : INVOICE_TYPE_OPTIONS;
+  const isInvoiceTypeLocked = Boolean(expectedInvoiceType);
 
   const calculateInvoiceDueDate = useCallback((selectedCustomerId: string, selectedInvoiceDate: string) => {
     if (!selectedCustomerId || !selectedInvoiceDate) {
@@ -257,14 +311,9 @@ const InvoicesPage = () => {
     const customer = customers.find((c) => c.id === customerId);
     if (!customer) return;
 
-    const customerInIndia = isIndiaCountry(customer.billing_country);
-    if (!customerInIndia && invoiceType !== 'export_invoice') {
-      setInvoiceType('export_invoice');
-      return;
-    }
-
-    if (customerInIndia && invoiceType === 'export_invoice') {
-      setInvoiceType(deriveDefaultInvoiceType(customerId));
+    const expectedType = deriveDefaultInvoiceType(customerId);
+    if (invoiceType !== expectedType) {
+      setInvoiceType(expectedType);
     }
   }, [customerId, customers, deriveDefaultInvoiceType, invoiceType]);
 
@@ -680,9 +729,17 @@ const InvoicesPage = () => {
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Customer *</label><select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={customerId} onChange={e => handleCustomerChange(e.target.value)}><option value="">Select</option>{customers.map(c => <option key={c.id} value={c.id}>{c.company_name} ({c.customer_code})</option>)}</select></div>
                 <div>
                   <label className="mb-1 block text-sm font-semibold text-neutral-700">Invoice Type *</label>
-                  <select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={invoiceType} onChange={e => setInvoiceType(e.target.value as InvoiceTypeValue)}>
+                  <select
+                    className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm disabled:bg-neutral-100 disabled:text-neutral-600"
+                    value={invoiceType}
+                    onChange={e => setInvoiceType(e.target.value as InvoiceTypeValue)}
+                    disabled={!customerId || isInvoiceTypeLocked}
+                  >
                     {allowedInvoiceTypeOptions.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                   </select>
+                  {isInvoiceTypeLocked && (
+                    <p className="mt-1 text-xs text-neutral-500">Auto-selected from customer shipping location.</p>
+                  )}
                   {!isExportInvoice && <p className="mt-1 text-xs text-neutral-500">Applied Tax Type: {gstColumnLabel(invoiceType).replace(' %', '')}</p>}
                 </div>
                 <div>

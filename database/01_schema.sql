@@ -42,6 +42,7 @@ CREATE TABLE company (
   address_line2 VARCHAR(255),
   city VARCHAR(100),
   state VARCHAR(100),
+  country VARCHAR(100),
   state_code VARCHAR(5),
   pincode VARCHAR(10),
   phone VARCHAR(15),

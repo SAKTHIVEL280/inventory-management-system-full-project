@@ -25,18 +25,25 @@ router = APIRouter(prefix="/api/v1/suppliers", tags=["suppliers"])
 
 
 STATE_ABBREVIATIONS = {
+    "andaman and nicobar islands": "AN",
     "andhra pradesh": "AP",
     "arunachal pradesh": "AR",
     "assam": "AS",
     "bihar": "BR",
+    "chandigarh": "CH",
     "chhattisgarh": "CG",
+    "dadra and nagar haveli and daman and diu": "DD",
+    "delhi": "DL",
     "goa": "GA",
     "gujarat": "GJ",
     "haryana": "HR",
     "himachal pradesh": "HP",
+    "jammu and kashmir": "JK",
     "jharkhand": "JH",
     "karnataka": "KA",
     "kerala": "KL",
+    "ladakh": "LA",
+    "lakshadweep": "LD",
     "madhya pradesh": "MP",
     "maharashtra": "MH",
     "manipur": "MN",
@@ -45,6 +52,7 @@ STATE_ABBREVIATIONS = {
     "nagaland": "NL",
     "odisha": "OD",
     "punjab": "PB",
+    "puducherry": "PY",
     "rajasthan": "RJ",
     "sikkim": "SK",
     "tamil nadu": "TN",
@@ -53,7 +61,6 @@ STATE_ABBREVIATIONS = {
     "uttar pradesh": "UP",
     "uttarakhand": "UK",
     "west bengal": "WB",
-    "delhi": "DL",
 }
 
 DEFAULT_SUPPLIER_COUNTRIES = [
@@ -67,18 +74,25 @@ DEFAULT_SUPPLIER_COUNTRIES = [
 
 DEFAULT_SUPPLIER_CURRENCIES = ["INR", "USD", "EUR", "GBP"]
 DEFAULT_SUPPLIER_STATES = [
+    "Andaman and Nicobar Islands",
     "Andhra Pradesh",
     "Arunachal Pradesh",
     "Assam",
     "Bihar",
+    "Chandigarh",
     "Chhattisgarh",
+    "Dadra and Nagar Haveli and Daman and Diu",
+    "Delhi",
     "Goa",
     "Gujarat",
     "Haryana",
     "Himachal Pradesh",
+    "Jammu and Kashmir",
     "Jharkhand",
     "Karnataka",
     "Kerala",
+    "Ladakh",
+    "Lakshadweep",
     "Madhya Pradesh",
     "Maharashtra",
     "Manipur",
@@ -87,6 +101,7 @@ DEFAULT_SUPPLIER_STATES = [
     "Nagaland",
     "Odisha",
     "Punjab",
+    "Puducherry",
     "Rajasthan",
     "Sikkim",
     "Tamil Nadu",
@@ -95,7 +110,6 @@ DEFAULT_SUPPLIER_STATES = [
     "Uttar Pradesh",
     "Uttarakhand",
     "West Bengal",
-    "Delhi",
 ]
 
 

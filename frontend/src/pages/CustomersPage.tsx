@@ -13,17 +13,24 @@ const GSTIN_REGEX = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/i;
 
 const STATE_ABBREVIATIONS: Record<string, string> = {
   'andhra pradesh': 'AP',
+  'andaman and nicobar islands': 'AN',
   'arunachal pradesh': 'AR',
   assam: 'AS',
   bihar: 'BR',
+  chandigarh: 'CH',
   chhattisgarh: 'CG',
+  'dadra and nagar haveli and daman and diu': 'DD',
+  delhi: 'DL',
   goa: 'GA',
   gujarat: 'GJ',
   haryana: 'HR',
   'himachal pradesh': 'HP',
+  'jammu and kashmir': 'JK',
   jharkhand: 'JH',
   karnataka: 'KA',
   kerala: 'KL',
+  ladakh: 'LA',
+  lakshadweep: 'LD',
   'madhya pradesh': 'MP',
   maharashtra: 'MH',
   manipur: 'MN',
@@ -32,6 +39,7 @@ const STATE_ABBREVIATIONS: Record<string, string> = {
   nagaland: 'NL',
   odisha: 'OD',
   punjab: 'PB',
+  puducherry: 'PY',
   rajasthan: 'RJ',
   sikkim: 'SK',
   'tamil nadu': 'TN',
@@ -40,7 +48,6 @@ const STATE_ABBREVIATIONS: Record<string, string> = {
   'uttar pradesh': 'UP',
   uttarakhand: 'UK',
   'west bengal': 'WB',
-  delhi: 'DL',
 };
 
 const STATE_OPTIONS = Object.entries(STATE_ABBREVIATIONS)

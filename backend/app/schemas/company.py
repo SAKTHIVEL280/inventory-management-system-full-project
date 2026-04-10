@@ -20,6 +20,7 @@ class CompanyBase(BaseModel):
     address_line2: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
+    country: Optional[str] = None
     state_code: Optional[str] = None
     pincode: Optional[str] = None
 

@@ -24,6 +24,7 @@ class Company(Base):
     address_line2 = Column(String(255), nullable=True)
     city = Column(String(100), nullable=True)
     state = Column(String(100), nullable=True)
+    country = Column(String(100), nullable=True)
     state_code = Column(String(5), nullable=True)
     pincode = Column(String(10), nullable=True)
 

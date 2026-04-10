@@ -22,7 +22,7 @@ from app.models.product import Product, UnitOfMeasure
 from app.models.purchase import PurchaseOrder, PurchaseOrderItem
 from app.models.sales import SalesInvoice, SalesInvoiceItem, SalesOrder, Quotation, QuotationItem
 from app.models.supplier import Supplier
-from app.services.gst_service import determine_default_invoice_type
+from app.services.gst_service import determine_default_invoice_type, determine_tax_mode
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -158,8 +158,12 @@ PO_TEMPLATE = """<!DOCTYPE html>
             <th style="width: 5%; border-right: 1px solid #000; padding: 4px 2px; text-align: left; font-size: 9px; font-weight: bold;">Base Unit</th>
             <th style="width: 12%; border-right: 1px solid #000; padding: 4px 2px; text-align: right; font-size: 9px; font-weight: bold;">Unit Price</th>
             <th style="width: 9%; border-right: 1px solid #000; padding: 4px 2px; text-align: right; font-size: 9px; font-weight: bold;">Discount</th>
-            <th style="width: 7%; border-right: 1px solid #000; padding: 4px 2px; text-align: center; font-size: 9px; font-weight: bold;">CGST</th>
-            <th style="width: 7%; border-right: 1px solid #000; padding: 4px 2px; text-align: center; font-size: 9px; font-weight: bold;">SGST</th>
+            {% if show_igst %}
+            <th style="width: 14%; border-right: 1px solid #000; padding: 4px 2px; text-align: center; font-size: 9px; font-weight: bold;">IGST</th>
+            {% else %}
+            <th style="width: 7%; border-right: 1px solid #000; padding: 4px 2px; text-align: center; font-size: 9px; font-weight: bold;">{{ cgst_column_label }}</th>
+            <th style="width: 7%; border-right: 1px solid #000; padding: 4px 2px; text-align: center; font-size: 9px; font-weight: bold;">{{ tax_secondary_column_label }}</th>
+            {% endif %}
             <th style="width: 13%; padding: 4px 4px; text-align: right; font-size: 9px; font-weight: bold;">Amount</th>
         </tr>
     </thead>
@@ -173,8 +177,12 @@ PO_TEMPLATE = """<!DOCTYPE html>
             <td style="border-right: 1px solid #000; border-bottom: 1px solid #000; padding: 3px 2px; text-align: left; font-size: 9px;">{{ row.uom }}</td>
             <td style="border-right: 1px solid #000; border-bottom: 1px solid #000; padding: 3px 2px; text-align: right; font-size: 9px;">{{ cs }}{{ row.rate }}</td>
             <td style="border-right: 1px solid #000; border-bottom: 1px solid #000; padding: 3px 2px; text-align: right; font-size: 9px;">{{ row.disc }}</td>
+            {% if show_igst %}
+            <td style="border-right: 1px solid #000; border-bottom: 1px solid #000; padding: 3px 2px; text-align: center; font-size: 9px;">{{ row.igst_pct }}</td>
+            {% else %}
             <td style="border-right: 1px solid #000; border-bottom: 1px solid #000; padding: 3px 2px; text-align: center; font-size: 9px;">{{ row.cgst_pct }}</td>
             <td style="border-right: 1px solid #000; border-bottom: 1px solid #000; padding: 3px 2px; text-align: center; font-size: 9px;">{{ row.sgst_pct }}</td>
+            {% endif %}
             <td style="border-bottom: 1px solid #000; padding: 3px 4px; text-align: right; font-size: 10px;">{{ cs }}{{ row.amount }}</td>
         </tr>
         {% endfor %}
@@ -187,8 +195,12 @@ PO_TEMPLATE = """<!DOCTYPE html>
             <td style="border-right: 1px solid #000;"></td>
             <td style="border-right: 1px solid #000;"></td>
             <td style="border-right: 1px solid #000;"></td>
+            {% if show_igst %}
+            <td style="border-right: 1px solid #000;"></td>
+            {% else %}
             <td style="border-right: 1px solid #000;"></td>
             <td style="border-right: 1px solid #000;"></td>
+            {% endif %}
             <td></td>
         </tr>
     </tbody>
@@ -210,12 +222,12 @@ PO_TEMPLATE = """<!DOCTYPE html>
                     <td style="padding: 3px 6px; font-size: 9.5px; border-bottom: 1px solid #000;">Sub-Total</td>
                     <td style="padding: 3px 6px; font-size: 9.5px; text-align: right; border-bottom: 1px solid #000;">{{ subtotal }}</td>
                 </tr>
-                {% if show_igst %}
+                {% if gst_applicable and show_igst %}
                 <tr>
                     <td style="padding: 3px 6px; font-size: 9.5px; border-bottom: 1px solid #000;">{{ igst_label }}</td>
                     <td style="padding: 3px 6px; font-size: 9.5px; text-align: right; border-bottom: 1px solid #000;">{{ igst_total }}</td>
                 </tr>
-                {% else %}
+                {% elif gst_applicable %}
                 <tr>
                     <td style="padding: 3px 6px; font-size: 9.5px; border-bottom: 1px solid #000;">{{ cgst_label }}</td>
                     <td style="padding: 3px 6px; font-size: 9.5px; text-align: right; border-bottom: 1px solid #000;">{{ cgst_total }}</td>
@@ -614,6 +626,7 @@ def _build_company_address(company) -> str:
         getattr(company, "address_line2", ""),
         getattr(company, "city", ""),
         getattr(company, "state", ""),
+        getattr(company, "country", ""),
         getattr(company, "pincode", ""),
     ]
     formatted = ", ".join([p.strip() for p in parts if p and p.strip()])
@@ -773,7 +786,7 @@ def _get_payment_terms_label(supplier: Supplier | None) -> str:
     return f"{int(days)} Days"
 
 
-def _amount_in_words(paise: int) -> str:
+def _amount_in_words(paise: int, currency_code: str = "INR") -> str:
     ones = [
         "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
         "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen",
@@ -796,16 +809,32 @@ def _amount_in_words(paise: int) -> str:
             return words(n // 100000) + " Lakh" + (" " + words(n % 100000) if n % 100000 else "")
         return words(n // 10000000) + " Crore" + (" " + words(n % 10000000) if n % 10000000 else "")
 
-    rupees = (paise or 0) // 100
-    paisa = (paise or 0) % 100
+    major_units = (paise or 0) // 100
+    minor_units = (paise or 0) % 100
+
+    currency_token = (currency_code or "INR").strip().upper()
+    major_label_map = {
+        "INR": "Indian Rupees",
+        "USD": "US Dollars",
+        "EUR": "Euros",
+        "GBP": "British Pounds",
+    }
+    minor_label_map = {
+        "INR": "Paise",
+        "USD": "Cents",
+        "EUR": "Cents",
+        "GBP": "Pence",
+    }
+    major_label = major_label_map.get(currency_token, currency_token)
+    minor_label = minor_label_map.get(currency_token, "Cents")
 
     chunks = []
-    if rupees:
-        chunks.append(f"Indian Rupees {words(rupees)}")
+    if major_units:
+        chunks.append(f"{major_label} {words(major_units)}")
     else:
-        chunks.append("Indian Rupees Zero")
-    if paisa:
-        chunks.append(f"and {words(paisa)} Paise")
+        chunks.append(f"{major_label} Zero")
+    if minor_units:
+        chunks.append(f"and {words(minor_units)} {minor_label}")
     return " ".join(chunks) + " Only"
 
 
@@ -920,11 +949,13 @@ def generate_po_pdf(db: Session, po_id: UUID) -> bytes:
     currency = po.currency_code or "INR"
     currency_symbols = {"INR": "Rs.", "USD": "$", "EUR": "€", "GBP": "£"}
     cs = currency_symbols.get(currency, currency)
+    tax_mode = determine_tax_mode(db, "supplier", po.supplier_id)
+    show_po_igst = bool(tax_mode["gst_applicable"] and tax_mode["is_igst"])
+    show_po_utgst = bool(tax_mode["gst_applicable"] and (not show_po_igst) and tax_mode["use_utgst"])
 
     for idx, item in enumerate(items, start=1):
         product = db.query(Product).filter(Product.id == item.product_id).first()
         gst_rate = int(item.gst_rate or 0)
-        half_rate = gst_rate / 2
 
         # Use DB-stored values directly — match website exactly
         taxable_paise = int(item.taxable_amount or 0)
@@ -933,10 +964,24 @@ def generate_po_pdf(db: Session, po_id: UUID) -> bytes:
         igst_paise = int(item.igst_amount or 0)
         total_paise = int(item.total_amount or 0)
 
-        # Always split as CGST+SGST for purchase print format.
-        if cgst_paise == 0 and sgst_paise == 0 and igst_paise > 0:
+        # For non-IGST layouts, split legacy IGST totals for display consistency.
+        if not show_po_igst and cgst_paise == 0 and sgst_paise == 0 and igst_paise > 0:
             cgst_paise = round(igst_paise / 2)
             sgst_paise = igst_paise - cgst_paise
+
+        half_rate = gst_rate / 2
+        if not tax_mode["gst_applicable"]:
+            cgst_pct = "-"
+            sgst_pct = "-"
+            igst_pct = "-"
+        elif show_po_igst:
+            cgst_pct = "-"
+            sgst_pct = "-"
+            igst_pct = f"{gst_rate}%"
+        else:
+            cgst_pct = f"{half_rate:.1f}%"
+            sgst_pct = f"{half_rate:.1f}%"
+            igst_pct = "-"
 
         rate_val = f"{(int(item.unit_price or 0) / 100):,.2f}"
         mrp_val = f"{(int(product.mrp or item.unit_price or 0) / 100):,.2f}" if product else rate_val
@@ -958,10 +1003,11 @@ def generate_po_pdf(db: Session, po_id: UUID) -> bytes:
                 "disc": f"{float(item.discount_percent or 0):.1f}%",
                 "taxable_amt": f"{(taxable_paise / 100):,.2f}",
                 "gst_pct": f"{gst_rate}%",
-                "cgst_pct": f"{half_rate:.1f}%",
+                "cgst_pct": cgst_pct,
                 "cgst_amt": f"{(cgst_paise / 100):,.2f}",
-                "sgst_pct": f"{half_rate:.1f}%",
+                "sgst_pct": sgst_pct,
                 "sgst_amt": f"{(sgst_paise / 100):,.2f}",
+                "igst_pct": igst_pct,
                 "amount": f"{(total_paise / 100):,.2f}",
             }
         )
@@ -972,17 +1018,12 @@ def generate_po_pdf(db: Session, po_id: UUID) -> bytes:
                 "sr": "1", "description": "-", "packing": "-", "batch": "-", "mfg": "-", "exp": "-",
                 "hsn": "-", "qty": "0.00", "uom": "-", "free": "0", "rate": "0.00", "mrp": "0.00",
                 "disc": "0.0%", "taxable_amt": "0.00", "gst_pct": "0%",
-                "cgst_pct": "0.0%", "cgst_amt": "0.00", "sgst_pct": "0.0%", "sgst_amt": "0.00", "amount": "0.00",
+                "cgst_pct": "-", "cgst_amt": "0.00", "sgst_pct": "-", "sgst_amt": "0.00", "igst_pct": "-", "amount": "0.00",
             }
         )
 
     notes_text = _safe_text(po.notes)
     watermark_text = "Approved" if (po.status or "").strip().lower() != "draft" else "Not Approved"
-    show_po_igst = (
-        int(po.total_igst or 0) > 0
-        and int(po.total_cgst or 0) == 0
-        and int(po.total_sgst or 0) == 0
-    )
 
     supplier_address = _safe_text(
         ", ".join(
@@ -1011,22 +1052,25 @@ def generate_po_pdf(db: Session, po_id: UUID) -> bytes:
         "company_gstin": _safe_text(company.gstin if company else None),
         "company_contact": _safe_text(company.phone if company and company.phone else (company.email if company else None)),
         "party_gstin": _safe_text(supplier.gstin if supplier else None),
-        "bill_to_state": _safe_text(supplier.state if supplier else None),
+        "bill_to_state": _safe_text((supplier.place_of_supply if supplier else None) or (supplier.state if supplier else None)),
         "bill_to_name": _safe_text(supplier.company_name if supplier else None),
         "bill_to_address": supplier_address,
         "under_delivery_tolerance": f"{float(po.under_delivery_tolerance or 0):.2f}",
         "over_delivery_tolerance": f"{float(po.over_delivery_tolerance or 0):.2f}",
         "rows": rows,
         "subtotal": _format_total_with_currency(int(po.subtotal or 0) / 100, cs),
+        "gst_applicable": bool(tax_mode["gst_applicable"]),
         "show_igst": show_po_igst,
+        "cgst_column_label": "CGST",
+        "tax_secondary_column_label": "UTGST" if show_po_utgst else "SGST",
         "cgst_label": "CGST",
         "cgst_total": _format_total_with_currency(_get_corrected_cgst(po), cs),
-        "sgst_label": "SGST",
+        "sgst_label": "UTGST" if show_po_utgst else "SGST",
         "sgst_total": _format_total_with_currency(_get_corrected_sgst(po), cs),
         "igst_label": "IGST",
         "igst_total": _format_total_with_currency(_get_corrected_igst(po, should_be_igst=show_po_igst), cs),
         "grand_total_rupee": _format_total_with_currency(int(po.total_amount or 0) / 100, cs),
-        "total_in_words": _amount_in_words(int(po.total_amount or 0)),
+        "total_in_words": _amount_in_words(int(po.total_amount or 0), currency),
         "notes": notes_text,
         "watermark_text": watermark_text,
     }
@@ -1189,7 +1233,7 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
         "igst_total": _format_total_with_currency(_get_corrected_igst(invoice, should_be_igst=show_igst), cs),
         "grand_total_rupee": _format_total_with_currency(int(invoice.total_amount or 0) / 100, cs),
         "balance_due_rupee": _format_total_with_currency(int(invoice.amount_due or invoice.total_amount or 0) / 100, cs),
-        "total_in_words": _amount_in_words(int(invoice.total_amount or 0)),
+        "total_in_words": _amount_in_words(int(invoice.total_amount or 0), currency),
         "notes": notes_text,
         "watermark_text": watermark_text,
     }
@@ -1336,7 +1380,7 @@ def generate_quotation_pdf(db: Session, quotation_id: UUID) -> bytes:
         "igst_total": _format_total_with_currency(_get_corrected_igst(quotation, should_be_igst=show_igst), cs),
         "grand_total_rupee": _format_total_with_currency(int(quotation.total_amount or 0) / 100, cs),
         "balance_due_rupee": _format_total_with_currency(int(quotation.total_amount or 0) / 100, cs),
-        "total_in_words": _amount_in_words(int(quotation.total_amount or 0)),
+        "total_in_words": _amount_in_words(int(quotation.total_amount or 0), currency),
         "notes": notes_text,
     }
     return _render_pdf_with_pagination(context, INVOICE_TEMPLATE, rows, items_per_page=BILLING_PDF_ITEMS_PER_PAGE)

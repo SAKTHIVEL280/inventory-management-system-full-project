@@ -27,6 +27,7 @@ const schema = z.object({
   address_line2: z.string().optional(),
   city: z.string().optional(),
   state: z.string().optional(),
+  country: z.string().optional(),
   pincode: z.string().optional(),
   bank_name: z.string().optional(),
   account_holder_name: z.string().optional(),
@@ -40,6 +41,15 @@ type CompanyForm = z.infer<typeof schema>;
 const normalizeOptional = (value?: string): string | null => {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+};
+
+const PLACEHOLDER_COMPANY_NAMES = new Set(['your company name', 'my company']);
+
+const normalizeCompanyNameForForm = (value?: string | null): string => {
+  const trimmed = (value || '').trim();
+  if (!trimmed) return '';
+  if (PLACEHOLDER_COMPANY_NAMES.has(trimmed.toLowerCase())) return '';
+  return trimmed;
 };
 
 const emptyCompany: Company = {
@@ -57,7 +67,7 @@ const emptyCompany: Company = {
 };
 
 const mapCompanyToFormValues = (company?: Company): CompanyForm => ({
-  name: company?.name ?? '',
+  name: normalizeCompanyNameForForm(company?.name),
   legal_name: company?.legal_name ?? '',
   gstin: company?.gstin ?? '',
   gstin_status: company?.gstin_status ?? 'non-registered',
@@ -73,6 +83,7 @@ const mapCompanyToFormValues = (company?: Company): CompanyForm => ({
   address_line2: company?.address_line2 ?? '',
   city: company?.city ?? '',
   state: company?.state ?? '',
+  country: company?.country ?? '',
   pincode: company?.pincode ?? '',
   bank_name: company?.bank_name ?? '',
   account_holder_name: company?.account_holder_name ?? '',
@@ -165,6 +176,7 @@ const CompanyPage = () => {
       address_line2: normalizeOptional(parsed.data.address_line2),
       city: normalizeOptional(parsed.data.city),
       state: normalizeOptional(parsed.data.state),
+      country: normalizeOptional(parsed.data.country),
       pincode: normalizeOptional(parsed.data.pincode),
       bank_name: normalizeOptional(parsed.data.bank_name),
       account_holder_name: normalizeOptional(parsed.data.account_holder_name),
@@ -289,6 +301,10 @@ const CompanyPage = () => {
                 <div>
                   <label htmlFor="state" className="hms-label">State</label>
                   <input id="state" className="hms-input" {...register('state')} />
+                </div>
+                <div>
+                  <label htmlFor="country" className="hms-label">Country</label>
+                  <input id="country" className="hms-input" {...register('country')} />
                 </div>
                 <div>
                   <label htmlFor="pincode" className="hms-label">Pincode</label>

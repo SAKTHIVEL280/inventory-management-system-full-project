@@ -2,6 +2,143 @@
 
 ---
 
+## BE-75: SI-003 Invoice Type Strict Revalidation by Shipping Location
+**Update**: Backend now derives and strictly revalidates invoice type using shipping-first location with Union Territory priority, rejecting any mismatched create/update payload.
+
+## BE-74: IGST Country Constraint Hardening (Both-Side India Gate)
+**Date**: April 10, 2026
+**Status**: Completed
+**Module**: GST Service
+**Type**: Bug Fix / Validation Hardening
+
+### Overview
+Hardened IGST/GST country constraints so tax applicability is enabled only when both company and counterparty resolve to India.
+
+### Changes Made
+- Added company-country resolution helper with legacy fallback to India when old company rows have state/GST but no country.
+- Extended party-country fallback behavior to include domestic customers (matching existing domestic supplier fallback).
+- Updated tax-mode country gate to require both company and party country as India before enabling GST/IGST.
+- Updated default invoice-type derivation to honor domestic fallback and company-country gate.
+
+### Files Modified
+- `backend/app/services/gst_service.py`
+
+### Validation
+- Verified `py_compile` passes for GST-related routers/services.
+- Verified gst service imports successfully in backend runtime context.
+
+## BE-73: Company Profile Country Field API/Model Support
+**Date**: April 10, 2026
+**Status**: Completed
+**Module**: Company Profile
+**Type**: Enhancement
+
+### Overview
+Added backend support for persisting and serving the Company Profile country field.
+
+### Changes Made
+- Added `country` in company ORM model and company request/response schema.
+- Added compatibility migration statement for `company.country` in migration runner.
+- Included company country in PDF company-address formatting.
+
+### Files Modified
+- `backend/app/models/company.py`
+- `backend/app/schemas/company.py`
+- `backend/run_migration.py`
+- `backend/app/services/pdf_service.py`
+
+### Validation
+- Verified no backend/IDE errors in modified backend files.
+
+## BE-72: GST Shipping-First Tax Mode + PO/Invoice PDF Tax/Currency Corrections (GST-001)
+**Date**: April 10, 2026
+**Status**: Completed
+**Module**: GST Service, Sales, Billing PDF, Supplier/Customer Master Defaults
+**Type**: Bug Fix / Tax Logic Alignment
+
+### Overview
+Implemented shipping-first GST mode resolution and corrected PDF tax rendering/amount-in-words behavior for Sales Invoice and Purchase Order scenarios.
+
+### Changes Made
+- Updated GST determination to use shipping-first customer location (country/state-code/state) with billing fallback.
+- Enforced tax-mode resolution priority:
+  - non-India -> GST not applicable,
+  - India interstate -> IGST,
+  - India same-state + UT -> CGST+UTGST,
+  - India same-state non-UT -> CGST+SGST,
+  - incomplete India state metadata -> IGST fallback.
+- Updated default invoice-type derivation to align with shipping-first location and code-first state comparison.
+- Updated invoice country validation helper to evaluate shipping-first country context.
+- Updated PO PDF tax columns/labels to render IGST vs CGST+SGST/UTGST correctly.
+- Updated PO tax totals to hide GST rows when GST is not applicable.
+- Updated PO place-of-supply display to prefer supplier `place_of_supply` fallback to supplier state.
+- Made PDF amount-in-words currency-aware for PO/Invoice/Quotation (no hardcoded INR text).
+- Expanded backend state mappings/default state options for Customer and Supplier customization fallbacks to include Union Territories.
+
+### Files Modified
+- `backend/app/services/gst_service.py`
+- `backend/app/routers/sales.py`
+- `backend/app/services/pdf_service.py`
+- `backend/app/routers/customers.py`
+- `backend/app/routers/suppliers.py`
+
+### Validation
+- Verified no backend/IDE errors in modified backend files.
+
+## BE-71: Payables Exact Remaining Settlement Validation Hardening (PAY-002)
+**Date**: April 10, 2026
+**Status**: Completed
+**Module**: Payments / Payables
+**Type**: Bug Fix / Precision Hardening
+
+### Overview
+Fixed false "Payment exceeds remaining payable" rejections for supplier GRN settlement by normalizing money comparisons to consistent minor units in backend validation and snapshot calculations.
+
+### Changes Made
+- Added `_to_minor_units()` helper in payments router to normalize all payable math to integer paise.
+- Normalized payable snapshot computation inputs:
+  - advance by PO,
+  - direct paid by GRN,
+  - GRN total/direct-paid remaining calculations.
+- Normalized create-payment validations:
+  - `normalized_payment_amount` and `total_allocated` comparison,
+  - per-GRN `proposed` vs `remaining_now` check.
+- Normalized persisted payment and allocation amounts during payment creation.
+- Added explicit non-zero amount guard after normalization.
+
+### Files Modified
+- `backend/app/routers/payments.py`
+
+### Validation
+- Verified no backend/IDE errors in modified file.
+
+## BE-70: Inventory Count Batch Options + Strict Date Revalidation (INV-COUNT-004, INV-COUNT-005)
+**Date**: April 10, 2026
+**Status**: Completed
+**Module**: Stock / Inventory Count
+**Type**: Enhancement / Validation Fix
+
+### Overview
+Implemented backend support for product batch auto-binding in Inventory Count and enforced strict server-side MFG/EXP validation during save.
+
+### Changes Made
+- Added batch snapshot logic for Inventory Count based on transactional stock movements.
+- Added Inventory Count endpoint for product batch options with batch number, available qty, MFG, and EXP:
+  - `GET /api/v1/stock/inventory-counts/batch-options`
+- Added new stock schemas for batch options response payload.
+- Added strict save-time date validation for each Inventory Count item:
+  - Manufacturing date must be earlier than current date,
+  - Expiry date must be later than current date,
+  - Expiry date must be later than manufacturing date.
+- Normalized saved `batch_no` values by trimming and storing null for empty tokens.
+
+### Files Modified
+- `backend/app/routers/stock.py`
+- `backend/app/schemas/stock.py`
+
+### Validation
+- Verified no backend/IDE errors in modified files.
+
 ## BE-69: Payables PO-Linked Advance + Remaining Settlement Validation (PAY-001, PAY-002)
 **Date**: April 8, 2026
 **Status**: ✅ Completed

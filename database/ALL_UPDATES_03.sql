@@ -1,6 +1,6 @@
 -- ALL DATABASE UPDATES 03 - Consolidated updates from CUS-012 onward
 -- Date: April 8, 2026
--- Coverage: CUS-012, DB-30, DB-31, DB-32, DB-33, DB-36
+-- Coverage: CUS-012, DB-30, DB-31, DB-32, DB-33, DB-36, DB-41
 
 BEGIN;
 
@@ -200,6 +200,13 @@ ALTER COLUMN payment_terms_days DROP DEFAULT;
 
 ALTER TABLE customers
 ALTER COLUMN payment_terms_days DROP NOT NULL;
+
+-- ============================================================================
+-- DB-41: Company Country Field (Company Profile)
+-- ============================================================================
+
+ALTER TABLE company
+ADD COLUMN IF NOT EXISTS country VARCHAR(100);
 
 -- ============================================================================
 COMMIT;

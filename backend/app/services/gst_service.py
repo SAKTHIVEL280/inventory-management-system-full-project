@@ -96,6 +96,17 @@ _UNION_TERRITORY_CODES = {
     "38",  # Ladakh (alternate newer code seen in some datasets)
 }
 
+_UNION_TERRITORY_NAMES = {
+    "ANDAMAN AND NICOBAR ISLANDS",
+    "CHANDIGARH",
+    "DADRA AND NAGAR HAVELI AND DAMAN AND DIU",
+    "DELHI",
+    "JAMMU AND KASHMIR",
+    "LADAKH",
+    "LAKSHADWEEP",
+    "PUDUCHERRY",
+}
+
 
 def _normalize_state_code(raw: str | None) -> str | None:
     """Normalize any state format (numeric / abbreviation / full name) to numeric GST code."""
@@ -131,8 +142,49 @@ def _state_token(state_code: str | None, state_name: str | None) -> str | None:
     return _STATE_CODE_MAP.get(name, name)
 
 
+def _has_text(value: str | None) -> bool:
+    return bool((value or "").strip())
+
+
+def _preferred_value(primary: str | None, secondary: str | None) -> str | None:
+    return primary if _has_text(primary) else secondary
+
+
+def _resolve_company_country(company: Company) -> str | None:
+    normalized_country = _normalize_text(company.country)
+    if normalized_country:
+        return normalized_country
+
+    # Backward compatibility: older company rows may not have country populated.
+    if _has_text(company.gstin) or _has_text(company.state_code) or _has_text(company.state):
+        return "INDIA"
+
+    return None
+
+
+def _is_union_territory_token(token: str | None) -> bool:
+    if not token:
+        return False
+    normalized = _normalize_text(token)
+    if not normalized:
+        return False
+    normalized_token = _STATE_CODE_MAP.get(normalized, normalized)
+    return normalized_token in _UNION_TERRITORY_CODES or normalized in _UNION_TERRITORY_NAMES
+
+
 def determine_tax_mode(db: Session, party_type: str, party_id: UUID) -> TaxMode:
-    """Determine GST applicability and IGST mode for a customer/supplier transaction."""
+    """Determine GST applicability and tax mode for a customer/supplier transaction.
+
+        Rules:
+        - Non-India transactions: GST not applicable.
+        - India + known company/party locations:
+            - different state: IGST
+            - same state + UT location: CGST + UTGST
+            - same state + non-UT location: CGST + SGST
+        - India + incomplete state metadata: fallback to IGST.
+
+        Customer location is shipping-first (country/state-code/state), then billing fallback.
+        """
     company = db.query(Company).first()
     if not company:
         return {"gst_applicable": False, "is_igst": False, "use_utgst": False}
@@ -140,35 +192,41 @@ def determine_tax_mode(db: Session, party_type: str, party_id: UUID) -> TaxMode:
     party_country: str | None = None
     party_state_code: str | None = None
     party_state_name: str | None = None
+    customer_business_type: str | None = None
     supplier_business_type: str | None = None
 
     if party_type == "customer":
         party = db.query(Customer).filter(Customer.id == party_id, Customer.is_deleted == False).first()
         if not party:
             return {"gst_applicable": False, "is_igst": False, "use_utgst": False}
-        party_country = party.billing_country
-        party_state_code = party.billing_state_code
-        party_state_name = party.billing_state
+        party_country = _preferred_value(party.shipping_country, party.billing_country)
+        party_state_code = _preferred_value(party.shipping_state_code, party.billing_state_code)
+        party_state_name = _preferred_value(party.shipping_state, party.billing_state)
+        customer_business_type = party.business_type
     elif party_type == "supplier":
         party = db.query(Supplier).filter(Supplier.id == party_id, Supplier.is_deleted == False).first()
         if not party:
             return {"gst_applicable": False, "is_igst": False, "use_utgst": False}
         party_country = party.billing_country
         party_state_code = party.state_code
-        party_state_name = party.state
+        party_state_name = _preferred_value(party.place_of_supply, party.state)
         supplier_business_type = party.business_type
     else:
         return {"gst_applicable": False, "is_igst": False, "use_utgst": False}
 
-    # Backward compatibility:
-    # If supplier country is blank but supplier is domestic, treat as India.
+    company_country = _resolve_company_country(company)
     normalized_country = _normalize_text(party_country)
-    if party_type == "supplier" and not normalized_country:
+
+    # Backward compatibility: if country is blank but master is domestic, treat as India.
+    if not normalized_country and party_type == "customer":
+        if (customer_business_type or "").strip().lower() == "domestic":
+            normalized_country = "INDIA"
+    if not normalized_country and party_type == "supplier":
         if (supplier_business_type or "").strip().lower() == "domestic":
             normalized_country = "INDIA"
 
-    # Validation rule: country check comes first; apply Indian GST only for India.
-    if normalized_country not in _INDIA_COUNTRY_TOKENS:
+    # Country gate: GST/IGST applies only when both company and party are in India.
+    if company_country not in _INDIA_COUNTRY_TOKENS or normalized_country not in _INDIA_COUNTRY_TOKENS:
         return {"gst_applicable": False, "is_igst": False, "use_utgst": False}
 
     company_token = _state_token(company.state_code, company.state)
@@ -176,7 +234,9 @@ def determine_tax_mode(db: Session, party_type: str, party_id: UUID) -> TaxMode:
 
     # If both locations are known, use them to decide intra/inter-state.
     if company_token and party_token:
-        return {"gst_applicable": True, "is_igst": company_token != party_token, "use_utgst": False}
+        is_igst = company_token != party_token
+        use_utgst = (not is_igst) and _is_union_territory_token(party_token)
+        return {"gst_applicable": True, "is_igst": is_igst, "use_utgst": use_utgst}
 
     # Fallback for India when state/state-code is incomplete: default to IGST.
     return {"gst_applicable": True, "is_igst": True, "use_utgst": False}
@@ -209,17 +269,27 @@ def determine_is_igst(db: Session, party_type: str, party_id: UUID) -> bool:
 
 
 def determine_default_invoice_type(db: Session, customer_id: UUID) -> str:
-    """Derive default invoice type based on customer country/state and company location."""
+    """Derive default invoice type from shipping-first customer location and company location."""
     company = db.query(Company).first()
     customer = db.query(Customer).filter(Customer.id == customer_id, Customer.is_deleted == False).first()
     if not customer:
         return INVOICE_TYPE_WITHIN_STATE
 
-    if not _is_india_country(customer.billing_country):
+    customer_country = _preferred_value(customer.shipping_country, customer.billing_country)
+    normalized_customer_country = _normalize_text(customer_country)
+    if not normalized_customer_country and (customer.business_type or "").strip().lower() == "domestic":
+        normalized_customer_country = "INDIA"
+    if normalized_customer_country not in _INDIA_COUNTRY_TOKENS:
         return INVOICE_TYPE_EXPORT
 
-    customer_token = _state_token(customer.billing_state_code, customer.billing_state)
-    if customer_token in _UNION_TERRITORY_CODES:
+    if company and _resolve_company_country(company) not in _INDIA_COUNTRY_TOKENS:
+        return INVOICE_TYPE_EXPORT
+
+    customer_state_code = _preferred_value(customer.shipping_state_code, customer.billing_state_code)
+    customer_state_name = _preferred_value(customer.shipping_state, customer.billing_state)
+    customer_token = _state_token(customer_state_code, customer_state_name)
+
+    if _is_union_territory_token(customer_token or customer_state_name):
         return INVOICE_TYPE_UNION_TERRITORY
 
     if not company:
@@ -227,14 +297,21 @@ def determine_default_invoice_type(db: Session, customer_id: UUID) -> str:
 
     company_token = _state_token(company.state_code, company.state)
     if company_token and customer_token:
-        if company_token == customer_token:
-            return INVOICE_TYPE_WITHIN_STATE
-        return INVOICE_TYPE_OTHER_STATES
+        if company_token != customer_token:
+            return INVOICE_TYPE_OTHER_STATES
+        return INVOICE_TYPE_WITHIN_STATE
 
     company_state = _normalize_text(company.state)
-    customer_state = _normalize_text(customer.billing_state)
+    customer_state = _normalize_text(customer_state_name)
+    if company_state and customer_state and company_state != customer_state:
+        return INVOICE_TYPE_OTHER_STATES
+    if company_state and customer_state and _is_union_territory_token(customer_token or customer_state):
+        return INVOICE_TYPE_UNION_TERRITORY
     if company_state and customer_state and company_state == customer_state:
         return INVOICE_TYPE_WITHIN_STATE
+
+    if _is_union_territory_token(customer_token or customer_state):
+        return INVOICE_TYPE_UNION_TERRITORY
 
     return INVOICE_TYPE_OTHER_STATES
 

@@ -1,5 +1,159 @@
 # Frontend Updates Log
 
+## FE-88: SI-003 Invoice Type Auto-Select and Lock by Shipping Location
+**Update**: Fixed UT invoice-type constraint by prioritizing shipping-location UT detection (country -> state code -> state name), including canonical state/state-code mapping, then auto-selecting and locking the single valid invoice type.
+
+## FE-87: Invoice GST Country Gate Uses Shipping Address First
+**Date**: April 10, 2026
+**Status**: Completed
+**Module**: Sales Invoice
+**Type**: Bug Fix / Tax Logic Alignment
+
+### Overview
+Aligned invoice country-based GST type enforcement to use Shipping Country first (with Billing Country fallback), matching backend GST rules.
+
+### Changes Made
+- Updated invoice country gate effect to evaluate `shipping_country` before `billing_country`.
+- Ensured export/non-export invoice-type auto-correction follows shipping-address country context.
+
+### Files Modified
+- `frontend/src/pages/InvoicesPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified file.
+
+## FE-86: Company Profile Country Field Added
+**Date**: April 10, 2026
+**Status**: Completed
+**Module**: Company Profile
+**Type**: Enhancement
+
+### Overview
+Added missing Country input in Company Profile and wired it into form load/save payloads.
+
+### Changes Made
+- Added `country` to Company Profile form schema and default mapping.
+- Added `Country` input in Address section.
+- Added `country` normalization in save payload.
+- Added `country` to frontend `Company` type.
+
+### Files Modified
+- `frontend/src/pages/CompanyPage.tsx`
+- `frontend/src/types/index.ts`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified files.
+
+## FE-85: Company Profile Placeholder Name Autofill Suppression
+**Date**: April 10, 2026
+**Status**: Completed
+**Module**: Company Profile
+**Type**: UX Bug Fix
+
+### Overview
+Prevented seeded/default placeholder names from appearing as real company data in Company Profile when the user has not entered company details yet.
+
+### Changes Made
+- Added company-name sanitization in Company Profile form mapping.
+- Treated seeded placeholders as empty values for form binding:
+  - `Your Company Name`
+  - `My Company`
+- Kept save validation unchanged (`Company name is required`) so users still provide an explicit real name.
+
+### Files Modified
+- `frontend/src/pages/CompanyPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified file.
+- Verified frontend build succeeds (`npm run build`).
+
+## FE-84: GST Shipping-First Invoice Type Default + UT State Dropdown Coverage (GST-001)
+**Date**: April 10, 2026
+**Status**: Completed
+**Module**: Sales Invoice, Customer Master, Supplier Master
+**Type**: Bug Fix / Data Option Alignment
+
+### Overview
+Aligned frontend invoice GST defaulting with shipping-first customer location and added Union Territory coverage in state dropdown code maps.
+
+### Changes Made
+- Updated invoice default-tax/invoice-type derivation to use shipping-first fields with billing fallback:
+  - `shipping_country` -> `billing_country`
+  - `shipping_state_code` -> `billing_state_code`
+  - `shipping_state` -> `billing_state`
+- Kept state-code-first comparison with state-name fallback for invoice-type defaulting.
+- Added missing customer field typings for shipping state/country in invoice page customer option model.
+- Added Union Territory names to invoice UT name detection set.
+- Expanded customer and supplier frontend state-code maps to include Union Territories for dropdown/typeahead behavior.
+
+### Files Modified
+- `frontend/src/pages/InvoicesPage.tsx`
+- `frontend/src/pages/CustomersPage.tsx`
+- `frontend/src/pages/SuppliersPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified files.
+- Verified frontend build succeeds (`npm run build`).
+
+## FE-83: Payables Exact Remaining Amount Acceptance + Full History Settlement (PAY-002)
+**Date**: April 10, 2026
+**Status**: Completed
+**Module**: Payables
+**Type**: Bug Fix / Validation Consistency
+
+### Overview
+Fixed supplier payment validation mismatch where amount equal to remaining payable could be blocked due to partial frontend settlement context and paise normalization drift.
+
+### Changes Made
+- Added complete supplier payment history loading for settlement computation (paginated fetch with `has_more`).
+- Updated payables remaining-by-GRN computation to use full supplier payment history instead of only list-page data.
+- Aligned GRN sort order with backend settlement logic (`receipt_date`, then `created_at`).
+- Added amount normalization helper for paise-safe comparisons and submission payload.
+- Added guard to block submit while settlement data is refreshing for selected supplier.
+- Updated payments API list response typing to include pagination metadata.
+
+### Files Modified
+- `frontend/src/pages/PayablesPage.tsx`
+- `frontend/src/api/payments.ts`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified files.
+
+## FE-82: Inventory Count Batch Auto-Handling + Date Picker Restrictions (INV-COUNT-004, INV-COUNT-005)
+**Date**: April 10, 2026
+**Status**: Completed
+**Module**: Inventory Count
+**Type**: Enhancement / Validation UX Fix
+
+### Overview
+Implemented dynamic batch behavior for single vs multiple batch products and enforced MFG/EXP constraints through both picker restrictions and save-time guards.
+
+### Changes Made
+- Added Inventory Count batch options API integration on product selection.
+- Implemented batch behavior:
+  - single batch auto-filled and read-only,
+  - multiple batches displayed in dropdown,
+  - batch change auto-updates MFG/EXP.
+- Added stale-data reset on product change for batch/MFG/EXP fields.
+- Added real-time and save-time Inventory Count date validation logic:
+  - Manufacturing date earlier than current date,
+  - Expiry date later than current date,
+  - Expiry date later than manufacturing date.
+- Added UTC-based date helper usage for consistent validation baseline.
+- Updated date input controls:
+  - MFG restricted to past dates via max date,
+  - EXP restricted to future dates via min date.
+- Removed inline error-message rendering below MFG/EXP inputs per UI request.
+- Improved API error-detail parsing in Inventory Count submit flow.
+
+### Files Modified
+- `frontend/src/pages/InventoryCountPage.tsx`
+- `frontend/src/api/stock.ts`
+- `frontend/src/utils/date.ts`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified files.
+
 ## FE-81: Payables PO/GRN Auto-Fill + Advance-Adjusted Remaining Flow (PAY-001, PAY-002)
 **Date**: April 8, 2026
 **Status**: ✅ Completed

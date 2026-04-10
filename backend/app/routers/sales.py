@@ -93,9 +93,17 @@ def _sales_order_module_removed() -> None:
     )
 
 
+def _customer_country_for_invoice(customer: Customer) -> str | None:
+    shipping_country = (customer.shipping_country or "").strip()
+    if shipping_country:
+        return shipping_country
+    billing_country = (customer.billing_country or "").strip()
+    return billing_country or None
+
+
 def _validate_invoice_type_for_country(invoice_type: str, customer: Customer) -> None:
     """Validate invoice type against customer country rules."""
-    customer_in_india = is_india_country(customer.billing_country)
+    customer_in_india = is_india_country(_customer_country_for_invoice(customer))
     if customer_in_india and invoice_type == "export_invoice":
         raise HTTPException(
             status_code=400,
@@ -105,6 +113,19 @@ def _validate_invoice_type_for_country(invoice_type: str, customer: Customer) ->
         raise HTTPException(
             status_code=400,
             detail="For non-India customers, only Export Invoice is allowed.",
+        )
+
+
+def _validate_invoice_type_for_location(db: Session, invoice_type: str, customer: Customer) -> None:
+    """Enforce exact invoice type based on customer shipping-first GST location logic."""
+    expected_invoice_type = determine_default_invoice_type(db, customer.id)
+    if invoice_type != expected_invoice_type:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Invalid invoice type for selected customer location. "
+                f"Expected '{expected_invoice_type}'."
+            ),
         )
 
 
@@ -1286,8 +1307,10 @@ async def create_invoice(
 
     # BUG-02: Auto-detect GST mode from country + state/state-code
     tax_mode = determine_tax_mode(db, "customer", payload.customer_id)
-    invoice_type = payload.invoice_type or determine_default_invoice_type(db, payload.customer_id)
+    expected_invoice_type = determine_default_invoice_type(db, payload.customer_id)
+    invoice_type = payload.invoice_type or expected_invoice_type
     _validate_invoice_type_for_country(invoice_type, customer)
+    _validate_invoice_type_for_location(db, invoice_type, customer)
     invoice_tax_mode = invoice_type_tax_mode(invoice_type, fallback_is_igst=tax_mode["is_igst"])
     is_igst = invoice_tax_mode["is_igst"]
     gst_applicable = invoice_tax_mode["gst_applicable"]
@@ -1411,9 +1434,10 @@ async def update_invoice(
 
     # BUG-02: Auto-detect GST mode (country + state/state-code)
     tax_mode = determine_tax_mode(db, "customer", payload.customer_id)
-    default_invoice_type = determine_default_invoice_type(db, payload.customer_id)
-    invoice_type = payload.invoice_type or invoice.invoice_type or default_invoice_type
+    expected_invoice_type = determine_default_invoice_type(db, payload.customer_id)
+    invoice_type = payload.invoice_type or expected_invoice_type
     _validate_invoice_type_for_country(invoice_type, customer)
+    _validate_invoice_type_for_location(db, invoice_type, customer)
     invoice_tax_mode = invoice_type_tax_mode(invoice_type, fallback_is_igst=tax_mode["is_igst"])
     is_igst = invoice_tax_mode["is_igst"]
     gst_applicable = invoice_tax_mode["gst_applicable"]
