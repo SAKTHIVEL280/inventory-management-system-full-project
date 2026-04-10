@@ -4,8 +4,9 @@ import { toast } from 'sonner';
 
 import { AppLayout } from '../components/AppLayout';
 import { productsApi } from '../api/products';
-import { stockApi } from '../api/stock';
+import { stockApi, type InventoryCountBatchOption } from '../api/stock';
 import { useAuthStore } from '../store/auth';
+import { todayLocalDateInputValue, todayUtcDateInputValue } from '../utils/date';
 
 interface InventoryCountDraftItem {
   serial_number: number;
@@ -17,7 +18,10 @@ interface InventoryCountDraftItem {
   expiry_date: string;
 }
 
-const todayIso = new Date().toISOString().slice(0, 10);
+interface EntryDateValidationErrors {
+  manufacture_date?: string;
+  expiry_date?: string;
+}
 
 const clearLeadingZeroOnFocus = (event: FocusEvent<HTMLInputElement>) => {
   const currentValue = event.currentTarget.value;
@@ -26,13 +30,56 @@ const clearLeadingZeroOnFocus = (event: FocusEvent<HTMLInputElement>) => {
   }
 };
 
+const getInventoryDateValidationErrors = (
+  manufactureDate: string,
+  expiryDate: string,
+): EntryDateValidationErrors => {
+  const today = todayUtcDateInputValue();
+  const errors: EntryDateValidationErrors = {};
+
+  if (manufactureDate && manufactureDate >= today) {
+    errors.manufacture_date = 'Manufacturing date must be earlier than the current date';
+  }
+
+  if (expiryDate && expiryDate <= today) {
+    errors.expiry_date = 'Expiry date must be later than the current date';
+  }
+
+  if (!errors.expiry_date && manufactureDate && expiryDate && expiryDate <= manufactureDate) {
+    errors.expiry_date = 'Expiry date must be later than manufacturing date';
+  }
+
+  return errors;
+};
+
+const getFirstDateValidationMessage = (errors: EntryDateValidationErrors): string | null => {
+  return errors.manufacture_date || errors.expiry_date || null;
+};
+
+const findBatchOptionByNo = (
+  batchOptions: InventoryCountBatchOption[],
+  batchNo: string,
+): InventoryCountBatchOption | undefined => {
+  return batchOptions.find((option) => option.batch_no === batchNo);
+};
+
+const shiftUtcDateInputValue = (dateInputValue: string, days: number): string => {
+  const utcDate = new Date(`${dateInputValue}T00:00:00.000Z`);
+  utcDate.setUTCDate(utcDate.getUTCDate() + days);
+  return utcDate.toISOString().slice(0, 10);
+};
+
 const InventoryCountPage = () => {
   const user = useAuthStore((state) => state.user);
-  const [countDate, setCountDate] = useState(todayIso);
+  const [countDate, setCountDate] = useState(todayLocalDateInputValue());
   const [countNumber, setCountNumber] = useState('');
   const [countPerformedBy, setCountPerformedBy] = useState(user?.full_name || '');
   const [items, setItems] = useState<InventoryCountDraftItem[]>([]);
   const [isQuantityFocused, setIsQuantityFocused] = useState(false);
+
+  const todayUtc = todayUtcDateInputValue();
+  const maxManufactureDate = shiftUtcDateInputValue(todayUtc, -1);
+  const minExpiryDate = shiftUtcDateInputValue(todayUtc, 1);
 
   const [entry, setEntry] = useState<InventoryCountDraftItem>({
     serial_number: 1,
@@ -85,8 +132,20 @@ const InventoryCountPage = () => {
       previewMutation.mutate(countDate);
     },
     onError: (error: unknown) => {
-      const message = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      toast.error(message || 'Failed to confirm inventory count');
+      const detail = (error as { response?: { data?: { detail?: string | Array<{ msg?: string }> } } })?.response?.data?.detail;
+      if (typeof detail === 'string') {
+        toast.error(detail);
+        return;
+      }
+      if (Array.isArray(detail)) {
+        const combined = detail
+          .map((entryDetail) => entryDetail?.msg)
+          .filter((msg): msg is string => Boolean(msg))
+          .join(', ');
+        toast.error(combined || 'Failed to confirm inventory count');
+        return;
+      }
+      toast.error('Failed to confirm inventory count');
     },
   });
 
@@ -95,15 +154,125 @@ const InventoryCountPage = () => {
     [products, entry.product_id]
   );
 
+  const { data: batchOptionsResponse, isFetching: isBatchOptionsLoading } = useQuery({
+    queryKey: ['inventory-count-batch-options', entry.product_id],
+    queryFn: () => stockApi.getInventoryCountBatchOptions(entry.product_id),
+    enabled: Boolean(entry.product_id),
+  });
+
+  const batchOptions = useMemo(() => batchOptionsResponse?.items ?? [], [batchOptionsResponse?.items]);
+  const hasSingleBatchOption = batchOptions.length === 1;
+  const hasMultipleBatchOptions = batchOptions.length > 1;
+
+  useEffect(() => {
+    if (!entry.product_id || isBatchOptionsLoading) {
+      return;
+    }
+
+    setEntry((prev) => {
+      if (batchOptions.length === 1) {
+        const onlyBatch = batchOptions[0];
+        const nextBatchNo = onlyBatch.batch_no;
+        const nextMfg = onlyBatch.manufacture_date || '';
+        const nextExp = onlyBatch.expiry_date || '';
+
+        if (
+          prev.batch_no === nextBatchNo &&
+          prev.manufacture_date === nextMfg &&
+          prev.expiry_date === nextExp
+        ) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          batch_no: nextBatchNo,
+          manufacture_date: nextMfg,
+          expiry_date: nextExp,
+        };
+      }
+
+      if (batchOptions.length > 1) {
+        const selectedBatch = findBatchOptionByNo(batchOptions, prev.batch_no);
+        const nextBatchNo = selectedBatch ? prev.batch_no : '';
+        const nextMfg = selectedBatch?.manufacture_date || '';
+        const nextExp = selectedBatch?.expiry_date || '';
+
+        if (
+          prev.batch_no === nextBatchNo &&
+          prev.manufacture_date === nextMfg &&
+          prev.expiry_date === nextExp
+        ) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          batch_no: nextBatchNo,
+          manufacture_date: nextMfg,
+          expiry_date: nextExp,
+        };
+      }
+
+      if (!prev.batch_no && !prev.manufacture_date && !prev.expiry_date) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        batch_no: '',
+        manufacture_date: '',
+        expiry_date: '',
+      };
+    });
+  }, [entry.product_id, batchOptions, isBatchOptionsLoading]);
+
+  const handleBatchChange = (batchNo: string) => {
+    const selectedBatch = findBatchOptionByNo(batchOptions, batchNo);
+    setEntry((prev) => ({
+      ...prev,
+      batch_no: batchNo,
+      manufacture_date: selectedBatch?.manufacture_date || '',
+      expiry_date: selectedBatch?.expiry_date || '',
+    }));
+  };
+
   const addItem = () => {
     if (!entry.serial_number || !entry.product_id || entry.quantity < 0) {
       toast.error('Please enter Serial Number, Product Code and valid Quantity.');
       return;
     }
 
+    if (isBatchOptionsLoading) {
+      toast.error('Please wait until batch options are loaded.');
+      return;
+    }
+
+    if (hasMultipleBatchOptions && !entry.batch_no) {
+      toast.error('Please select a batch number.');
+      return;
+    }
+
+    const resolvedBatchOption = hasSingleBatchOption
+      ? batchOptions[0]
+      : findBatchOptionByNo(batchOptions, entry.batch_no);
+
+    const validationErrors = getInventoryDateValidationErrors(
+      entry.manufacture_date,
+      entry.expiry_date,
+    );
+    const dateValidationMessage = getFirstDateValidationMessage(validationErrors);
+    if (dateValidationMessage) {
+      toast.error(dateValidationMessage);
+      return;
+    }
+
     const itemToAdd: InventoryCountDraftItem = {
       ...entry,
       product_description: entry.product_description || selectedProduct?.description || selectedProduct?.name || '',
+      batch_no: hasSingleBatchOption ? (resolvedBatchOption?.batch_no || '') : entry.batch_no,
+      manufacture_date: entry.manufacture_date || resolvedBatchOption?.manufacture_date || '',
+      expiry_date: entry.expiry_date || resolvedBatchOption?.expiry_date || '',
     };
 
     setItems((prev) => [...prev, itemToAdd]);
@@ -132,6 +301,25 @@ const InventoryCountPage = () => {
 
   const confirmInventoryCount = () => {
     if (!canConfirm) return;
+
+    const invalidDateItemIndex = items.findIndex((item) => {
+      const validationErrors = getInventoryDateValidationErrors(
+        item.manufacture_date,
+        item.expiry_date,
+      );
+      return Boolean(getFirstDateValidationMessage(validationErrors));
+    });
+
+    if (invalidDateItemIndex >= 0) {
+      const item = items[invalidDateItemIndex];
+      const validationErrors = getInventoryDateValidationErrors(
+        item.manufacture_date,
+        item.expiry_date,
+      );
+      const firstMessage = getFirstDateValidationMessage(validationErrors);
+      toast.error(`Line item ${invalidDateItemIndex + 1}: ${firstMessage || 'Invalid date values.'}`);
+      return;
+    }
 
     createMutation.mutate({
       count_date: countDate,
@@ -209,7 +397,10 @@ const InventoryCountPage = () => {
                   setEntry((prev) => ({
                     ...prev,
                     product_id: e.target.value,
-                    product_description: product?.description || product?.name || prev.product_description,
+                    product_description: product?.description || product?.name || '',
+                    batch_no: '',
+                    manufacture_date: '',
+                    expiry_date: '',
                   }));
                 }}
               >
@@ -249,19 +440,49 @@ const InventoryCountPage = () => {
             </div>
             <div>
               <label className="hms-label">Batch Number</label>
-              <input
-                type="text"
-                className="hms-input"
-                value={entry.batch_no}
-                onChange={(e) => setEntry((prev) => ({ ...prev, batch_no: e.target.value }))}
-                placeholder="Batch"
-              />
+              {hasMultipleBatchOptions ? (
+                <select
+                  className="hms-input"
+                  value={entry.batch_no}
+                  disabled={isBatchOptionsLoading}
+                  onChange={(e) => handleBatchChange(e.target.value)}
+                >
+                  <option value="">Select Batch</option>
+                  {batchOptions.map((option) => (
+                    <option key={option.batch_no} value={option.batch_no}>
+                      {option.batch_no} ({option.available_qty})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  className={`hms-input ${hasSingleBatchOption ? 'bg-neutral-50' : ''}`}
+                  value={entry.batch_no}
+                  readOnly={hasSingleBatchOption}
+                  onChange={(e) => setEntry((prev) => ({ ...prev, batch_no: e.target.value }))}
+                  placeholder={
+                    isBatchOptionsLoading
+                      ? 'Loading batches...'
+                      : hasSingleBatchOption
+                        ? 'Auto-filled from available stock batch'
+                        : 'Batch'
+                  }
+                />
+              )}
+              {hasSingleBatchOption ? (
+                <p className="mt-1 text-xs text-neutral-500">Single available batch auto-selected.</p>
+              ) : null}
+              {entry.product_id && !isBatchOptionsLoading && batchOptions.length === 0 ? (
+                <p className="mt-1 text-xs text-neutral-500">No available batches found. Batch can be entered manually.</p>
+              ) : null}
             </div>
             <div>
               <label className="hms-label">Mfg Date</label>
               <input
                 type="date"
                 className="hms-input"
+                max={maxManufactureDate}
                 value={entry.manufacture_date}
                 onChange={(e) => setEntry((prev) => ({ ...prev, manufacture_date: e.target.value }))}
               />
@@ -271,6 +492,7 @@ const InventoryCountPage = () => {
               <input
                 type="date"
                 className="hms-input"
+                min={minExpiryDate}
                 value={entry.expiry_date}
                 onChange={(e) => setEntry((prev) => ({ ...prev, expiry_date: e.target.value }))}
               />

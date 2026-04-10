@@ -32,6 +32,18 @@ export type InventoryCountResponse = {
   items: InventoryCountItemPayload[];
 };
 
+export type InventoryCountBatchOption = {
+  batch_no: string;
+  available_qty: number;
+  manufacture_date?: string | null;
+  expiry_date?: string | null;
+};
+
+export type InventoryCountBatchOptionsResponse = {
+  product_id: string;
+  items: InventoryCountBatchOption[];
+};
+
 export type InventoryCountDifferenceItem = {
   serial_number: number;
   product_id: string;
@@ -79,6 +91,13 @@ export const stockApi = {
   getInventoryCountNumberPreview: async (countDate?: string): Promise<{ count_number: string; count_date: string }> => {
     const response = await apiClient.get<{ count_number: string; count_date: string }>('/api/v1/stock/inventory-counts/next-number', {
       params: countDate ? { count_date: countDate } : {},
+    });
+    return response.data;
+  },
+
+  getInventoryCountBatchOptions: async (productId: string): Promise<InventoryCountBatchOptionsResponse> => {
+    const response = await apiClient.get<InventoryCountBatchOptionsResponse>('/api/v1/stock/inventory-counts/batch-options', {
+      params: { product_id: productId },
     });
     return response.data;
   },

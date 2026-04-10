@@ -4,8 +4,9 @@ Production-ready with fixes for:
 - BUG-01: Materialized view refresh after adjustments
 - BUG-27: reference_id included for audit trail
 """
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func
@@ -14,10 +15,14 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import require_permissions, require_role
 from app.models.inventory_count import InventoryCount, InventoryCountItem
+from app.models.purchase import GoodsReceiptNote, GRNItem, PurchaseReturn, PurchaseReturnItem
 from app.models.product import Product, StockLedger
+from app.models.sales import SalesInvoice, SalesInvoiceItem, SalesReturn, SalesReturnItem
 from app.models.user import User
 from app.schemas.product import StockAdjustmentRequest, StockLedgerResponse
 from app.schemas.stock import (
+    InventoryCountBatchOptionResponse,
+    InventoryCountBatchOptionsResponse,
     InventoryCountCreateRequest,
     InventoryCountDifferenceItemResponse,
     InventoryCountDifferenceResponse,
@@ -54,6 +59,169 @@ def _generate_inventory_count_number(db: Session, count_date: date) -> str:
             max_seq = max(max_seq, int(suffix))
 
     return f"{prefix}{(max_seq + 1):03d}"
+
+
+def _build_product_batch_snapshot(db: Session, product_id: UUID) -> dict[str, dict[str, Any]]:
+    """Build positive available batch map for a product from transactional data."""
+    batch_balances: dict[str, float] = {}
+    batch_meta: dict[str, tuple[date | None, date | None]] = {}
+
+    def _accumulate(batch_no, manufacture_date, expiry_date, qty_delta):
+        token = (batch_no or "").strip()
+        if not token:
+            return
+        if token not in batch_meta:
+            batch_meta[token] = (manufacture_date, expiry_date)
+        else:
+            prev_mfg, prev_exp = batch_meta[token]
+            batch_meta[token] = (
+                prev_mfg or manufacture_date,
+                prev_exp or expiry_date,
+            )
+        batch_balances[token] = batch_balances.get(token, 0.0) + float(qty_delta or 0)
+
+    grn_rows = (
+        db.query(
+            GRNItem.batch_no,
+            GRNItem.manufacture_date,
+            GRNItem.expiry_date,
+            func.coalesce(func.sum(GRNItem.quantity), 0).label("qty"),
+            func.coalesce(func.sum(GRNItem.free_quantity), 0).label("free_qty"),
+        )
+        .join(GoodsReceiptNote, GRNItem.grn_id == GoodsReceiptNote.id)
+        .filter(
+            GRNItem.product_id == product_id,
+            GoodsReceiptNote.status == "confirmed",
+            GoodsReceiptNote.is_deleted == False,
+            GRNItem.is_deleted == False,
+        )
+        .group_by(GRNItem.batch_no, GRNItem.manufacture_date, GRNItem.expiry_date)
+        .all()
+    )
+    for row in grn_rows:
+        _accumulate(
+            row.batch_no,
+            row.manufacture_date,
+            row.expiry_date,
+            float(row.qty or 0) + float(row.free_qty or 0),
+        )
+
+    purchase_return_rows = (
+        db.query(
+            GRNItem.batch_no,
+            GRNItem.manufacture_date,
+            GRNItem.expiry_date,
+            func.coalesce(func.sum(PurchaseReturnItem.quantity), 0).label("qty"),
+        )
+        .join(PurchaseReturn, PurchaseReturnItem.purchase_return_id == PurchaseReturn.id)
+        .outerjoin(GRNItem, PurchaseReturnItem.grn_item_id == GRNItem.id)
+        .filter(
+            PurchaseReturnItem.product_id == product_id,
+            PurchaseReturn.status == "confirmed",
+            PurchaseReturn.is_deleted == False,
+            PurchaseReturnItem.is_deleted == False,
+        )
+        .group_by(GRNItem.batch_no, GRNItem.manufacture_date, GRNItem.expiry_date)
+        .all()
+    )
+    for row in purchase_return_rows:
+        _accumulate(
+            row.batch_no,
+            row.manufacture_date,
+            row.expiry_date,
+            -float(row.qty or 0),
+        )
+
+    sales_issue_rows = (
+        db.query(
+            SalesInvoiceItem.batch_no,
+            SalesInvoiceItem.manufacture_date,
+            SalesInvoiceItem.expiry_date,
+            func.coalesce(func.sum(SalesInvoiceItem.quantity), 0).label("qty"),
+        )
+        .join(SalesInvoice, SalesInvoiceItem.invoice_id == SalesInvoice.id)
+        .filter(
+            SalesInvoiceItem.product_id == product_id,
+            SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
+            SalesInvoice.is_deleted == False,
+            SalesInvoiceItem.is_deleted == False,
+        )
+        .group_by(
+            SalesInvoiceItem.batch_no,
+            SalesInvoiceItem.manufacture_date,
+            SalesInvoiceItem.expiry_date,
+        )
+        .all()
+    )
+    for row in sales_issue_rows:
+        _accumulate(
+            row.batch_no,
+            row.manufacture_date,
+            row.expiry_date,
+            -float(row.qty or 0),
+        )
+
+    sales_return_rows = (
+        db.query(
+            SalesInvoiceItem.batch_no,
+            SalesInvoiceItem.manufacture_date,
+            SalesInvoiceItem.expiry_date,
+            func.coalesce(func.sum(SalesReturnItem.quantity), 0).label("qty"),
+        )
+        .join(SalesReturn, SalesReturnItem.sales_return_id == SalesReturn.id)
+        .outerjoin(SalesInvoiceItem, SalesReturnItem.invoice_item_id == SalesInvoiceItem.id)
+        .filter(
+            SalesReturnItem.product_id == product_id,
+            SalesReturn.status == "confirmed",
+            SalesReturn.is_deleted == False,
+            SalesReturnItem.is_deleted == False,
+        )
+        .group_by(
+            SalesInvoiceItem.batch_no,
+            SalesInvoiceItem.manufacture_date,
+            SalesInvoiceItem.expiry_date,
+        )
+        .all()
+    )
+    for row in sales_return_rows:
+        _accumulate(
+            row.batch_no,
+            row.manufacture_date,
+            row.expiry_date,
+            float(row.qty or 0),
+        )
+
+    snapshot: dict[str, dict[str, Any]] = {}
+    for batch_no, qty in batch_balances.items():
+        if qty <= 1e-6:
+            continue
+        manufacture_date, expiry_date = batch_meta.get(batch_no, (None, None))
+        snapshot[batch_no] = {
+            "available_qty": round(float(qty), 4),
+            "manufacture_date": manufacture_date,
+            "expiry_date": expiry_date,
+        }
+    return snapshot
+
+
+def _collect_inventory_count_date_errors(
+    manufacture_date: date | None,
+    expiry_date: date | None,
+) -> list[str]:
+    """Validate Inventory Count date constraints using date-only comparisons."""
+    today = datetime.now(timezone.utc).date()
+    errors: list[str] = []
+
+    if manufacture_date and manufacture_date >= today:
+        errors.append("Manufacturing date must be earlier than the current date")
+
+    if expiry_date and expiry_date <= today:
+        errors.append("Expiry date must be later than the current date")
+
+    if manufacture_date and expiry_date and expiry_date <= manufacture_date:
+        errors.append("Expiry date must be later than manufacturing date")
+
+    return errors
 
 
 @router.post("/adjust", response_model=StockLedgerResponse, status_code=status.HTTP_201_CREATED)
@@ -182,6 +350,40 @@ async def get_inventory_count_number_preview(
     }
 
 
+@router.get("/inventory-counts/batch-options", response_model=InventoryCountBatchOptionsResponse)
+async def get_inventory_count_batch_options(
+    product_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("stock_ledger_read")),
+):
+    product = db.query(Product).filter(Product.id == product_id, Product.is_deleted == False).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    snapshot = _build_product_batch_snapshot(db, product_id)
+    batch_items = [
+        InventoryCountBatchOptionResponse(
+            batch_no=batch_no,
+            available_qty=meta.get("available_qty", 0),
+            manufacture_date=meta.get("manufacture_date").isoformat() if meta.get("manufacture_date") else None,
+            expiry_date=meta.get("expiry_date").isoformat() if meta.get("expiry_date") else None,
+        )
+        for batch_no, meta in snapshot.items()
+    ]
+    batch_items.sort(
+        key=lambda row: (
+            row.expiry_date is None,
+            row.expiry_date or "",
+            row.batch_no,
+        )
+    )
+
+    return InventoryCountBatchOptionsResponse(
+        product_id=str(product_id),
+        items=batch_items,
+    )
+
+
 @router.post("/inventory-counts", response_model=InventoryCountResponse, status_code=status.HTTP_201_CREATED)
 async def create_inventory_count(
     payload: InventoryCountCreateRequest,
@@ -214,14 +416,23 @@ async def create_inventory_count(
     db.flush()
 
     created_items: list[InventoryCountItemResponse] = []
-    for item in payload.items:
+    for idx, item in enumerate(payload.items, start=1):
+        item_date_errors = _collect_inventory_count_date_errors(
+            item.manufacture_date,
+            item.expiry_date,
+        )
+        if item_date_errors:
+            raise HTTPException(status_code=400, detail=f"Line item {idx}: {item_date_errors[0]}")
+
+        normalized_batch_no = (item.batch_no or "").strip() or None
+
         row = InventoryCountItem(
             inventory_count_id=inventory_count.id,
             serial_number=item.serial_number,
             product_id=item.product_id,
             product_description=item.product_description,
             quantity=item.quantity,
-            batch_no=(item.batch_no or None),
+            batch_no=normalized_batch_no,
             manufacture_date=item.manufacture_date,
             expiry_date=item.expiry_date,
         )
@@ -233,7 +444,7 @@ async def create_inventory_count(
                 product_id=str(item.product_id),
                 product_description=item.product_description,
                 quantity=float(item.quantity),
-                batch_no=item.batch_no,
+                batch_no=normalized_batch_no,
                 manufacture_date=item.manufacture_date.isoformat() if item.manufacture_date else None,
                 expiry_date=item.expiry_date.isoformat() if item.expiry_date else None,
             )

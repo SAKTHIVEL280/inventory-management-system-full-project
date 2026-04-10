@@ -8,6 +8,8 @@ export const toLocalDateInputValue = (date: Date): string => {
 
 export const todayLocalDateInputValue = (): string => toLocalDateInputValue(new Date());
 
+export const todayUtcDateInputValue = (): string => new Date().toISOString().slice(0, 10);
+
 export const dateInputValueAfterDays = (days: number): string => {
   const date = new Date();
   date.setDate(date.getDate() + days);

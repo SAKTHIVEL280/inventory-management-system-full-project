@@ -68,6 +68,18 @@ class InventoryCountNumberSearchResponse(BaseModel):
     items: list[str]
 
 
+class InventoryCountBatchOptionResponse(BaseModel):
+    batch_no: str
+    available_qty: float
+    manufacture_date: Optional[str] = None
+    expiry_date: Optional[str] = None
+
+
+class InventoryCountBatchOptionsResponse(BaseModel):
+    product_id: str
+    items: list[InventoryCountBatchOptionResponse]
+
+
 class InventoryCountDifferenceItemResponse(BaseModel):
     serial_number: int
     product_id: str
