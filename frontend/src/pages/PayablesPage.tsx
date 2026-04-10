@@ -24,12 +24,15 @@ interface SupplierOption { id: string; company_name: string; }
 
 const CLEARED_STATUSES = new Set(['cleared', 'advance_payment_cleared', 'advance_cleared', 'full_payment_cleared']);
 
+const normalizePaise = (value: number): number => Math.max(0, Math.round(Number(value || 0)));
+
 const PayablesPage = () => {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [suppliers, setSuppliers] = useState<SupplierOption[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [settlementLoading, setSettlementLoading] = useState(false);
   const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -58,6 +61,7 @@ const PayablesPage = () => {
   const [referenceNumber, setReferenceNumber] = useState('');
   const [notes, setNotes] = useState('');
   const [allocations, setAllocations] = useState<Record<string, number>>({});
+  const [settlementPayments, setSettlementPayments] = useState<Payment[]>([]);
 
   const fetchPayments = async () => {
     try {
@@ -88,17 +92,57 @@ const PayablesPage = () => {
     }
   };
 
+  const fetchSupplierSettlementPayments = async (nextSupplierId: string) => {
+    if (!nextSupplierId) {
+      setSettlementPayments([]);
+      setSettlementLoading(false);
+      return;
+    }
+
+    setSettlementLoading(true);
+    try {
+      const rows: Payment[] = [];
+      let page = 1;
+      let hasMore = true;
+
+      while (hasMore) {
+        const res = await paymentsApi.listPayments({
+          party_type: 'supplier',
+          supplier_id: nextSupplierId,
+          page,
+          page_size: 500,
+        });
+
+        rows.push(...(res.data.items || []));
+        hasMore = Boolean(res.data.has_more);
+        page += 1;
+
+        // Safety stop to avoid infinite loop on malformed pagination response.
+        if (page > 100) {
+          break;
+        }
+      }
+
+      setSettlementPayments(rows);
+    } catch {
+      setSettlementPayments([]);
+    } finally {
+      setSettlementLoading(false);
+    }
+  };
+
   // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchPayments should run when archiveView changes
   useEffect(() => { fetchPayments(); }, [archiveView]);
   useEffect(() => { fetchSuppliers(); }, []);
 
   // When supplier changes, fetch their confirmed GRNs
   useEffect(() => {
-    if (!supplierId) { setOutstandingGRNs([]); setSupplierPOs([]); setSelectedPOId(''); setSelectedGRNId(''); return; }
+    if (!supplierId) { setOutstandingGRNs([]); setSupplierPOs([]); setSelectedPOId(''); setSelectedGRNId(''); setSettlementPayments([]); setSettlementLoading(false); return; }
     void fetchPOsForSupplier(supplierId);
+    void fetchSupplierSettlementPayments(supplierId);
     (async () => {
       try {
-        const res = await purchaseApi.listGRNs('confirmed', 1, 100, { supplier_id: supplierId });
+        const res = await purchaseApi.listGRNs('confirmed', 1, 500, { supplier_id: supplierId });
         setOutstandingGRNs(res.data.items || []);
       } catch { setOutstandingGRNs([]); }
     })();
@@ -168,18 +212,18 @@ const PayablesPage = () => {
     const directPaidByGRN: Record<string, number> = {};
     const advanceByPO: Record<string, number> = {};
 
-    payments
+    settlementPayments
       .filter((p) => CLEARED_STATUSES.has((p.status || '').toLowerCase()))
       .forEach((payment) => {
         const hasGrnAlloc = (payment.allocations || []).some((a) => Boolean(a.purchase_grn_id));
         if (!hasGrnAlloc && payment.purchase_order_id) {
-          advanceByPO[payment.purchase_order_id] = (advanceByPO[payment.purchase_order_id] || 0) + Number(payment.amount || 0);
+          advanceByPO[payment.purchase_order_id] = normalizePaise(advanceByPO[payment.purchase_order_id] || 0) + normalizePaise(payment.amount || 0);
           return;
         }
 
         (payment.allocations || []).forEach((alloc) => {
           if (!alloc.purchase_grn_id) return;
-          directPaidByGRN[alloc.purchase_grn_id] = (directPaidByGRN[alloc.purchase_grn_id] || 0) + Number(alloc.allocated_amount || 0);
+          directPaidByGRN[alloc.purchase_grn_id] = normalizePaise(directPaidByGRN[alloc.purchase_grn_id] || 0) + normalizePaise(alloc.allocated_amount || 0);
         });
       });
 
@@ -192,11 +236,15 @@ const PayablesPage = () => {
 
     const remaining: Record<string, number> = {};
     Object.entries(grnByPO).forEach(([poId, poGrns]) => {
-      let advanceLeft = Number(advanceByPO[poId] || 0);
-      const sorted = [...poGrns].sort((a, b) => String(a.receipt_date).localeCompare(String(b.receipt_date)));
+      let advanceLeft = normalizePaise(advanceByPO[poId] || 0);
+      const sorted = [...poGrns].sort((a, b) => {
+        const receiptCmp = String(a.receipt_date || '').localeCompare(String(b.receipt_date || ''));
+        if (receiptCmp !== 0) return receiptCmp;
+        return String(a.created_at || '').localeCompare(String(b.created_at || ''));
+      });
       sorted.forEach((grn) => {
-        const total = Number(grn.total_amount || 0);
-        const directPaid = Number(directPaidByGRN[grn.id] || 0);
+        const total = normalizePaise(grn.total_amount || 0);
+        const directPaid = normalizePaise(directPaidByGRN[grn.id] || 0);
         const dueBeforeAdvance = Math.max(0, total - directPaid);
         const appliedAdvance = Math.min(dueBeforeAdvance, advanceLeft);
         const dueAfterAdvance = Math.max(0, dueBeforeAdvance - appliedAdvance);
@@ -206,7 +254,7 @@ const PayablesPage = () => {
     });
 
     return remaining;
-  }, [payments, outstandingGRNs]);
+  }, [outstandingGRNs, settlementPayments]);
 
   const filteredPOs = useMemo(() => {
     const q = poSearch.trim().toLowerCase();
@@ -256,6 +304,18 @@ const PayablesPage = () => {
   const handleSubmit = async () => {
     if (!supplierId || amount <= 0) { setError('Select supplier and enter amount'); return; }
 
+    const normalizedAmount = normalizePaise(amount);
+
+    if (normalizedAmount <= 0) {
+      setError('Select supplier and enter amount');
+      return;
+    }
+
+    if (settlementLoading && !isAdvancePayment) {
+      setError('Please wait, remaining payable is being refreshed.');
+      return;
+    }
+
     if (!selectedPOId) {
       setError('Select PO Number');
       return;
@@ -271,7 +331,7 @@ const PayablesPage = () => {
         setError('No remaining payable for selected GRN');
         return;
       }
-      if (amount > remaining) {
+      if (normalizedAmount > normalizePaise(remaining)) {
         setError(`Payment cannot exceed remaining amount of ${formatAmount(remaining)}`);
         return;
       }
@@ -280,9 +340,10 @@ const PayablesPage = () => {
     // PAY-006: Validate total allocations don't exceed GRN values
     if (!isAdvancePayment) {
       for (const [grnId, allocAmt] of Object.entries(allocations)) {
-        if (allocAmt > 0) {
+        const normalizedAllocation = normalizePaise(allocAmt);
+        if (normalizedAllocation > 0) {
           const grn = outstandingGRNs.find(g => g.id === grnId);
-          if (grn && allocAmt > grn.total_amount) {
+          if (grn && normalizedAllocation > normalizePaise(grn.total_amount)) {
             setError(`Allocated amount for GRN ${grn.grn_number} exceeds its value of ${formatAmount(grn.total_amount)}`);
             return;
           }
@@ -293,13 +354,13 @@ const PayablesPage = () => {
     setSubmitting(true); setError('');
     try {
       const allocationList: PaymentAllocationRequest[] = !isAdvancePayment && selectedGRNId
-        ? [{ purchase_grn_id: selectedGRNId, allocated_amount: amount }]
+        ? [{ purchase_grn_id: selectedGRNId, allocated_amount: normalizedAmount }]
         : [];
 
       const payload: CreatePaymentPayload = {
         payment_type: 'payment', party_type: 'supplier',
         supplier_id: supplierId, payment_date: paymentDate,
-        amount: amount, payment_mode: paymentMode,
+        amount: normalizedAmount, payment_mode: paymentMode,
         purchase_order_id: selectedPOId,
         reference_number: referenceNumber || undefined,
         notes: notes || undefined,

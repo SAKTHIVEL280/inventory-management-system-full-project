@@ -7,6 +7,7 @@ Production-ready with fixes for:
 """
 from collections import defaultdict
 from datetime import date, datetime
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import re
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -25,6 +26,17 @@ from app.services.order_number_service import generate_payment_number
 router = APIRouter(prefix="/api/v1/payments", tags=["payments"])
 
 PO_ID_META_REGEX = re.compile(r"\[PO_ID:([0-9a-fA-F-]{36})\]")
+
+
+def _to_minor_units(value) -> int:
+    """Normalize monetary value to integer minor units (paise)."""
+    if value is None:
+        return 0
+    try:
+        normalized = Decimal(str(value)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    except (InvalidOperation, ValueError):
+        return 0
+    return int(normalized)
 
 
 def _extract_po_id_from_notes(notes: str | None) -> UUID | None:
@@ -172,7 +184,7 @@ def _build_supplier_payable_snapshot(
         if not _payment_has_grn_allocations(payment):
             po_id = _extract_po_id_from_notes(payment.notes)
             if po_id and (not po_ids or po_id in po_ids):
-                advance_by_po[po_id] += int(payment.amount or 0)
+                advance_by_po[po_id] += _to_minor_units(payment.amount)
             continue
 
         for allocation in payment.allocations or []:
@@ -183,15 +195,15 @@ def _build_supplier_payable_snapshot(
                 continue
             if po_ids and grn.purchase_order_id not in po_ids:
                 continue
-            direct_paid_by_grn[allocation.purchase_grn_id] += int(allocation.allocated_amount or 0)
+            direct_paid_by_grn[allocation.purchase_grn_id] += _to_minor_units(allocation.allocated_amount)
 
     remaining_by_grn: dict[UUID, int] = {}
     for po_id, po_grns in grns_by_po.items():
         advance_left = int(advance_by_po.get(po_id, 0))
         sorted_grns = sorted(po_grns, key=lambda g: (g.receipt_date, g.created_at))
         for grn in sorted_grns:
-            total = int(grn.total_amount or 0)
-            direct_paid = int(direct_paid_by_grn.get(grn.id, 0))
+            total = _to_minor_units(grn.total_amount)
+            direct_paid = _to_minor_units(direct_paid_by_grn.get(grn.id, 0))
             due_before_advance = max(0, total - direct_paid)
             applied_advance = min(due_before_advance, max(0, advance_left))
             remaining = max(0, due_before_advance - applied_advance)
@@ -391,8 +403,13 @@ async def create_payment(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("payments_write", "receipts_write")),
 ):
-    total_allocated = sum(a.allocated_amount for a in payload.allocations)
-    if total_allocated > payload.amount:
+    normalized_payment_amount = _to_minor_units(payload.amount)
+    total_allocated = sum(_to_minor_units(a.allocated_amount) for a in payload.allocations)
+
+    if normalized_payment_amount <= 0:
+        raise HTTPException(status_code=400, detail="Payment amount must be greater than zero")
+
+    if total_allocated > normalized_payment_amount:
         raise HTTPException(status_code=400, detail="Total allocations exceed payment amount")
 
     if payload.party_type == "customer" and not payload.customer_id:
@@ -459,11 +476,11 @@ async def create_payment(
             if not allocation.purchase_grn_id:
                 continue
             grn_id = allocation.purchase_grn_id
-            proposed = int(allocation.allocated_amount or 0)
+            proposed = _to_minor_units(allocation.allocated_amount)
             if proposed <= 0:
                 continue
-            already_new = int(new_alloc_sum_by_grn[grn_id])
-            remaining_now = max(0, int(remaining_by_grn.get(grn_id, 0)) - already_new)
+            already_new = _to_minor_units(new_alloc_sum_by_grn[grn_id])
+            remaining_now = max(0, _to_minor_units(remaining_by_grn.get(grn_id, 0)) - already_new)
             if proposed > remaining_now:
                 grn = grn_rows.get(grn_id)
                 label = grn.grn_number if grn else str(grn_id)
@@ -480,7 +497,7 @@ async def create_payment(
         customer_id=payload.customer_id,
         supplier_id=payload.supplier_id,
         payment_date=payload.payment_date,
-        amount=payload.amount,
+        amount=normalized_payment_amount,
         payment_mode=payload.payment_mode,
         reference_number=payload.reference_number,
         cheque_date=payload.cheque_date,
@@ -497,13 +514,13 @@ async def create_payment(
             payment_id=payment.id,
             invoice_id=allocation.invoice_id,
             purchase_grn_id=allocation.purchase_grn_id,
-            allocated_amount=allocation.allocated_amount,
+            allocated_amount=_to_minor_units(allocation.allocated_amount),
         ))
         # BUG-15: Handle both invoice and GRN allocations
         if allocation.invoice_id:
-            _apply_invoice_allocation(db, allocation.invoice_id, allocation.allocated_amount)
+            _apply_invoice_allocation(db, allocation.invoice_id, _to_minor_units(allocation.allocated_amount))
         if allocation.purchase_grn_id:
-            _apply_grn_allocation(db, allocation.purchase_grn_id, allocation.allocated_amount)
+            _apply_grn_allocation(db, allocation.purchase_grn_id, _to_minor_units(allocation.allocated_amount))
 
     db.commit()
     db.refresh(payment)

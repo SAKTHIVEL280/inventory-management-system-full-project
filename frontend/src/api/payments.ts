@@ -78,6 +78,14 @@ export interface PaymentDetail {
   allocations: PaymentAllocation[];
 }
 
+export interface PaymentListResponse {
+  items: Payment[];
+  total: number;
+  page: number;
+  page_size: number;
+  has_more: boolean;
+}
+
 class PaymentsApiClient {
   async listPayments(options?: {
     party_type?: 'customer' | 'supplier';
@@ -101,7 +109,7 @@ class PaymentsApiClient {
     if (options?.archived_only) params.archived_only = true;
     if (options?.include_archived) params.include_archived = true;
 
-    return apiClient.get<{ items: Payment[]; total: number }>('/api/v1/payments', { params });
+    return apiClient.get<PaymentListResponse>('/api/v1/payments', { params });
   }
 
   async getPayment(id: string) {
