@@ -1,5 +1,8 @@
 # Frontend Updates Log
 
+## FE-89: GST-UT-002 Master State-Code Validation + Company Save Redirect
+**Update**: Added state/state-code mismatch validation and state-code autofill across Customer, Supplier, and Company forms, and redirected to dashboard after successful Company Profile save.
+
 ## FE-88: SI-003 Invoice Type Auto-Select and Lock by Shipping Location
 **Update**: Fixed UT invoice-type constraint by prioritizing shipping-location UT detection (country -> state code -> state name), including canonical state/state-code mapping, then auto-selecting and locking the single valid invoice type.
 

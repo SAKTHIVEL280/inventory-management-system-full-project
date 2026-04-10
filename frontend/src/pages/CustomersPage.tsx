@@ -54,6 +54,58 @@ const STATE_OPTIONS = Object.entries(STATE_ABBREVIATIONS)
   .map(([state, code]) => ({ state, code }))
   .sort((left, right) => left.state.localeCompare(right.state));
 
+const GST_STATE_CODE_ENTRIES: Array<[string, string, string]> = [
+  ['01', 'JK', 'Jammu and Kashmir'],
+  ['02', 'HP', 'Himachal Pradesh'],
+  ['03', 'PB', 'Punjab'],
+  ['04', 'CH', 'Chandigarh'],
+  ['05', 'UK', 'Uttarakhand'],
+  ['06', 'HR', 'Haryana'],
+  ['07', 'DL', 'Delhi'],
+  ['08', 'RJ', 'Rajasthan'],
+  ['09', 'UP', 'Uttar Pradesh'],
+  ['10', 'BR', 'Bihar'],
+  ['11', 'SK', 'Sikkim'],
+  ['12', 'AR', 'Arunachal Pradesh'],
+  ['13', 'NL', 'Nagaland'],
+  ['14', 'MN', 'Manipur'],
+  ['15', 'MZ', 'Mizoram'],
+  ['16', 'TR', 'Tripura'],
+  ['17', 'ML', 'Meghalaya'],
+  ['18', 'AS', 'Assam'],
+  ['19', 'WB', 'West Bengal'],
+  ['20', 'JH', 'Jharkhand'],
+  ['21', 'OR', 'Odisha'],
+  ['22', 'CT', 'Chhattisgarh'],
+  ['23', 'MP', 'Madhya Pradesh'],
+  ['24', 'GJ', 'Gujarat'],
+  ['26', 'DD', 'Dadra and Nagar Haveli and Daman and Diu'],
+  ['27', 'MH', 'Maharashtra'],
+  ['28', 'AP', 'Andhra Pradesh'],
+  ['29', 'KA', 'Karnataka'],
+  ['30', 'GA', 'Goa'],
+  ['31', 'LD', 'Lakshadweep'],
+  ['32', 'KL', 'Kerala'],
+  ['33', 'TN', 'Tamil Nadu'],
+  ['34', 'PY', 'Puducherry'],
+  ['35', 'AN', 'Andaman and Nicobar Islands'],
+  ['36', 'TS', 'Telangana'],
+  ['37', 'LA', 'Ladakh'],
+  ['38', 'LA', 'Ladakh'],
+];
+
+const STATE_CODE_MAP = GST_STATE_CODE_ENTRIES.reduce<Record<string, string>>((acc, [numericCode, abbreviation, stateName]) => {
+  acc[numericCode] = numericCode;
+  acc[abbreviation.toUpperCase()] = numericCode;
+  acc[stateName.toLowerCase()] = numericCode;
+  return acc;
+}, {});
+
+const STATE_NAME_BY_CODE = GST_STATE_CODE_ENTRIES.reduce<Record<string, string>>((acc, [numericCode, _abbreviation, stateName]) => {
+  acc[numericCode] = stateName;
+  return acc;
+}, {});
+
 const toTitleCase = (value: string): string =>
   value.replace(/\b\w/g, (char) => char.toUpperCase());
 
@@ -135,9 +187,41 @@ const formatDisplayDate = (value?: string | null): string => {
 
 const normalizeOptional = (value?: string): string | null => value?.trim() || null;
 
+const canonicalStateCode = (value?: string | null): string | null => {
+  const raw = (value || '').trim();
+  if (!raw) return null;
+
+  const stateToken = raw.toLowerCase();
+  if (STATE_CODE_MAP[stateToken]) return STATE_CODE_MAP[stateToken];
+
+  const upperToken = raw.toUpperCase();
+  if (/^\d+$/.test(upperToken)) {
+    const padded = upperToken.padStart(2, '0');
+    return STATE_CODE_MAP[padded] || padded;
+  }
+
+  return STATE_CODE_MAP[upperToken] || null;
+};
+
+const stateNameFromStateCode = (value?: string | null): string | null => {
+  const code = canonicalStateCode(value);
+  if (!code) return null;
+  return STATE_NAME_BY_CODE[code] || null;
+};
+
+const stateMismatchMessage = (stateValue?: string | null, stateCodeValue?: string | null, fieldLabel = 'State'): string | null => {
+  const codeFromState = canonicalStateCode(stateValue);
+  const codeFromInput = canonicalStateCode(stateCodeValue);
+  if (codeFromState && codeFromInput && codeFromState !== codeFromInput) {
+    return `${fieldLabel} does not match the given state code`;
+  }
+  return null;
+};
+
 const normalizeStateCodeOptional = (value?: string): string | null => {
   const trimmed = (value || '').trim();
-  return trimmed ? trimmed.toUpperCase() : null;
+  if (!trimmed) return null;
+  return canonicalStateCode(trimmed) || trimmed.toUpperCase();
 };
 
 const normalizePhoneDigits = (value?: string): string => (value || '').replace(/\D/g, '');
@@ -516,6 +600,30 @@ const CustomersPage = () => {
 
     const finalPhone = `${normalizedCode}${normalizedPhone}`;
 
+    const billingMismatch = stateMismatchMessage(parsed.data.billing_state, parsed.data.billing_state_code, 'Billing state');
+    if (billingMismatch) {
+      showError(billingMismatch);
+      return;
+    }
+
+    if (!parsed.data.same_as_billing) {
+      const shippingMismatch = stateMismatchMessage(parsed.data.shipping_state, parsed.data.shipping_state_code, 'Shipping state');
+      if (shippingMismatch) {
+        showError(shippingMismatch);
+        return;
+      }
+    }
+
+    const billingStateResolved = normalizeOptional(parsed.data.billing_state) || stateNameFromStateCode(parsed.data.billing_state_code);
+    const billingStateCodeResolved =
+      normalizeStateCodeOptional(parsed.data.billing_state_code) || canonicalStateCode(billingStateResolved);
+    const shippingStateResolved = parsed.data.same_as_billing
+      ? null
+      : (normalizeOptional(parsed.data.shipping_state) || stateNameFromStateCode(parsed.data.shipping_state_code));
+    const shippingStateCodeResolved = parsed.data.same_as_billing
+      ? null
+      : (normalizeStateCodeOptional(parsed.data.shipping_state_code) || canonicalStateCode(shippingStateResolved));
+
     const payload = {
       company_name: parsed.data.company_name.trim(),
       company_director_name: normalizeOptional(parsed.data.company_director_name),
@@ -532,16 +640,16 @@ const CustomersPage = () => {
       billing_address_line1: normalizeOptional(parsed.data.billing_address_line1),
       billing_address_line2: normalizeOptional(parsed.data.billing_address_line2),
       billing_city: normalizeOptional(parsed.data.billing_city),
-      billing_state: normalizeOptional(parsed.data.billing_state),
-      billing_state_code: normalizeStateCodeOptional(parsed.data.billing_state_code),
+      billing_state: billingStateResolved,
+      billing_state_code: billingStateCodeResolved,
       billing_country: normalizeOptional(parsed.data.billing_country),
       billing_pincode: normalizeOptional(parsed.data.billing_pincode),
       same_as_billing: parsed.data.same_as_billing ?? true,
       shipping_address_line1: parsed.data.same_as_billing ? null : normalizeOptional(parsed.data.shipping_address_line1),
       shipping_address_line2: parsed.data.same_as_billing ? null : normalizeOptional(parsed.data.shipping_address_line2),
       shipping_city: parsed.data.same_as_billing ? null : normalizeOptional(parsed.data.shipping_city),
-      shipping_state: parsed.data.same_as_billing ? null : normalizeOptional(parsed.data.shipping_state),
-      shipping_state_code: parsed.data.same_as_billing ? null : normalizeStateCodeOptional(parsed.data.shipping_state_code),
+      shipping_state: shippingStateResolved,
+      shipping_state_code: shippingStateCodeResolved,
       shipping_country: parsed.data.same_as_billing ? null : normalizeOptional(parsed.data.shipping_country),
       shipping_pincode: parsed.data.same_as_billing ? null : normalizeOptional(parsed.data.shipping_pincode),
       credit_limit: parsed.data.credit_limit,
@@ -654,6 +762,7 @@ const CustomersPage = () => {
   const billingStateValue = watch('billing_state') ?? '';
   const shippingStateValue = watch('shipping_state') ?? '';
   const billingStateCode = watch('billing_state_code');
+  const shippingStateCode = watch('shipping_state_code');
   const billingCountryValue = watch('billing_country') ?? '';
   const sameAsBilling = watch('same_as_billing');
   const shippingCountryValue = watch('shipping_country') ?? '';
@@ -703,6 +812,36 @@ const CustomersPage = () => {
 
     return [...new Set(merged)].sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
   }, [items, phoneCountryCode]);
+
+  useEffect(() => {
+    const resolvedFromCode = stateNameFromStateCode(billingStateCode);
+    if (resolvedFromCode && billingStateValue.trim().length === 0) {
+      setValue('billing_state', resolvedFromCode, { shouldDirty: false });
+    }
+
+    if (!billingStateCode) {
+      const resolvedFromState = canonicalStateCode(billingStateValue);
+      if (resolvedFromState && resolvedFromState !== (billingStateCode || '')) {
+        setValue('billing_state_code', resolvedFromState, { shouldDirty: false });
+      }
+    }
+  }, [billingStateCode, billingStateValue, setValue]);
+
+  useEffect(() => {
+    if (sameAsBilling) return;
+
+    const resolvedFromCode = stateNameFromStateCode(shippingStateCode);
+    if (resolvedFromCode && shippingStateValue.trim().length === 0) {
+      setValue('shipping_state', resolvedFromCode, { shouldDirty: false });
+    }
+
+    if (!shippingStateCode) {
+      const resolvedFromState = canonicalStateCode(shippingStateValue);
+      if (resolvedFromState && resolvedFromState !== (shippingStateCode || '')) {
+        setValue('shipping_state_code', resolvedFromState, { shouldDirty: false });
+      }
+    }
+  }, [sameAsBilling, setValue, shippingStateCode, shippingStateValue]);
 
   return (
     <AppLayout title="Customer Master">

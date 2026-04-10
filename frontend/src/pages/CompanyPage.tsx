@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import { companyApi } from '../api/company';
 import { Company } from '../types';
@@ -41,6 +42,89 @@ type CompanyForm = z.infer<typeof schema>;
 const normalizeOptional = (value?: string): string | null => {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+};
+
+const GST_STATE_CODE_ENTRIES: Array<[string, string, string]> = [
+  ['01', 'JK', 'Jammu and Kashmir'],
+  ['02', 'HP', 'Himachal Pradesh'],
+  ['03', 'PB', 'Punjab'],
+  ['04', 'CH', 'Chandigarh'],
+  ['05', 'UK', 'Uttarakhand'],
+  ['06', 'HR', 'Haryana'],
+  ['07', 'DL', 'Delhi'],
+  ['08', 'RJ', 'Rajasthan'],
+  ['09', 'UP', 'Uttar Pradesh'],
+  ['10', 'BR', 'Bihar'],
+  ['11', 'SK', 'Sikkim'],
+  ['12', 'AR', 'Arunachal Pradesh'],
+  ['13', 'NL', 'Nagaland'],
+  ['14', 'MN', 'Manipur'],
+  ['15', 'MZ', 'Mizoram'],
+  ['16', 'TR', 'Tripura'],
+  ['17', 'ML', 'Meghalaya'],
+  ['18', 'AS', 'Assam'],
+  ['19', 'WB', 'West Bengal'],
+  ['20', 'JH', 'Jharkhand'],
+  ['21', 'OR', 'Odisha'],
+  ['22', 'CT', 'Chhattisgarh'],
+  ['23', 'MP', 'Madhya Pradesh'],
+  ['24', 'GJ', 'Gujarat'],
+  ['26', 'DD', 'Dadra and Nagar Haveli and Daman and Diu'],
+  ['27', 'MH', 'Maharashtra'],
+  ['28', 'AP', 'Andhra Pradesh'],
+  ['29', 'KA', 'Karnataka'],
+  ['30', 'GA', 'Goa'],
+  ['31', 'LD', 'Lakshadweep'],
+  ['32', 'KL', 'Kerala'],
+  ['33', 'TN', 'Tamil Nadu'],
+  ['34', 'PY', 'Puducherry'],
+  ['35', 'AN', 'Andaman and Nicobar Islands'],
+  ['36', 'TS', 'Telangana'],
+  ['37', 'LA', 'Ladakh'],
+  ['38', 'LA', 'Ladakh'],
+];
+
+const STATE_CODE_MAP = GST_STATE_CODE_ENTRIES.reduce<Record<string, string>>((acc, [numericCode, abbreviation, stateName]) => {
+  acc[numericCode] = numericCode;
+  acc[abbreviation.toUpperCase()] = numericCode;
+  acc[stateName.toLowerCase()] = numericCode;
+  return acc;
+}, {});
+
+const STATE_NAME_BY_CODE = GST_STATE_CODE_ENTRIES.reduce<Record<string, string>>((acc, [numericCode, _abbreviation, stateName]) => {
+  acc[numericCode] = stateName;
+  return acc;
+}, {});
+
+const canonicalStateCode = (value?: string | null): string | null => {
+  const raw = (value || '').trim();
+  if (!raw) return null;
+
+  const stateToken = raw.toLowerCase();
+  if (STATE_CODE_MAP[stateToken]) return STATE_CODE_MAP[stateToken];
+
+  const upperToken = raw.toUpperCase();
+  if (/^\d+$/.test(upperToken)) {
+    const padded = upperToken.padStart(2, '0');
+    return STATE_CODE_MAP[padded] || padded;
+  }
+
+  return STATE_CODE_MAP[upperToken] || null;
+};
+
+const stateNameFromStateCode = (value?: string | null): string | null => {
+  const code = canonicalStateCode(value);
+  if (!code) return null;
+  return STATE_NAME_BY_CODE[code] || null;
+};
+
+const stateMismatchMessage = (stateValue?: string | null, stateCodeValue?: string | null): string | null => {
+  const codeFromState = canonicalStateCode(stateValue);
+  const codeFromInput = canonicalStateCode(stateCodeValue);
+  if (codeFromState && codeFromInput && codeFromState !== codeFromInput) {
+    return 'State does not match the given state code';
+  }
+  return null;
 };
 
 const PLACEHOLDER_COMPANY_NAMES = new Set(['your company name', 'my company']);
@@ -93,6 +177,7 @@ const mapCompanyToFormValues = (company?: Company): CompanyForm => ({
 });
 
 const CompanyPage = () => {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -101,7 +186,7 @@ const CompanyPage = () => {
     queryFn: companyApi.get,
   });
 
-  const { register, handleSubmit, reset, watch, formState: { isDirty } } = useForm<CompanyForm>({
+  const { register, handleSubmit, reset, setValue, watch, formState: { isDirty } } = useForm<CompanyForm>({
     defaultValues: mapCompanyToFormValues(),
   });
 
@@ -111,6 +196,22 @@ const CompanyPage = () => {
   }, [data, isDirty, reset]);
 
   const gstin_status = watch('gstin_status');
+  const stateValue = watch('state') ?? '';
+  const stateCodeValue = watch('state_code') ?? '';
+
+  useEffect(() => {
+    const resolvedFromCode = stateNameFromStateCode(stateCodeValue);
+    if (resolvedFromCode && stateValue.trim().length === 0) {
+      setValue('state', resolvedFromCode, { shouldDirty: false });
+    }
+
+    if (!stateCodeValue) {
+      const resolvedFromState = canonicalStateCode(stateValue);
+      if (resolvedFromState && resolvedFromState !== stateCodeValue) {
+        setValue('state_code', resolvedFromState, { shouldDirty: false });
+      }
+    }
+  }, [setValue, stateCodeValue, stateValue]);
 
   const mutation = useMutation({
     mutationFn: (payload: Company) => companyApi.update(payload),
@@ -122,6 +223,7 @@ const CompanyPage = () => {
       }));
       reset(mapCompanyToFormValues(updated));
       showSuccess('Company profile saved successfully');
+      navigate('/dashboard');
     },
     onError: (error: unknown) => {
       const detail = getApiDetail(error);
@@ -158,6 +260,15 @@ const CompanyPage = () => {
       return;
     }
 
+    const stateMismatch = stateMismatchMessage(parsed.data.state, parsed.data.state_code);
+    if (stateMismatch) {
+      showError(stateMismatch);
+      return;
+    }
+
+    const stateResolved = normalizeOptional(parsed.data.state) || stateNameFromStateCode(parsed.data.state_code);
+    const stateCodeResolved = canonicalStateCode(parsed.data.state_code) || canonicalStateCode(stateResolved);
+
     const payload: Company = {
       ...(data ?? emptyCompany),
       ...parsed.data,
@@ -168,14 +279,14 @@ const CompanyPage = () => {
       import_export_number: normalizeOptional(parsed.data.import_export_number),
       company_director_name: normalizeOptional(parsed.data.company_director_name),
       company_director_contact: normalizeOptional(parsed.data.company_director_contact),
-      state_code: normalizeOptional(parsed.data.state_code)?.toUpperCase() ?? null,
+      state_code: stateCodeResolved,
       phone: normalizeOptional(parsed.data.phone),
       email: normalizeOptional(parsed.data.email),
       website: normalizeOptional(parsed.data.website),
       address_line1: normalizeOptional(parsed.data.address_line1),
       address_line2: normalizeOptional(parsed.data.address_line2),
       city: normalizeOptional(parsed.data.city),
-      state: normalizeOptional(parsed.data.state),
+      state: stateResolved,
       country: normalizeOptional(parsed.data.country),
       pincode: normalizeOptional(parsed.data.pincode),
       bank_name: normalizeOptional(parsed.data.bank_name),

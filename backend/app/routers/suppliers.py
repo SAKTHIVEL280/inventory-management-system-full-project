@@ -12,6 +12,11 @@ from app.dependencies import require_permissions
 from app.models.customization_option import CustomizationOption
 from app.models.supplier import Supplier
 from app.models.user import User
+from app.utils.state_mappings import (
+    canonical_state_code,
+    state_abbreviation_from_code,
+    validate_and_autofill_state_fields,
+)
 from app.schemas.supplier import (
     SupplierCreateRequest,
     SupplierCustomizationOptionsResponse,
@@ -114,15 +119,32 @@ DEFAULT_SUPPLIER_STATES = [
 
 
 def _state_code_from_payload(payload: SupplierCreateRequest | SupplierUpdateRequest) -> str:
+    canonical_code = canonical_state_code(payload.state_code)
+    if canonical_code:
+        return canonical_code
+
     state = (payload.state or "").strip().lower()
     if state and state in STATE_ABBREVIATIONS:
-        return STATE_ABBREVIATIONS[state]
+        code = canonical_state_code(STATE_ABBREVIATIONS[state])
+        if code:
+            return code
 
     if state:
         cleaned = "".join(ch for ch in state if ch.isalpha())
         if len(cleaned) >= 2:
-            return cleaned[:2].upper()
+            code = canonical_state_code(cleaned[:2].upper())
+            if code:
+                return code
     return "NA"
+
+
+def _state_prefix_from_payload(payload: SupplierCreateRequest | SupplierUpdateRequest) -> str:
+    code = _state_code_from_payload(payload)
+    if code == "NA":
+        return "NA"
+
+    abbr = state_abbreviation_from_code(code)
+    return abbr or "NA"
 
 
 def _is_international(payload: SupplierCreateRequest | SupplierUpdateRequest) -> bool:
@@ -133,7 +155,7 @@ def _is_international(payload: SupplierCreateRequest | SupplierUpdateRequest) ->
 
 
 def _generate_supplier_code(db: Session, payload: SupplierCreateRequest | SupplierUpdateRequest) -> str:
-    prefix = "SUPP-INT" if _is_international(payload) else f"SUPP-{_state_code_from_payload(payload)}"
+    prefix = "SUPP-INT" if _is_international(payload) else f"SUPP-{_state_prefix_from_payload(payload)}"
     existing_codes = (
         db.query(Supplier.supplier_code)
         .filter(Supplier.supplier_code.like(f"{prefix}-%"))
@@ -169,6 +191,17 @@ def _normalize_country(value: str | None) -> str | None:
 def _normalize_state(value: str | None) -> str | None:
     cleaned = (value or "").strip()
     return cleaned or None
+
+
+def _validate_and_autofill_supplier_state(payload: SupplierCreateRequest | SupplierUpdateRequest) -> None:
+    try:
+        payload.state, payload.state_code = validate_and_autofill_state_fields(
+            payload.state,
+            payload.state_code,
+            field_label="State",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def _upsert_supplier_customization_option(
@@ -372,6 +405,7 @@ async def create_supplier(
 ):
     _apply_gstin_policy(payload)
     _normalize_supplier_currency(payload)
+    _validate_and_autofill_supplier_state(payload)
 
     if payload.gstin:
         duplicate = db.query(Supplier).filter(Supplier.gstin == payload.gstin, Supplier.is_deleted == False).first()
@@ -420,6 +454,7 @@ async def update_supplier(
 
     _apply_gstin_policy(payload)
     _normalize_supplier_currency(payload)
+    _validate_and_autofill_supplier_state(payload)
 
     if payload.gstin:
         duplicate = (

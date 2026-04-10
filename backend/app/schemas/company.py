@@ -1,7 +1,8 @@
 """Company schemas."""
 from typing import Optional
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from app.utils.state_mappings import validate_and_autofill_state_fields
 
 GSTIN_REGEX = r"^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$"
 
@@ -57,6 +58,19 @@ class CompanyBase(BaseModel):
         if not re.match(GSTIN_REGEX, upper_value):
             raise ValueError("Invalid GSTIN format")
         return upper_value
+
+    @model_validator(mode="after")
+    def validate_state_code_consistency(self):
+        try:
+            self.state, self.state_code = validate_and_autofill_state_fields(
+                self.state,
+                self.state_code,
+                field_label="State",
+            )
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+
+        return self
 
 
 class CompanyUpdate(CompanyBase):

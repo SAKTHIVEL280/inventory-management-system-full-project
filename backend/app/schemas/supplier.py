@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Optional, List
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from app.utils.state_mappings import validate_and_autofill_state_fields
 
 GSTIN_REGEX = r"^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$"
 
@@ -25,6 +26,7 @@ class SupplierBase(BaseModel):
     address_line2: Optional[str] = None
     city: Optional[str] = None
     state: Optional[str] = None
+    state_code: Optional[str] = None
     billing_country: Optional[str] = None
     pincode: Optional[str] = None
     place_of_supply: Optional[str] = None
@@ -78,6 +80,16 @@ class SupplierBase(BaseModel):
     def validate_gstin_toggle(self):
         if self.gstin_status == "registered" and not self.gstin:
             raise ValueError("GSTIN is required when gstin_status is 'registered'")
+
+        try:
+            self.state, self.state_code = validate_and_autofill_state_fields(
+                self.state,
+                self.state_code,
+                field_label="State",
+            )
+        except ValueError as exc:
+            raise ValueError(str(exc)) from exc
+
         return self
 
 

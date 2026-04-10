@@ -13,6 +13,7 @@ from app.models.company import Company
 from app.models.customer import Customer
 from app.models.customization_option import CustomizationOption
 from app.models.user import User
+from app.utils.state_mappings import validate_and_autofill_state_fields
 from app.schemas.customer import (
     CustomerCreateRequest,
     CustomerUpdateRequest,
@@ -178,6 +179,22 @@ def _normalize_shipping(payload: CustomerCreateRequest | CustomerUpdateRequest) 
         payload.shipping_state_code = payload.billing_state_code
         payload.shipping_country = payload.billing_country
         payload.shipping_pincode = payload.billing_pincode
+
+
+def _validate_and_autofill_customer_states(payload: CustomerCreateRequest | CustomerUpdateRequest) -> None:
+    try:
+        payload.billing_state, payload.billing_state_code = validate_and_autofill_state_fields(
+            payload.billing_state,
+            payload.billing_state_code,
+            field_label="Billing state",
+        )
+        payload.shipping_state, payload.shipping_state_code = validate_and_autofill_state_fields(
+            payload.shipping_state,
+            payload.shipping_state_code,
+            field_label="Shipping state",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def _normalize_customer_currency(payload: CustomerCreateRequest | CustomerUpdateRequest) -> None:
@@ -460,7 +477,9 @@ async def create_customer(
 
     _apply_company_billing_defaults(db, payload)
     _apply_gstin_state_code(payload)
+    _validate_and_autofill_customer_states(payload)
     _normalize_shipping(payload)
+    _validate_and_autofill_customer_states(payload)
     _persist_customer_customization_values(db, payload, current_user.id)
 
     customer = Customer(
@@ -513,7 +532,9 @@ async def update_customer(
             )
 
     _apply_gstin_state_code(payload)
+    _validate_and_autofill_customer_states(payload)
     _normalize_shipping(payload)
+    _validate_and_autofill_customer_states(payload)
     _persist_customer_customization_values(db, payload, current_user.id)
 
     for field, value in payload.model_dump(exclude={"customer_code"}).items():

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
@@ -54,6 +54,58 @@ const STATE_OPTIONS = Object.entries(STATE_ABBREVIATIONS)
   .map(([state, code]) => ({ state, code }))
   .sort((left, right) => left.state.localeCompare(right.state));
 
+const GST_STATE_CODE_ENTRIES: Array<[string, string, string]> = [
+  ['01', 'JK', 'Jammu and Kashmir'],
+  ['02', 'HP', 'Himachal Pradesh'],
+  ['03', 'PB', 'Punjab'],
+  ['04', 'CH', 'Chandigarh'],
+  ['05', 'UK', 'Uttarakhand'],
+  ['06', 'HR', 'Haryana'],
+  ['07', 'DL', 'Delhi'],
+  ['08', 'RJ', 'Rajasthan'],
+  ['09', 'UP', 'Uttar Pradesh'],
+  ['10', 'BR', 'Bihar'],
+  ['11', 'SK', 'Sikkim'],
+  ['12', 'AR', 'Arunachal Pradesh'],
+  ['13', 'NL', 'Nagaland'],
+  ['14', 'MN', 'Manipur'],
+  ['15', 'MZ', 'Mizoram'],
+  ['16', 'TR', 'Tripura'],
+  ['17', 'ML', 'Meghalaya'],
+  ['18', 'AS', 'Assam'],
+  ['19', 'WB', 'West Bengal'],
+  ['20', 'JH', 'Jharkhand'],
+  ['21', 'OR', 'Odisha'],
+  ['22', 'CT', 'Chhattisgarh'],
+  ['23', 'MP', 'Madhya Pradesh'],
+  ['24', 'GJ', 'Gujarat'],
+  ['26', 'DD', 'Dadra and Nagar Haveli and Daman and Diu'],
+  ['27', 'MH', 'Maharashtra'],
+  ['28', 'AP', 'Andhra Pradesh'],
+  ['29', 'KA', 'Karnataka'],
+  ['30', 'GA', 'Goa'],
+  ['31', 'LD', 'Lakshadweep'],
+  ['32', 'KL', 'Kerala'],
+  ['33', 'TN', 'Tamil Nadu'],
+  ['34', 'PY', 'Puducherry'],
+  ['35', 'AN', 'Andaman and Nicobar Islands'],
+  ['36', 'TS', 'Telangana'],
+  ['37', 'LA', 'Ladakh'],
+  ['38', 'LA', 'Ladakh'],
+];
+
+const STATE_CODE_MAP = GST_STATE_CODE_ENTRIES.reduce<Record<string, string>>((acc, [numericCode, abbreviation, stateName]) => {
+  acc[numericCode] = numericCode;
+  acc[abbreviation.toUpperCase()] = numericCode;
+  acc[stateName.toLowerCase()] = numericCode;
+  return acc;
+}, {});
+
+const STATE_NAME_BY_CODE = GST_STATE_CODE_ENTRIES.reduce<Record<string, string>>((acc, [numericCode, _abbreviation, stateName]) => {
+  acc[numericCode] = stateName;
+  return acc;
+}, {});
+
 const toTitleCase = (value: string): string =>
   value.replace(/\b\w/g, (char) => char.toUpperCase());
 
@@ -90,6 +142,7 @@ const schema = z.object({
   address_line2: z.string().optional(),
   city: z.string().optional(),
   state: z.string().optional(),
+  state_code: z.string().optional(),
   billing_country: z.string().optional(),
   pincode: z.string().optional(),
   place_of_supply: z.string().optional(),
@@ -124,6 +177,37 @@ const formatDisplayDate = (value?: string | null): string => {
 };
 
 const normalizeOptional = (value?: string): string | null => value?.trim() || null;
+
+const canonicalStateCode = (value?: string | null): string | null => {
+  const raw = (value || '').trim();
+  if (!raw) return null;
+
+  const stateToken = raw.toLowerCase();
+  if (STATE_CODE_MAP[stateToken]) return STATE_CODE_MAP[stateToken];
+
+  const upperToken = raw.toUpperCase();
+  if (/^\d+$/.test(upperToken)) {
+    const padded = upperToken.padStart(2, '0');
+    return STATE_CODE_MAP[padded] || padded;
+  }
+
+  return STATE_CODE_MAP[upperToken] || null;
+};
+
+const stateNameFromStateCode = (value?: string | null): string | null => {
+  const code = canonicalStateCode(value);
+  if (!code) return null;
+  return STATE_NAME_BY_CODE[code] || null;
+};
+
+const stateMismatchMessage = (stateValue?: string | null, stateCodeValue?: string | null): string | null => {
+  const codeFromState = canonicalStateCode(stateValue);
+  const codeFromInput = canonicalStateCode(stateCodeValue);
+  if (codeFromState && codeFromInput && codeFromState !== codeFromInput) {
+    return 'State does not match the given state code';
+  }
+  return null;
+};
 
 const normalizePhoneDigits = (value?: string): string => (value || '').replace(/\D/g, '');
 
@@ -186,6 +270,7 @@ const buildDefaultValues = (): SupplierForm => ({
   address_line2: '',
   city: '',
   state: '',
+  state_code: '',
   billing_country: 'India',
   pincode: '',
   place_of_supply: '',
@@ -410,6 +495,7 @@ const SuppliersPage = () => {
     setValue('address_line2', item.address_line2 ?? '');
     setValue('city', item.city ?? '');
     setValue('state', item.state ?? '');
+    setValue('state_code', item.state_code ?? '');
     setValue('billing_country', item.billing_country ?? (item.business_type === 'domestic' ? 'India' : ''));
     setValue('pincode', item.pincode ?? '');
     setValue('place_of_supply', item.place_of_supply ?? '');
@@ -439,6 +525,15 @@ const SuppliersPage = () => {
 
     const finalPhone = `${normalizedCode}${normalizedPhone}`;
 
+    const stateMismatch = stateMismatchMessage(parsed.data.state, parsed.data.state_code);
+    if (stateMismatch) {
+      showError(stateMismatch);
+      return;
+    }
+
+    const stateResolved = normalizeOptional(parsed.data.state) || stateNameFromStateCode(parsed.data.state_code);
+    const stateCodeResolved = canonicalStateCode(parsed.data.state_code) || canonicalStateCode(stateResolved);
+
     const payload = {
       company_name: parsed.data.company_name.trim(),
       company_director_name: normalizeOptional(parsed.data.company_director_name),
@@ -454,7 +549,8 @@ const SuppliersPage = () => {
       address_line1: normalizeOptional(parsed.data.address_line1),
       address_line2: normalizeOptional(parsed.data.address_line2),
       city: normalizeOptional(parsed.data.city),
-      state: normalizeOptional(parsed.data.state),
+      state: stateResolved,
+      state_code: stateCodeResolved,
       billing_country: normalizeOptional(parsed.data.billing_country) ?? (parsed.data.business_type === 'domestic' ? 'India' : null),
       pincode: normalizeOptional(parsed.data.pincode),
       bank_name: null,
@@ -561,10 +657,11 @@ const SuppliersPage = () => {
   const isDeleting = deleteMutation.isPending;
   const businessType = watch('business_type');
   const gstinStatus = watch('gstin_status');
-  const state = watch('state') ?? '';
+  const stateValue = watch('state') ?? '';
+  const stateCodeValue = watch('state_code') ?? '';
   const country = watch('billing_country') ?? '';
   const currencyCodeValue = watch('currency_code') ?? 'INR';
-  const supplierCodePreview = toSupplierCodePreview(businessType, state, country);
+  const supplierCodePreview = toSupplierCodePreview(businessType, stateValue, country);
   const supplierCodeDisplay = editingItem?.supplier_code || supplierCodePreview;
 
   const clearListFilters = () => {
@@ -610,6 +707,20 @@ const SuppliersPage = () => {
 
     return [...new Set(merged)].sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
   }, [items, phoneCountryCode]);
+
+  useEffect(() => {
+    const resolvedFromCode = stateNameFromStateCode(stateCodeValue);
+    if (resolvedFromCode && stateValue.trim().length === 0) {
+      setValue('state', resolvedFromCode, { shouldDirty: false });
+    }
+
+    if (!stateCodeValue) {
+      const resolvedFromState = canonicalStateCode(stateValue);
+      if (resolvedFromState && resolvedFromState !== stateCodeValue) {
+        setValue('state_code', resolvedFromState, { shouldDirty: false });
+      }
+    }
+  }, [setValue, stateCodeValue, stateValue]);
 
   return (
     <AppLayout title="Supplier Master">
@@ -811,7 +922,7 @@ const SuppliersPage = () => {
                     <input type="hidden" {...register('state')} />
                     <TypeaheadInput
                       id="supplier_state"
-                      value={state}
+                      value={stateValue}
                       options={stateOptions}
                       placeholder="Type or select state"
                       onChange={(nextValue) => {
@@ -820,9 +931,15 @@ const SuppliersPage = () => {
                     />
                   </div>
                 </div>
-                <div>
-                  <label htmlFor="supplier_pincode" className="hms-label">Pincode</label>
-                  <input id="supplier_pincode" className="hms-input" placeholder="Pincode" {...register('pincode')} />
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label htmlFor="supplier_state_code" className="hms-label">State code</label>
+                    <input id="supplier_state_code" className="hms-input" placeholder="e.g. 34" {...register('state_code')} />
+                  </div>
+                  <div>
+                    <label htmlFor="supplier_pincode" className="hms-label">Pincode</label>
+                    <input id="supplier_pincode" className="hms-input" placeholder="Pincode" {...register('pincode')} />
+                  </div>
                 </div>
                 <div>
                   <label htmlFor="supplier_country" className="hms-label">Country</label>

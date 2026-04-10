@@ -2,6 +2,9 @@
 
 ---
 
+## BE-76: GST-UT-002 Master State-Code Canonical Validation
+**Update**: Added shared canonical state-code utilities with mismatch validation and auto-fill across Customer, Supplier, and Company validation/create-update flows, including supplier `state_code` support.
+
 ## BE-75: SI-003 Invoice Type Strict Revalidation by Shipping Location
 **Update**: Backend now derives and strictly revalidates invoice type using shipping-first location with Union Territory priority, rejecting any mismatched create/update payload.
 
