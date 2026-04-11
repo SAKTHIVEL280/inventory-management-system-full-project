@@ -4,6 +4,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from pathlib import Path
 import base64
+from uuid import uuid4
 
 from app.database import get_db
 from app.dependencies import get_current_user, require_permissions
@@ -58,13 +59,19 @@ def _remove_if_exists(path: Path) -> None:
         path.unlink()
 
 
+def _delete_previous_image(image_url: str | None) -> None:
+    if not image_url:
+        return
+    file_path = _resolve_logo_file_path(image_url)
+    if file_path:
+        _remove_if_exists(file_path)
+
+
 def _save_company_static_image(*, base_name: str, content_type: str, file_bytes: bytes) -> str:
     STATIC_DIR.mkdir(parents=True, exist_ok=True)
-    _remove_if_exists(STATIC_DIR / f"{base_name}.png")
-    _remove_if_exists(STATIC_DIR / f"{base_name}.jpg")
 
     suffix = _media_suffix(content_type)
-    file_name = f"{base_name}{suffix}"
+    file_name = f"{base_name}_{uuid4().hex}{suffix}"
     file_path = STATIC_DIR / file_name
     with open(file_path, "wb") as f:
         f.write(file_bytes)
@@ -162,14 +169,18 @@ async def upload_company_logo(
     content_type = logo.content_type or ""
     file_bytes = await logo.read()
     _validate_upload_image(content_type, file_bytes, label="Logo")
-    logo_url = _save_company_static_image(base_name="logo", content_type=content_type, file_bytes=file_bytes)
 
     company = db.query(Company).first()
     if not company:
         company = Company(name="My Company")
         db.add(company)
+
+    previous_logo_url = company.logo_url
+    logo_url = _save_company_static_image(base_name="logo", content_type=content_type, file_bytes=file_bytes)
     company.logo_url = logo_url
     db.commit()
+
+    _delete_previous_image(previous_logo_url)
 
     return CompanyLogoResponse(logo_url=logo_url)
 
@@ -199,18 +210,22 @@ async def upload_company_ambassador_logo(
     content_type = logo.content_type or ""
     file_bytes = await logo.read()
     _validate_upload_image(content_type, file_bytes, label="Ambassador logo")
-    ambassador_logo_url = _save_company_static_image(
-        base_name="ambassador_logo",
-        content_type=content_type,
-        file_bytes=file_bytes,
-    )
 
     company = db.query(Company).first()
     if not company:
         company = Company(name="My Company")
         db.add(company)
+
+    previous_ambassador_logo_url = company.ambassador_logo_url
+    ambassador_logo_url = _save_company_static_image(
+        base_name="ambassador_logo",
+        content_type=content_type,
+        file_bytes=file_bytes,
+    )
     company.ambassador_logo_url = ambassador_logo_url
     db.commit()
+
+    _delete_previous_image(previous_ambassador_logo_url)
 
     return CompanyAmbassadorLogoResponse(ambassador_logo_url=ambassador_logo_url)
 

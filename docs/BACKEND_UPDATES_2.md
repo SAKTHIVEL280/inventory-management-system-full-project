@@ -2,6 +2,15 @@
 
 ---
 
+## BE-85: Company and Ambassador Logo Replacement Uses New File Paths
+**Update**: Updated company logo and ambassador logo upload flow to always save a new unique file, update DB URLs to the new file path, and remove the previously stored file so latest uploads are immediately used and old logo caching/stale-file issues are eliminated.
+
+## BE-84: Billing PDF Ambassador Logo Size and Opacity Boost
+**Update**: Increased ambassador logo background watermark size and opacity in billing PDF generation to improve visibility across Purchase Order, Sales Invoice, and Quotation pages while preserving existing layering and Approved/Not Approved watermark behavior.
+
+## BE-83: Billing PDF Ambassador Logo Opacity Increase
+**Update**: Increased ambassador logo background watermark opacity in billing PDF generation to improve visibility across Purchase Order, Sales Invoice, and Quotation pages while preserving existing layering and Approved/Not Approved watermark behavior.
+
 ## BE-82: Billing PDF Ambassador Logo True Background Watermark Layering
 **Update**: Refactored billing PDF rendering so the company ambassador logo is applied as a centered per-page background layer during post-processing merge (PO/Invoice/Quotation), with controlled subtle opacity/size and no changes to existing Approved/Not Approved watermark behavior.
 
