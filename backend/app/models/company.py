@@ -32,6 +32,7 @@ class Company(Base):
     email = Column(String(255), nullable=True)
     website = Column(String(255), nullable=True)
     logo_url = Column(String(500), nullable=True)
+    ambassador_logo_url = Column(String(500), nullable=True)
 
     bank_name = Column(String(150), nullable=True)
     account_holder_name = Column(String(255), nullable=True)

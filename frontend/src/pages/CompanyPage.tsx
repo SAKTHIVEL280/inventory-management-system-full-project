@@ -180,6 +180,7 @@ const CompanyPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const ambassadorFileInputRef = useRef<HTMLInputElement>(null);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['company'],
@@ -247,10 +248,50 @@ const CompanyPage = () => {
     },
   });
 
+  const ambassadorLogoMutation = useMutation({
+    mutationFn: companyApi.uploadAmbassadorLogo,
+    onSuccess: (res) => {
+      queryClient.setQueryData(['company'], (old: Company | undefined) => ({
+        ...(old ?? emptyCompany),
+        ambassador_logo_url: res.ambassador_logo_url,
+      }));
+      showSuccess('Ambassador logo uploaded successfully');
+    },
+    onError: (error: unknown) => {
+      const detail = getApiDetail(error);
+      showError(getApiDetailMessage(detail, 'Failed to upload ambassador logo'));
+    },
+  });
+
+  const removeAmbassadorLogoMutation = useMutation({
+    mutationFn: companyApi.removeAmbassadorLogo,
+    onSuccess: () => {
+      queryClient.setQueryData(['company'], (old: Company | undefined) => ({
+        ...(old ?? emptyCompany),
+        ambassador_logo_url: null,
+      }));
+      showSuccess('Ambassador logo removed successfully');
+    },
+    onError: (error: unknown) => {
+      const detail = getApiDetail(error);
+      showError(getApiDetailMessage(detail, 'Failed to remove ambassador logo'));
+    },
+  });
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) logoMutation.mutate(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleAmbassadorFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) ambassadorLogoMutation.mutate(file);
+    if (ambassadorFileInputRef.current) ambassadorFileInputRef.current.value = '';
+  };
+
+  const handleRemoveAmbassadorLogo = () => {
+    removeAmbassadorLogoMutation.mutate();
   };
 
   const onSubmit = (values: CompanyForm): void => {
@@ -321,6 +362,49 @@ const CompanyPage = () => {
                 <button type="button" onClick={() => fileInputRef.current?.click()} className="rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50" disabled={logoMutation.isPending}>
                   {logoMutation.isPending ? 'Uploading...' : 'Upload Logo'}
                 </button>
+              </div>
+            </div>
+
+            <div className="hms-card p-6 flex items-center gap-6">
+              <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-xl bg-neutral-100 border-2 border-dashed border-neutral-300 overflow-hidden">
+                {data?.ambassador_logo_url ? (
+                  <img src={getStaticUrl(data.ambassador_logo_url) ?? ''} alt="Ambassador Logo" className="h-full w-full object-contain" />
+                ) : (
+                  <span className="material-icons text-neutral-400 text-3xl">image</span>
+                )}
+              </div>
+              <div>
+                <h2 className="font-display text-lg font-bold text-neutral-900 mb-1">Company Ambassador Logo</h2>
+                <p className="text-sm text-neutral-500 mb-3">Used as a subtle center watermark in Purchase Order, Sales Invoice, and Quotation PDFs (PNG/JPG, max 2MB).</p>
+                <input
+                  type="file"
+                  ref={ambassadorFileInputRef}
+                  className="hidden"
+                  accept="image/png, image/jpeg"
+                  onChange={handleAmbassadorFileChange}
+                />
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => ambassadorFileInputRef.current?.click()}
+                    className="rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                    disabled={ambassadorLogoMutation.isPending || removeAmbassadorLogoMutation.isPending}
+                  >
+                    {ambassadorLogoMutation.isPending
+                      ? 'Uploading...'
+                      : (data?.ambassador_logo_url ? 'Replace Ambassador Logo' : 'Upload Ambassador Logo')}
+                  </button>
+                  {data?.ambassador_logo_url && (
+                    <button
+                      type="button"
+                      onClick={handleRemoveAmbassadorLogo}
+                      className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
+                      disabled={removeAmbassadorLogoMutation.isPending || ambassadorLogoMutation.isPending}
+                    >
+                      {removeAmbassadorLogoMutation.isPending ? 'Removing...' : 'Remove Ambassador Logo'}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 

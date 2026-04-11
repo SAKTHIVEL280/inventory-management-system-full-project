@@ -2,6 +2,12 @@
 
 ---
 
+## DB-43: Database Migration and Schema Baseline Validation
+**Update**: Completed database-layer validation of schema sources, setup/seed flow, and compatibility migration strategy to establish an implementation-accurate baseline for safe future DB tasks; no new table/column changes were introduced in this task.
+
+## DB-42: Company Ambassador Logo Field (Company Profile)
+**Update**: Added optional `company.ambassador_logo_url` in base schema and compatibility migration packs for secure storage of company ambassador logo path used in billing PDF watermark rendering.
+
 ## DB-41: Company Country Field (Company Profile)
 **Date**: April 10, 2026
 **Status**: ✅ Completed

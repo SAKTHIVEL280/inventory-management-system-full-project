@@ -31,4 +31,18 @@ export const companyApi = {
     });
     return response.data;
   },
+
+  uploadAmbassadorLogo: async (file: File): Promise<{ ambassador_logo_url: string }> => {
+    const formData = new FormData();
+    formData.append('logo', file);
+    const response = await apiClient.post<{ ambassador_logo_url: string }>('/api/v1/company/ambassador-logo', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  removeAmbassadorLogo: async (): Promise<{ message: string }> => {
+    const response = await apiClient.delete<{ message: string }>('/api/v1/company/ambassador-logo');
+    return response.data;
+  },
 };

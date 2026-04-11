@@ -1,5 +1,11 @@
 # Frontend Updates Log
 
+## FE-91: Frontend Architecture Baseline Mapping and Validation
+**Update**: Completed frontend-wide source validation of app bootstrap, protected routing, auth store, API client patterns, and page-level data-fetching paths to establish an implementation-accurate baseline for upcoming tasks; no frontend runtime behavior changes were introduced.
+
+## FE-90: Company Ambassador Logo Upload/Preview/Remove (PDF Watermark Feature)
+**Update**: Added Company Ambassador Logo controls in Company Profile with preview, replace, and remove support, wired to new ambassador-logo API endpoints.
+
 ## FE-89: GST-UT-002 Master State-Code Validation + Company Save Redirect
 **Update**: Added state/state-code mismatch validation and state-code autofill across Customer, Supplier, and Company forms, and redirected to dashboard after successful Company Profile save.
 

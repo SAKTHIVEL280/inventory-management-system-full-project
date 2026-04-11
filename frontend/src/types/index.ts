@@ -58,6 +58,7 @@ export interface Company {
   email?: string | null;
   website?: string | null;
   logo_url?: string | null;
+  ambassador_logo_url?: string | null;
   bank_name?: string | null;
   account_holder_name?: string | null;
   bank_account_no?: string | null;

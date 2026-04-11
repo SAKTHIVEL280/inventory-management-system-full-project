@@ -49,6 +49,7 @@ CREATE TABLE company (
   email VARCHAR(255),
   website VARCHAR(255),
   logo_url VARCHAR(500),
+  ambassador_logo_url VARCHAR(500),
   bank_name VARCHAR(150),
   account_holder_name VARCHAR(255),
   bank_account_no VARCHAR(50),

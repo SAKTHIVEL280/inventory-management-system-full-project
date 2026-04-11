@@ -209,4 +209,11 @@ ALTER TABLE company
 ADD COLUMN IF NOT EXISTS country VARCHAR(100);
 
 -- ============================================================================
+-- DB-42: Company Ambassador Logo Field (Company Profile)
+-- ============================================================================
+
+ALTER TABLE company
+ADD COLUMN IF NOT EXISTS ambassador_logo_url VARCHAR(500);
+
+-- ============================================================================
 COMMIT;

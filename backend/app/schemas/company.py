@@ -29,6 +29,7 @@ class CompanyBase(BaseModel):
     email: Optional[str] = None
     website: Optional[str] = None
     logo_url: Optional[str] = None
+    ambassador_logo_url: Optional[str] = None
 
     bank_name: Optional[str] = None
     account_holder_name: Optional[str] = None
@@ -85,6 +86,10 @@ class CompanyResponse(CompanyBase):
 
 class CompanyLogoResponse(BaseModel):
     logo_url: str
+
+
+class CompanyAmbassadorLogoResponse(BaseModel):
+    ambassador_logo_url: str
 
 
 class CompanyBrandingResponse(BaseModel):

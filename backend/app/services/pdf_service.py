@@ -6,6 +6,7 @@ single-page-optimized A4 layout using Jinja-style HTML templates.
 
 from __future__ import annotations
 
+import base64
 from datetime import date, datetime
 from decimal import Decimal
 import io
@@ -27,6 +28,9 @@ from app.services.gst_service import determine_default_invoice_type, determine_t
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 BILLING_PDF_ITEMS_PER_PAGE = 15
+AMBASSADOR_WATERMARK_OPACITY = 0.06
+AMBASSADOR_WATERMARK_MAX_WIDTH_PT = 210.0
+AMBASSADOR_WATERMARK_PAGE_WIDTH_RATIO = 0.42
 
 
 PO_TEMPLATE = """<!DOCTYPE html>
@@ -51,6 +55,14 @@ PO_TEMPLATE = """<!DOCTYPE html>
             font-family: Helvetica, Arial, sans-serif;
             font-size: 10px;
             color: #000;
+        }
+        .content-layer {
+            position: relative;
+            min-height: 255mm;
+        }
+        .content-foreground {
+            position: relative;
+            z-index: 1;
         }
         table {
             width: 100%;
@@ -77,7 +89,7 @@ PO_TEMPLATE = """<!DOCTYPE html>
             color: #b9c0ca;
             opacity: 0.14;
             letter-spacing: 1px;
-            z-index: 0;
+            z-index: 30;
             white-space: nowrap;
         }
     </style>
@@ -85,6 +97,9 @@ PO_TEMPLATE = """<!DOCTYPE html>
 <body>
 
 <div class="po-watermark">{{ watermark_text }}</div>
+
+<div class="content-layer">
+<div class="content-foreground">
 
 <!-- HEADER -->
 <table style="table-layout: fixed; width: 100%; border-top: 1px solid #000; border-left: 1px solid #000; border-right: 1px solid #000; margin-bottom: 0;">
@@ -267,6 +282,9 @@ PO_TEMPLATE = """<!DOCTYPE html>
     Page {{ current_page }} of {{ total_pages }}
 </div>
 
+</div>
+</div>
+
 </body>
 </html>
 """
@@ -295,6 +313,14 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
             font-size: 10px;
             color: #000;
         }
+        .content-layer {
+            position: relative;
+            min-height: 255mm;
+        }
+        .content-foreground {
+            position: relative;
+            z-index: 1;
+        }
         table {
             border-collapse: collapse;
         }
@@ -316,7 +342,7 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
             color: #b9c0ca;
             opacity: 0.14;
             letter-spacing: 1px;
-            z-index: 0;
+            z-index: 30;
             white-space: nowrap;
         }
     </style>
@@ -324,6 +350,9 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
 <body>
 
 <div class="po-watermark">{{ watermark_text }}</div>
+
+<div class="content-layer">
+<div class="content-foreground">
 
 <!-- HEADER -->
 <table style="table-layout: fixed; width: 100%; border-top: 1px solid #000; border-left: 1px solid #000; border-right: 1px solid #000; margin-bottom: 0;">
@@ -613,6 +642,9 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
     Page {{ current_page }} of {{ total_pages }}
 </div>
 
+</div>
+</div>
+
 </body>
 </html>
 """
@@ -838,15 +870,15 @@ def _amount_in_words(paise: int, currency_code: str = "INR") -> str:
     return " ".join(chunks) + " Only"
 
 
-def _resolve_logo_src(company: Company | None) -> str | None:
-    """Convert company logo to a base64 data URI that xhtml2pdf can render."""
+def _resolve_company_image_src(image_url: str | None) -> str | None:
+    """Convert a company image path to a base64 data URI that xhtml2pdf can render."""
     import base64
     import mimetypes
 
-    if not company or not company.logo_url:
+    if not image_url:
         return None
 
-    logo_url = str(company.logo_url)
+    logo_url = str(image_url)
 
     local_path = None
     if logo_url.startswith("/static/"):
@@ -863,6 +895,101 @@ def _resolve_logo_src(company: Company | None) -> str | None:
     with open(local_path, "rb") as f:
         data = base64.b64encode(f.read()).decode("ascii")
     return f"data:{mime_type};base64,{data}"
+
+
+def _resolve_logo_src(company: Company | None) -> str | None:
+    return _resolve_company_image_src(company.logo_url if company else None)
+
+
+def _resolve_ambassador_logo_src(company: Company | None) -> str | None:
+    return _resolve_company_image_src(getattr(company, "ambassador_logo_url", None) if company else None)
+
+
+def _read_image_bytes_from_src(image_src: str | None) -> bytes | None:
+    """Read image bytes from a data URI or local file path."""
+    if not image_src:
+        return None
+
+    src = str(image_src).strip()
+    if not src:
+        return None
+
+    if src.startswith("data:"):
+        marker = ";base64,"
+        if marker not in src:
+            return None
+        _, encoded = src.split(marker, 1)
+        if not encoded:
+            return None
+        try:
+            return base64.b64decode(encoded)
+        except Exception:
+            return None
+
+    local_path = Path(src)
+    if local_path.exists() and local_path.is_file():
+        try:
+            return local_path.read_bytes()
+        except Exception:
+            return None
+    return None
+
+
+def _build_ambassador_background_pdf(
+    logo_bytes: bytes,
+    page_width: float,
+    page_height: float,
+) -> bytes | None:
+    """Create a one-page PDF with centered, subtle ambassador-logo background."""
+    from reportlab.lib.utils import ImageReader
+    from reportlab.pdfgen import canvas
+
+    try:
+        image_reader = ImageReader(io.BytesIO(logo_bytes))
+        image_width, image_height = image_reader.getSize()
+    except Exception:
+        return None
+
+    if not image_width or not image_height:
+        return None
+
+    target_width = min(
+        AMBASSADOR_WATERMARK_MAX_WIDTH_PT,
+        page_width * AMBASSADOR_WATERMARK_PAGE_WIDTH_RATIO,
+    )
+    target_height = target_width * (float(image_height) / float(image_width))
+
+    max_height = page_height * 0.55
+    if target_height > max_height:
+        target_height = max_height
+        target_width = target_height * (float(image_width) / float(image_height))
+
+    x = (page_width - target_width) / 2
+    y = (page_height - target_height) / 2
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=(page_width, page_height))
+    c.saveState()
+    try:
+        c.setFillAlpha(AMBASSADOR_WATERMARK_OPACITY)
+        c.setStrokeAlpha(AMBASSADOR_WATERMARK_OPACITY)
+    except Exception:
+        # Some PDF backends may not expose alpha APIs; keep rendering without hard failure.
+        pass
+    c.drawImage(
+        image_reader,
+        x,
+        y,
+        width=target_width,
+        height=target_height,
+        preserveAspectRatio=True,
+        mask="auto",
+    )
+    c.restoreState()
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    return buf.read()
 
 
 def _render_pdf(context: dict[str, Any]) -> bytes:
@@ -898,6 +1025,8 @@ def _render_pdf_with_pagination(context: dict[str, Any], template: str, rows: li
         chunks = [rows]
 
     writer = PdfWriter()
+    ambassador_logo_bytes = _read_image_bytes_from_src(context.get("company_ambassador_logo"))
+    background_cache: dict[tuple[float, float], bytes | None] = {}
 
     for page_idx, chunk in enumerate(chunks):
         page_num = page_idx + 1
@@ -920,7 +1049,26 @@ def _render_pdf_with_pagination(context: dict[str, Any], template: str, rows: li
         buf.seek(0)
         reader = PdfReader(buf)
         for p in reader.pages:
-            writer.add_page(p)
+            output_page = p
+            if ambassador_logo_bytes:
+                page_width = float(p.mediabox.width)
+                page_height = float(p.mediabox.height)
+                page_key = (round(page_width, 3), round(page_height, 3))
+
+                if page_key not in background_cache:
+                    background_cache[page_key] = _build_ambassador_background_pdf(
+                        ambassador_logo_bytes,
+                        page_width,
+                        page_height,
+                    )
+
+                background_pdf = background_cache.get(page_key)
+                if background_pdf:
+                    background_page = PdfReader(io.BytesIO(background_pdf)).pages[0]
+                    background_page.merge_page(p)
+                    output_page = background_page
+
+            writer.add_page(output_page)
 
     output = io.BytesIO()
     writer.write(output)
@@ -1047,6 +1195,7 @@ def generate_po_pdf(db: Session, po_id: UUID) -> bytes:
         "order_currency": _format_order_currency_display(currency),
         "cs": cs,
         "company_logo": _resolve_logo_src(company),
+        "company_ambassador_logo": _resolve_ambassador_logo_src(company),
         "company_name": _safe_text(company.name if company else None),
         "company_address": _build_company_address(company),
         "company_gstin": _safe_text(company.gstin if company else None),
@@ -1203,6 +1352,7 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
         "payment_terms": _get_payment_terms_label(customer),
         "order_currency": _format_order_currency_display(currency),
         "company_logo": _resolve_logo_src(company),
+        "company_ambassador_logo": _resolve_ambassador_logo_src(company),
         "company_name": _safe_text(company.name if company else None),
         "company_address": _build_company_address(company),
         "company_gstin": _safe_text(company.gstin if company else None),
@@ -1353,6 +1503,7 @@ def generate_quotation_pdf(db: Session, quotation_id: UUID) -> bytes:
         "payment_terms": _get_payment_terms_label(customer),
         "order_currency": _format_order_currency_display(currency),
         "company_logo": _resolve_logo_src(company),
+        "company_ambassador_logo": _resolve_ambassador_logo_src(company),
         "company_name": _safe_text(company.name if company else None),
         "company_address": _build_company_address(company),
         "company_gstin": _safe_text(company.gstin if company else None),

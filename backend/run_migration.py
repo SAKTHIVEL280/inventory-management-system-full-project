@@ -77,6 +77,7 @@ def main() -> int:
         "ALTER TABLE company ADD COLUMN IF NOT EXISTS company_director_contact VARCHAR(255)",
         "ALTER TABLE company ADD COLUMN IF NOT EXISTS account_holder_name VARCHAR(255)",
         "ALTER TABLE company ADD COLUMN IF NOT EXISTS country VARCHAR(100)",
+        "ALTER TABLE company ADD COLUMN IF NOT EXISTS ambassador_logo_url VARCHAR(500)",
 
         # Currency support
         "ALTER TABLE customers ADD COLUMN IF NOT EXISTS currency_code VARCHAR(10) NOT NULL DEFAULT 'INR'",

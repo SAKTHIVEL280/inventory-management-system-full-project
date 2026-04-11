@@ -2,6 +2,24 @@
 
 ---
 
+## BE-82: Billing PDF Ambassador Logo True Background Watermark Layering
+**Update**: Refactored billing PDF rendering so the company ambassador logo is applied as a centered per-page background layer during post-processing merge (PO/Invoice/Quotation), with controlled subtle opacity/size and no changes to existing Approved/Not Approved watermark behavior.
+
+## BE-81: Backend Architecture Baseline Mapping and Validation
+**Update**: Completed backend-wide source validation of runtime entry points, auth dependencies, routers, services, models, and migration hooks to establish an implementation-accurate baseline for upcoming feature tasks; no backend runtime behavior changes were introduced.
+
+## BE-80: xhtml2pdf-Safe Ambassador Background Watermark Layering
+**Update**: Reworked billing PDF watermark layering to use a centered ambassador background layer inside a dedicated content foreground wrapper so logo stays behind text/tables across PO/Invoice/Quotation pages, with low opacity and unchanged Approved/Not Approved top watermark.
+
+## BE-79: Ambassador Logo True Background Layering in Billing PDFs
+**Update**: Moved ambassador logo to a fixed low-opacity background layer with controlled size and explicit content-layer z-index so invoice/quotation/purchase-order text and tables stay above the logo on every page while Approved/Not Approved watermark remains top-most.
+
+## BE-78: Ambassador Watermark Subtle Styling + Approval Layer Priority
+**Update**: Reduced company ambassador watermark size/opacity and enforced z-index layering so ambassador logo stays behind content while Approved/Not Approved watermark remains dominant on top across PO/Invoice/Quotation PDFs.
+
+## BE-77: Company Ambassador Logo API + Billing PDF Center Watermark
+**Update**: Added company ambassador logo persistence/upload/get/remove endpoints and rendered it as a subtle center background watermark in Purchase Order, Sales Invoice, and Quotation PDFs while preserving existing Approved/Not Approved watermark behavior.
+
 ## BE-76: GST-UT-002 Master State-Code Canonical Validation
 **Update**: Added shared canonical state-code utilities with mismatch validation and auto-fill across Customer, Supplier, and Company validation/create-update flows, including supplier `state_code` support.
 

@@ -9,7 +9,13 @@ from app.database import get_db
 from app.dependencies import get_current_user, require_permissions
 from app.models.company import Company
 from app.models.user import User
-from app.schemas.company import CompanyResponse, CompanyUpdate, CompanyLogoResponse, CompanyBrandingResponse
+from app.schemas.company import (
+    CompanyAmbassadorLogoResponse,
+    CompanyBrandingResponse,
+    CompanyLogoResponse,
+    CompanyResponse,
+    CompanyUpdate,
+)
 
 router = APIRouter(prefix="/api/v1/company", tags=["company"])
 
@@ -27,6 +33,42 @@ def _resolve_logo_file_path(logo_url: str) -> Path | None:
     if candidate.exists() and candidate.is_file():
         return candidate
     return None
+
+
+def _validate_upload_image(content_type: str, file_bytes: bytes, *, label: str) -> None:
+    if content_type not in {"image/png", "image/jpeg", "image/jpg"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only PNG/JPG files are allowed",
+        )
+
+    if len(file_bytes) > 2 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"{label} file size must be <= 2MB",
+        )
+
+
+def _media_suffix(content_type: str) -> str:
+    return ".png" if content_type == "image/png" else ".jpg"
+
+
+def _remove_if_exists(path: Path) -> None:
+    if path.exists() and path.is_file():
+        path.unlink()
+
+
+def _save_company_static_image(*, base_name: str, content_type: str, file_bytes: bytes) -> str:
+    STATIC_DIR.mkdir(parents=True, exist_ok=True)
+    _remove_if_exists(STATIC_DIR / f"{base_name}.png")
+    _remove_if_exists(STATIC_DIR / f"{base_name}.jpg")
+
+    suffix = _media_suffix(content_type)
+    file_name = f"{base_name}{suffix}"
+    file_path = STATIC_DIR / file_name
+    with open(file_path, "wb") as f:
+        f.write(file_bytes)
+    return f"/static/{file_name}"
 
 
 def _build_logo_data_url(file_path: Path) -> str | None:
@@ -118,27 +160,9 @@ async def upload_company_logo(
     current_user: User = Depends(require_permissions("company_write")),
 ):
     content_type = logo.content_type or ""
-    if content_type not in {"image/png", "image/jpeg", "image/jpg"}:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only PNG/JPG files are allowed",
-        )
-
     file_bytes = await logo.read()
-    if len(file_bytes) > 2 * 1024 * 1024:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Logo file size must be <= 2MB",
-        )
-
-    # Save to backend static directory using extension matching the uploaded MIME type.
-    STATIC_DIR.mkdir(parents=True, exist_ok=True)
-    file_name = "logo.png" if content_type == "image/png" else "logo.jpg"
-    file_path = STATIC_DIR / file_name
-    with open(file_path, "wb") as f:
-        f.write(file_bytes)
-
-    logo_url = f"/static/{file_name}"
+    _validate_upload_image(content_type, file_bytes, label="Logo")
+    logo_url = _save_company_static_image(base_name="logo", content_type=content_type, file_bytes=file_bytes)
 
     company = db.query(Company).first()
     if not company:
@@ -148,3 +172,67 @@ async def upload_company_logo(
     db.commit()
 
     return CompanyLogoResponse(logo_url=logo_url)
+
+
+@router.get("/ambassador-logo-file")
+async def get_company_ambassador_logo_file(
+    db: Session = Depends(get_db),
+):
+    company = db.query(Company).first()
+    if not company or not company.ambassador_logo_url:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company ambassador logo not found")
+
+    file_path = _resolve_logo_file_path(company.ambassador_logo_url)
+    if not file_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ambassador logo file not found")
+
+    media_type = "image/png" if file_path.suffix.lower() == ".png" else "image/jpeg"
+    return FileResponse(path=str(file_path), media_type=media_type)
+
+
+@router.post("/ambassador-logo", response_model=CompanyAmbassadorLogoResponse)
+async def upload_company_ambassador_logo(
+    logo: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("company_write")),
+):
+    content_type = logo.content_type or ""
+    file_bytes = await logo.read()
+    _validate_upload_image(content_type, file_bytes, label="Ambassador logo")
+    ambassador_logo_url = _save_company_static_image(
+        base_name="ambassador_logo",
+        content_type=content_type,
+        file_bytes=file_bytes,
+    )
+
+    company = db.query(Company).first()
+    if not company:
+        company = Company(name="My Company")
+        db.add(company)
+    company.ambassador_logo_url = ambassador_logo_url
+    db.commit()
+
+    return CompanyAmbassadorLogoResponse(ambassador_logo_url=ambassador_logo_url)
+
+
+@router.delete("/ambassador-logo")
+async def remove_company_ambassador_logo(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("company_write")),
+):
+    company = db.query(Company).first()
+    if not company:
+        company = Company(name="My Company")
+        db.add(company)
+
+    if company.ambassador_logo_url:
+        file_path = _resolve_logo_file_path(company.ambassador_logo_url)
+        if file_path:
+            _remove_if_exists(file_path)
+
+    _remove_if_exists(STATIC_DIR / "ambassador_logo.png")
+    _remove_if_exists(STATIC_DIR / "ambassador_logo.jpg")
+
+    company.ambassador_logo_url = None
+    db.commit()
+    return {"message": "Company ambassador logo removed successfully"}
