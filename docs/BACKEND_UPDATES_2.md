@@ -2,6 +2,9 @@
 
 ---
 
+## BE-86: Quotation PDF Approved/Not Approved Watermark Restoration
+**Update**: Fixed Quotation PDF context to pass `watermark_text` using quotation status (`Approved` for non-draft, `Not Approved` for draft), restoring the missing status watermark while preserving existing billing PDF template behavior.
+
 ## BE-85: Company and Ambassador Logo Replacement Uses New File Paths
 **Update**: Updated company logo and ambassador logo upload flow to always save a new unique file, update DB URLs to the new file path, and remove the previously stored file so latest uploads are immediately used and old logo caching/stale-file issues are eliminated.
 

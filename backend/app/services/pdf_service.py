@@ -1487,6 +1487,7 @@ def generate_quotation_pdf(db: Session, quotation_id: UUID) -> bytes:
 
     valid_until_text = _format_date(quotation.valid_until)
     notes_text = _safe_text(quotation.notes)
+    watermark_text = "Approved" if (quotation.status or "").strip().lower() != "draft" else "Not Approved"
 
     context = {
         "doc_title": "QUOTATION",
@@ -1533,5 +1534,6 @@ def generate_quotation_pdf(db: Session, quotation_id: UUID) -> bytes:
         "balance_due_rupee": _format_total_with_currency(int(quotation.total_amount or 0) / 100, cs),
         "total_in_words": _amount_in_words(int(quotation.total_amount or 0), currency),
         "notes": notes_text,
+        "watermark_text": watermark_text,
     }
     return _render_pdf_with_pagination(context, INVOICE_TEMPLATE, rows, items_per_page=BILLING_PDF_ITEMS_PER_PAGE)
