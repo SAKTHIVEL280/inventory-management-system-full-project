@@ -2,6 +2,9 @@
 
 ---
 
+## DB-44: Inventory Count Difference Acceptance Audit Table
+**Update**: Added `inventory_count_difference_audits` to persist accepted count-difference adjustments with old/new/difference quantities, reason code, accepting user, and timestamp for complete traceability.
+
 ## DB-43: Database Migration and Schema Baseline Validation
 **Update**: Completed database-layer validation of schema sources, setup/seed flow, and compatibility migration strategy to establish an implementation-accurate baseline for safe future DB tasks; no new table/column changes were introduced in this task.
 

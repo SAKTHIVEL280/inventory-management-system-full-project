@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.dependencies import require_permissions
 from app.models.user import User
+from app.models.inventory_count import InventoryCountDifferenceAudit, InventoryCountItem
 from app.models.product import Product, StockLedger
 from app.models.sales import SalesInvoice, SalesInvoiceItem, SalesReturn, SalesReturnItem
 from app.models.purchase import GoodsReceiptNote, GRNItem, PurchaseOrder, PurchaseReturn, PurchaseReturnItem
@@ -16,6 +17,19 @@ from app.models.supplier import Supplier
 from app.models.payment import Payment, PaymentAllocation
 
 router = APIRouter(prefix="/api/v1/reports", tags=["reports"])
+
+
+def _derive_invoice_status(raw_status: str | None, amount_paid: int, total_amount: int) -> str:
+    token = (raw_status or "").strip().lower()
+    if token in {"draft", "cancelled"}:
+        return token
+    paid = int(amount_paid or 0)
+    total = int(total_amount or 0)
+    if paid <= 0:
+        return "issued"
+    if paid >= total and total > 0:
+        return "paid"
+    return "partial_paid"
 
 
 def _ensure_valid_date_range(from_date: date, to_date: date) -> None:
@@ -290,7 +304,7 @@ async def dashboard_report(
             "invoice_number": invoice.invoice_number,
             "customer_name": company_name,
             "amount": invoice.total_amount,
-            "status": invoice.status,
+            "status": _derive_invoice_status(invoice.status, int(invoice.amount_paid or 0), int(invoice.total_amount or 0)),
             "date": invoice.invoice_date.isoformat() if invoice.invoice_date else "",
         }
         for invoice, company_name in recent_invoices_rows
@@ -494,6 +508,35 @@ async def stock_report(
         .all()
     )
     for row in sales_return_rows:
+        _accumulate(
+            row.product_id,
+            row.batch_no,
+            row.manufacture_date,
+            row.expiry_date,
+            float(row.qty or 0),
+        )
+
+    inventory_count_diff_rows = (
+        db.query(
+            InventoryCountItem.product_id,
+            InventoryCountItem.batch_no,
+            InventoryCountItem.manufacture_date,
+            InventoryCountItem.expiry_date,
+            func.coalesce(func.sum(InventoryCountDifferenceAudit.difference_qty), 0).label("qty"),
+        )
+        .join(
+            InventoryCountDifferenceAudit,
+            InventoryCountDifferenceAudit.inventory_count_item_id == InventoryCountItem.id,
+        )
+        .group_by(
+            InventoryCountItem.product_id,
+            InventoryCountItem.batch_no,
+            InventoryCountItem.manufacture_date,
+            InventoryCountItem.expiry_date,
+        )
+        .all()
+    )
+    for row in inventory_count_diff_rows:
         _accumulate(
             row.product_id,
             row.batch_no,

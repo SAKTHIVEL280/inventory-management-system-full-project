@@ -23,7 +23,7 @@ from app.models.product import Product, UnitOfMeasure
 from app.models.purchase import PurchaseOrder, PurchaseOrderItem
 from app.models.sales import SalesInvoice, SalesInvoiceItem, SalesOrder, Quotation, QuotationItem
 from app.models.supplier import Supplier
-from app.services.gst_service import determine_default_invoice_type, determine_tax_mode
+from app.services.gst_service import determine_default_invoice_type, determine_tax_mode, is_india_country
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -429,60 +429,64 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
 {% if show_batch_columns %}
     {% if export_invoice %}
         {% set col_sr = 3 %}
-        {% set col_desc = 21 %}
+        {% set col_desc = 18 %}
+        {% set col_base = 5 %}
+        {% set col_pack = 5 %}
         {% set col_batch = 8 %}
         {% set col_mfg = 7 %}
         {% set col_exp = 7 %}
         {% set col_hsn = 6 %}
         {% set col_qty = 7 %}
         {% set col_free = 4 %}
-        {% set col_base = 6 %}
-        {% set col_rate = 12 %}
+        {% set col_rate = 11 %}
         {% set col_disc = 5 %}
         {% set col_cgst = 0 %}
         {% set col_sgst = 0 %}
         {% set col_amount = 14 %}
     {% else %}
         {% set col_sr = 3 %}
-        {% set col_desc = 15 %}
+        {% set col_desc = 13 %}
+        {% set col_base = 5 %}
+        {% set col_pack = 5 %}
         {% set col_batch = 8 %}
         {% set col_mfg = 7 %}
         {% set col_exp = 7 %}
         {% set col_hsn = 6 %}
         {% set col_qty = 5 %}
         {% set col_free = 4 %}
-        {% set col_base = 6 %}
-        {% set col_rate = 9 %}
+        {% set col_rate = 8 %}
         {% set col_disc = 5 %}
         {% set col_cgst = 7 %}
         {% set col_sgst = 7 %}
-        {% set col_amount = 11 %}
+        {% set col_amount = 10 %}
     {% endif %}
 {% else %}
     {% if export_invoice %}
         {% set col_sr = 3 %}
-        {% set col_desc = 34 %}
+        {% set col_desc = 29 %}
+        {% set col_base = 6 %}
+        {% set col_pack = 6 %}
         {% set col_hsn = 8 %}
         {% set col_qty = 8 %}
         {% set col_free = 5 %}
-        {% set col_base = 8 %}
-        {% set col_rate = 12 %}
-        {% set col_disc = 7 %}
+        {% set col_rate = 11 %}
+        {% set col_disc = 6 %}
         {% set col_cgst = 0 %}
         {% set col_sgst = 0 %}
-        {% set col_amount = 15 %}
+        {% set col_amount = 18 %}
     {% else %}
         {% set col_sr = 3 %}
-        {% set col_desc = 24 %}
+        {% set col_desc = 19 %}
+        {% set col_base = 6 %}
+        {% set col_pack = 6 %}
         {% set col_hsn = 8 %}
         {% set col_qty = 7 %}
         {% set col_free = 5 %}
-        {% set col_base = 8 %}
-        {% set col_rate = 11 %}
+        {% set col_rate = 10 %}
         {% set col_disc = 6 %}
         {% set col_cgst = 8 %}
         {% set col_sgst = 8 %}
-        {% set col_amount = 12 %}
+        {% set col_amount = 14 %}
     {% endif %}
 {% endif %}
 
@@ -491,6 +495,8 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
         <tr style="background: #f2f2f2; border-bottom: 1px solid #000;">
             <th style="width: {{ col_sr }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Sr</th>
             <th style="width: {{ col_desc }}%; border-right: 1px solid #000; padding: 3px 2px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Item &amp; Description</th>
+            <th style="width: {{ col_base }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">{{ unit_col_label }}</th>
+            <th style="width: {{ col_pack }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Packing / Order Unit</th>
             {% if show_batch_columns %}
             <th style="width: {{ col_batch }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Batch No</th>
             <th style="width: {{ col_mfg }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">MFG Date</th>
@@ -499,7 +505,6 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
             <th style="width: {{ col_hsn }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">HSN</th>
             <th style="width: {{ col_qty }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Qty</th>
             <th style="width: {{ col_free }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Free</th>
-            <th style="width: {{ col_base }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">{{ unit_col_label }}</th>
             <th style="width: {{ col_rate }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Rate</th>
             <th style="width: {{ col_disc }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Disc%</th>
             {% if not export_invoice %}
@@ -518,6 +523,8 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
         <tr>
             <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.sr }}</td>
             <td style="border: 1px solid #000; padding: 2px 2px; text-align: left; font-size: 7px; word-wrap: break-word; overflow-wrap: break-word;">{{ row.description }}</td>
+            <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.base_unit }}</td>
+            <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.packing_unit }}</td>
             {% if show_batch_columns %}
             <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.batch_no }}</td>
             <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.mfg_date }}</td>
@@ -526,7 +533,6 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
             <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.hsn }}</td>
             <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.qty }}</td>
             <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px; color: #d97706;">{{ row.free }}</td>
-            <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.packing_unit }}</td>
             <td style="border: 1px solid #000; padding: 2px 2px; text-align: right; font-size: 7px;">{{ row.rate }}</td>
             <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.disc }}</td>
             {% if not export_invoice %}
@@ -544,12 +550,13 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
         <tr style="height: {% if rows|length < items_per_page %}120px{% else %}12px{% endif %};">
             <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
             <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
+            <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
+            <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
             {% if show_batch_columns %}
             <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
             <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
             <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
             {% endif %}
-            <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
             <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
             <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
             <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
@@ -818,7 +825,7 @@ def _get_payment_terms_label(supplier: Supplier | None) -> str:
     return f"{int(days)} Days"
 
 
-def _amount_in_words(paise: int, currency_code: str = "INR") -> str:
+def _amount_in_words(paise: int, currency_code: str = "INR", numbering_system: str = "indian") -> str:
     ones = [
         "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
         "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen",
@@ -826,20 +833,34 @@ def _amount_in_words(paise: int, currency_code: str = "INR") -> str:
     ]
     tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"]
 
-    def words(n: int) -> str:
+    def words_under_thousand(n: int) -> str:
         if n == 0:
             return ""
         if n < 20:
             return ones[n]
         if n < 100:
             return tens[n // 10] + (" " + ones[n % 10] if n % 10 else "")
+        return ones[n // 100] + " Hundred" + (" and " + words_under_thousand(n % 100) if n % 100 else "")
+
+    def words_indian(n: int) -> str:
         if n < 1000:
-            return ones[n // 100] + " Hundred" + (" and " + words(n % 100) if n % 100 else "")
+            return words_under_thousand(n)
         if n < 100000:
-            return words(n // 1000) + " Thousand" + (" " + words(n % 1000) if n % 1000 else "")
+            return words_indian(n // 1000) + " Thousand" + (" " + words_indian(n % 1000) if n % 1000 else "")
         if n < 10000000:
-            return words(n // 100000) + " Lakh" + (" " + words(n % 100000) if n % 100000 else "")
-        return words(n // 10000000) + " Crore" + (" " + words(n % 10000000) if n % 10000000 else "")
+            return words_indian(n // 100000) + " Lakh" + (" " + words_indian(n % 100000) if n % 100000 else "")
+        return words_indian(n // 10000000) + " Crore" + (" " + words_indian(n % 10000000) if n % 10000000 else "")
+
+    def words_international(n: int) -> str:
+        if n < 1000:
+            return words_under_thousand(n)
+        if n < 1000000:
+            return words_international(n // 1000) + " Thousand" + (" " + words_international(n % 1000) if n % 1000 else "")
+        if n < 1000000000:
+            return words_international(n // 1000000) + " Million" + (" " + words_international(n % 1000000) if n % 1000000 else "")
+        if n < 1000000000000:
+            return words_international(n // 1000000000) + " Billion" + (" " + words_international(n % 1000000000) if n % 1000000000 else "")
+        return words_international(n // 1000000000000) + " Trillion" + (" " + words_international(n % 1000000000000) if n % 1000000000000 else "")
 
     major_units = (paise or 0) // 100
     minor_units = (paise or 0) % 100
@@ -859,14 +880,16 @@ def _amount_in_words(paise: int, currency_code: str = "INR") -> str:
     }
     major_label = major_label_map.get(currency_token, currency_token)
     minor_label = minor_label_map.get(currency_token, "Cents")
+    numbering = (numbering_system or "indian").strip().lower()
+    to_words = words_international if numbering == "international" else words_indian
 
     chunks = []
     if major_units:
-        chunks.append(f"{major_label} {words(major_units)}")
+        chunks.append(f"{major_label} {to_words(major_units)}")
     else:
         chunks.append(f"{major_label} Zero")
     if minor_units:
-        chunks.append(f"and {words(minor_units)} {minor_label}")
+        chunks.append(f"and {to_words(minor_units)} {minor_label}")
     return " ".join(chunks) + " Only"
 
 
@@ -1275,7 +1298,8 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
             sgst_paise = igst_paise - cgst_paise
 
         rate_val = f"{(int(item.unit_price or 0) / 100):,.2f}"
-        packing_unit = _get_base_unit_label(product)
+        base_unit = _get_base_unit_label(product)
+        packing_unit = _get_packing_label(db, product)
         batch_no = _safe_text(getattr(item, "batch_no", None))
         mfg_date = _format_date(getattr(item, "manufacture_date", None))
         exp_date = _format_date(getattr(item, "expiry_date", None))
@@ -1290,6 +1314,7 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
                 "hsn": _safe_text(product.hsn_code if product else None),
                 "qty": f"{float(item.quantity):.2f}",
                 "free": _decimal_to_str(getattr(item, "free_quantity", 0)),
+                "base_unit": base_unit,
                 "packing_unit": packing_unit,
                 "rate": rate_val,
                 "disc": f"{float(item.discount_percent or 0):.1f}%",
@@ -1304,7 +1329,7 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
         rows.append(
             {
                 "sr": "1", "description": "-", "batch_no": "-", "mfg_date": "-", "exp_date": "-",
-                "hsn": "-", "qty": "0.00", "free": "0", "packing_unit": "-",
+                "hsn": "-", "qty": "0.00", "free": "0", "base_unit": "-", "packing_unit": "-",
                 "rate": "0.00", "disc": "0.0%", "cgst_pct": "0.0%", "sgst_pct": "0.0%", "igst_pct": "0%", "amount": "0.00",
             }
         )
@@ -1331,6 +1356,12 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
         ship_to_address = ", ".join([p.strip() for p in billing_parts if p and p.strip()])
 
     notes_text = _safe_text(invoice.notes if invoice.notes else (f"Sales Order: {sales_order.so_number}" if sales_order else "-"))
+    invoice_country = None
+    if customer:
+        invoice_country = customer.shipping_country or customer.billing_country
+    amount_words_numbering = "indian"
+    if export_invoice and invoice_country and not is_india_country(invoice_country):
+        amount_words_numbering = "international"
 
     tax_col_1_label = "CGST"
     tax_col_2_label = "UTGST" if show_utgst else "SGST"
@@ -1383,7 +1414,7 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
         "igst_total": _format_total_with_currency(_get_corrected_igst(invoice, should_be_igst=show_igst), cs),
         "grand_total_rupee": _format_total_with_currency(int(invoice.total_amount or 0) / 100, cs),
         "balance_due_rupee": _format_total_with_currency(int(invoice.amount_due or invoice.total_amount or 0) / 100, cs),
-        "total_in_words": _amount_in_words(int(invoice.total_amount or 0), currency),
+        "total_in_words": _amount_in_words(int(invoice.total_amount or 0), currency, numbering_system=amount_words_numbering),
         "notes": notes_text,
         "watermark_text": watermark_text,
     }
@@ -1437,7 +1468,8 @@ def generate_quotation_pdf(db: Session, quotation_id: UUID) -> bytes:
             sgst_paise = igst_paise - cgst_paise
 
         rate_val = f"{(int(item.unit_price or 0) / 100):,.2f}"
-        packing_unit = _get_base_unit_label(product)
+        base_unit = _get_base_unit_label(product)
+        packing_unit = _get_packing_label(db, product)
         free_quantity = getattr(item, "free_quantity", 0)
 
         rows.append(
@@ -1447,6 +1479,7 @@ def generate_quotation_pdf(db: Session, quotation_id: UUID) -> bytes:
                 "hsn": _safe_text(product.hsn_code if product else None),
                 "qty": f"{float(item.quantity):.2f}",
                 "free": _decimal_to_str(free_quantity),
+                "base_unit": base_unit,
                 "packing_unit": packing_unit,
                 "rate": rate_val,
                 "disc": f"{float(item.discount_percent or 0):.1f}%",
@@ -1461,7 +1494,7 @@ def generate_quotation_pdf(db: Session, quotation_id: UUID) -> bytes:
         rows.append(
             {
                 "sr": "1", "description": "-",
-                "hsn": "-", "qty": "0.00", "free": "0", "packing_unit": "-",
+                "hsn": "-", "qty": "0.00", "free": "0", "base_unit": "-", "packing_unit": "-",
                 "rate": "0.00", "disc": "0.0%", "cgst_pct": "0.0%", "sgst_pct": "0.0%", "igst_pct": "0%", "amount": "0.00",
             }
         )

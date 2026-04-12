@@ -1,15 +1,24 @@
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import { AppLayout } from '../components/AppLayout';
 import { stockApi, type InventoryCountDifferenceResponse } from '../api/stock';
+import { usePermissions } from '../hooks/usePermissions';
 
 const InventoryCountDifferencePage = () => {
   const [countNumber, setCountNumber] = useState('');
   const [isSuggestionsOpen, setIsSuggestionsOpen] = useState(false);
   const [hasTypedSinceFocus, setHasTypedSinceFocus] = useState(false);
+  const [reasonCodeByCount, setReasonCodeByCount] = useState<Record<string, string>>({});
+  const [activeAcceptCountNumber, setActiveAcceptCountNumber] = useState<string | null>(null);
+  const [activeRecountCountNumber, setActiveRecountCountNumber] = useState<string | null>(null);
+
+  const queryClient = useQueryClient();
+  const { isAdmin, can } = usePermissions();
   const searchToken = countNumber.trim().toUpperCase();
+  const canAcceptDifference = isAdmin;
+  const canRecount = can('stock_ledger_write');
 
   const {
     data: allDifferences = [],
@@ -26,6 +35,50 @@ const InventoryCountDifferencePage = () => {
     queryFn: () => stockApi.searchInventoryCountNumbers(searchToken, 12),
     enabled: isSuggestionsOpen,
     staleTime: 30_000,
+  });
+
+  const { data: reasonCodes = [] } = useQuery({
+    queryKey: ['inventory-count-difference-reason-codes'],
+    queryFn: () => stockApi.getInventoryCountDifferenceReasonCodes(),
+    staleTime: 300_000,
+  });
+
+  const acceptDifferenceMutation = useMutation({
+    mutationFn: ({ countNumber: targetCountNumber, reasonCode }: { countNumber: string; reasonCode: string }) =>
+      stockApi.acceptInventoryCountDifference(targetCountNumber, { reason_code: reasonCode }),
+    onMutate: ({ countNumber: targetCountNumber }) => {
+      setActiveAcceptCountNumber(targetCountNumber);
+    },
+    onSuccess: (response) => {
+      toast.success(response.message);
+      setReasonCodeByCount((prev) => ({ ...prev, [response.count_number]: '' }));
+      queryClient.invalidateQueries({ queryKey: ['inventory-count-differences-all'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory-count-number-search'] });
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.detail || 'Failed to accept difference');
+    },
+    onSettled: () => {
+      setActiveAcceptCountNumber(null);
+    },
+  });
+
+  const recountDifferenceMutation = useMutation({
+    mutationFn: (targetCountNumber: string) => stockApi.recountInventoryCountDifference(targetCountNumber),
+    onMutate: (targetCountNumber) => {
+      setActiveRecountCountNumber(targetCountNumber);
+    },
+    onSuccess: (response) => {
+      toast.success(response.message);
+      queryClient.invalidateQueries({ queryKey: ['inventory-count-differences-all'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory-count-number-search'] });
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.detail || 'Failed to clear difference for recount');
+    },
+    onSettled: () => {
+      setActiveRecountCountNumber(null);
+    },
   });
 
   const suggestions = suggestionsResponse?.items ?? [];
@@ -53,7 +106,45 @@ const InventoryCountDifferencePage = () => {
     toast.success(`Showing ${filteredDifferences.length} matching inventory count(s)`);
   };
 
-  const renderDifferenceTable = (result: InventoryCountDifferenceResponse) => (
+  const handleAcceptDifference = (targetCountNumber: string) => {
+    if (!canAcceptDifference) {
+      toast.error('Only Super Admin can accept differences');
+      return;
+    }
+
+    const reasonCode = (reasonCodeByCount[targetCountNumber] || '').trim();
+    if (!reasonCode) {
+      toast.error('Reason Code is mandatory before accepting a difference');
+      return;
+    }
+
+    acceptDifferenceMutation.mutate({
+      countNumber: targetCountNumber,
+      reasonCode,
+    });
+  };
+
+  const handleRecount = (targetCountNumber: string) => {
+    if (!canRecount) {
+      toast.error('You do not have permission to perform recount');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      'Recount will clear this difference record without changing stock. Continue?'
+    );
+    if (!confirmed) return;
+
+    recountDifferenceMutation.mutate(targetCountNumber);
+  };
+
+  const renderDifferenceTable = (result: InventoryCountDifferenceResponse) => {
+    const selectedReasonCode = reasonCodeByCount[result.count_number] || '';
+    const hasDifferenceRows = result.items.some((item) => Math.abs(item.difference) > 0.0001);
+    const isAcceptingThisCount = activeAcceptCountNumber === result.count_number;
+    const isRecountingThisCount = activeRecountCountNumber === result.count_number;
+
+    return (
     <div className="hms-card overflow-hidden" key={result.count_number}>
       <div className="grid grid-cols-1 gap-4 border-b border-neutral-200 bg-neutral-50 p-4 md:grid-cols-4">
         <div>
@@ -71,6 +162,56 @@ const InventoryCountDifferencePage = () => {
         <div>
           <p className="text-xs font-bold uppercase tracking-wider text-neutral-500">Total Items</p>
           <p className="mt-1 text-sm font-semibold text-neutral-900">{result.total_items}</p>
+        </div>
+      </div>
+
+      <div className="border-b border-neutral-200 bg-white p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div className="w-full lg:max-w-sm">
+            <label className="hms-label">Reason Code (Required for Accept Difference)</label>
+            <select
+              className="hms-input"
+              value={selectedReasonCode}
+              onChange={(event) => {
+                const value = event.target.value;
+                setReasonCodeByCount((prev) => ({ ...prev, [result.count_number]: value }));
+              }}
+              disabled={!canAcceptDifference || isAcceptingThisCount}
+            >
+              <option value="">Select reason code</option>
+              {reasonCodes.map((reason) => (
+                <option key={reason.code} value={reason.code}>{reason.label}</option>
+              ))}
+            </select>
+            {!canAcceptDifference && (
+              <p className="mt-1 text-xs text-neutral-500">Only Super Admin can accept difference and update stock.</p>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="rounded-lg border border-neutral-300 bg-white px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => handleRecount(result.count_number)}
+              disabled={!canRecount || isRecountingThisCount || isAcceptingThisCount}
+            >
+              {isRecountingThisCount ? 'Recounting...' : 'Recount'}
+            </button>
+            <button
+              type="button"
+              className="hms-button-primary disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={() => handleAcceptDifference(result.count_number)}
+              disabled={
+                !canAcceptDifference ||
+                isAcceptingThisCount ||
+                isRecountingThisCount ||
+                !hasDifferenceRows ||
+                !selectedReasonCode
+              }
+            >
+              {isAcceptingThisCount ? 'Accepting...' : 'Accept Difference'}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -119,10 +260,11 @@ const InventoryCountDifferencePage = () => {
         </table>
       </div>
     </div>
-  );
+    );
+  };
 
   return (
-    <AppLayout title="Inventory Count Difference (Admin)">
+    <AppLayout title="Inventory Count Difference">
       <div className="space-y-6">
         <div className="hms-card p-5">
           <h2 className="font-display text-lg font-semibold text-neutral-900">Find Inventory Count Difference</h2>
@@ -177,6 +319,9 @@ const InventoryCountDifferencePage = () => {
               Apply Filter
             </button>
           </div>
+          <p className="mt-3 text-xs text-neutral-500">
+            Accept Difference updates stock only after mandatory reason selection. Recount clears the current difference record without updating stock.
+          </p>
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">

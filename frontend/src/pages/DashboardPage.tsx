@@ -72,6 +72,31 @@ const DashboardPage = () => {
   }));
   const recentInvoices = stats?.recent_invoices || [];
 
+  const toTitleCase = (value: string) =>
+    value
+      .replace(/_/g, ' ')
+      .toLowerCase()
+      .replace(/\b\w/g, (ch) => ch.toUpperCase());
+
+  const dashboardInvoiceStatusLabel = (status: string) => {
+    const token = (status || '').trim().toLowerCase();
+    if (token === 'issued') return 'Issued';
+    if (token === 'partial_paid') return 'Partially Paid';
+    if (token === 'paid') return 'Fully Paid';
+    if (token === 'draft') return 'Draft';
+    if (token === 'cancelled') return 'Cancelled';
+    return toTitleCase(token || '-');
+  };
+
+  const dashboardInvoiceStatusClass = (status: string) => {
+    const token = (status || '').trim().toLowerCase();
+    if (token === 'paid') return 'bg-green-100 text-green-700';
+    if (token === 'issued') return 'bg-blue-100 text-blue-700';
+    if (token === 'partial_paid') return 'bg-amber-100 text-amber-700';
+    if (token === 'cancelled') return 'bg-red-100 text-red-700';
+    return 'bg-gray-100 text-gray-700';
+  };
+
   return (
     <AppLayout title="Dashboard">
       <div className="space-y-6">
@@ -195,15 +220,15 @@ const DashboardPage = () => {
             </div>
             <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
               <div className="rounded-lg border border-neutral-200 bg-white px-3 py-2">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-500">Total Received</p>
+                <p className="text-xs font-semibold text-neutral-600">Total Received</p>
                 <p className="mt-1 text-sm font-semibold text-primary">{formatAmount(cashInFlowSummary.total_received_amount)}</p>
               </div>
               <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-green-700">Fully Received</p>
+                <p className="text-xs font-semibold text-green-700">Fully Paid</p>
                 <p className="mt-1 text-sm font-semibold text-green-700">{formatAmount(cashInFlowSummary.fully_settled_amount)}</p>
               </div>
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-                <p className="text-[11px] font-bold uppercase tracking-wider text-amber-700">Partially Received</p>
+                <p className="text-xs font-semibold text-amber-700">Partially Paid</p>
                 <p className="mt-1 text-sm font-semibold text-amber-700">{formatAmount(cashInFlowSummary.partially_settled_amount)}</p>
               </div>
             </div>
@@ -225,28 +250,28 @@ const DashboardPage = () => {
                   />
                   <Tooltip
                     formatter={(value: number, name: string) => {
-                      if (name === 'fully_settled_amount' || name === 'Fully Received' || name === 'Fully Settled') {
-                        return [formatAmount(value), 'Fully Received'];
+                      if (name === 'fully_settled_amount' || name === 'Fully Received' || name === 'Fully Settled' || name === 'Fully Paid') {
+                        return [formatAmount(value), 'Fully Paid'];
                       }
-                      if (name === 'partially_settled_amount' || name === 'Partially Received' || name === 'Partially Settled') {
-                        return [formatAmount(value), 'Partially Received'];
+                      if (name === 'partially_settled_amount' || name === 'Partially Received' || name === 'Partially Settled' || name === 'Partially Paid') {
+                        return [formatAmount(value), 'Partially Paid'];
                       }
                       return [formatAmount(value), 'Received'];
                     }}
                     labelStyle={{ fontWeight: 600 }}
                   />
-                  <Bar dataKey="partially_settled_amount" name="Partially Received" stackId="received" fill="#f59e0b" radius={[0, 0, 0, 0]} />
-                  <Bar dataKey="fully_settled_amount" name="Fully Received" stackId="received" fill="#16a34a" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="partially_settled_amount" name="Partially Paid" stackId="received" fill="#f59e0b" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="fully_settled_amount" name="Fully Paid" stackId="received" fill="#16a34a" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
               <div className="mt-3 flex flex-wrap items-center gap-4 text-xs font-semibold text-neutral-600">
                 <span className="inline-flex items-center gap-2">
                   <span className="h-2.5 w-2.5 rounded-full bg-green-600" />
-                  Fully Received
+                  Fully Paid
                 </span>
                 <span className="inline-flex items-center gap-2">
                   <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
-                  Partially Received
+                  Partially Paid
                 </span>
               </div>
               </>
@@ -278,11 +303,9 @@ const DashboardPage = () => {
                       <td className="px-4 py-2">{inv.customer_name}</td>
                       <td className="px-4 py-2 text-right">{formatAmount(inv.amount)}</td>
                       <td className="px-4 py-2 text-center">
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                          inv.status === 'paid' ? 'bg-green-100 text-green-700' :
-                          inv.status === 'issued' ? 'bg-blue-100 text-blue-700' :
-                          'bg-amber-100 text-amber-700'
-                        }`}>{inv.status}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${dashboardInvoiceStatusClass(inv.status)}`}>
+                          {dashboardInvoiceStatusLabel(inv.status)}
+                        </span>
                       </td>
                       <td className="px-4 py-2 text-neutral-500">{inv.date}</td>
                     </tr>

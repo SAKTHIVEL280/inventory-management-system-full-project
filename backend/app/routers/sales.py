@@ -26,6 +26,7 @@ from app.dependencies import require_permissions
 from app.models.user import User
 from app.models.product import Product
 from app.models.customer import Customer
+from app.models.inventory_count import InventoryCountDifferenceAudit, InventoryCountItem
 from app.models.purchase import GoodsReceiptNote, GRNItem, PurchaseReturn, PurchaseReturnItem
 from app.models.sales import (
     Quotation,
@@ -70,6 +71,13 @@ def _compute_invoice_status(amount_paid: int, total_amount: int) -> str:
     if amount_paid >= total_amount:
         return "paid"
     return "partial_paid"
+
+
+def _derive_invoice_status(raw_status: str | None, amount_paid: int, total_amount: int) -> str:
+    token = (raw_status or "").strip().lower()
+    if token in {"draft", "cancelled"}:
+        return token
+    return _compute_invoice_status(int(amount_paid or 0), int(total_amount or 0))
 
 
 def _auto_expire_quotation(q: Quotation) -> None:
@@ -277,6 +285,33 @@ def _build_product_batch_snapshot(db: Session, product_id: UUID) -> dict[str, di
         .all()
     )
     for row in sales_return_rows:
+        _accumulate(
+            row.batch_no,
+            row.manufacture_date,
+            row.expiry_date,
+            float(row.qty or 0),
+        )
+
+    inventory_count_diff_rows = (
+        db.query(
+            InventoryCountItem.batch_no,
+            InventoryCountItem.manufacture_date,
+            InventoryCountItem.expiry_date,
+            func.coalesce(func.sum(InventoryCountDifferenceAudit.difference_qty), 0).label("qty"),
+        )
+        .join(
+            InventoryCountDifferenceAudit,
+            InventoryCountDifferenceAudit.inventory_count_item_id == InventoryCountItem.id,
+        )
+        .filter(InventoryCountItem.product_id == product_id)
+        .group_by(
+            InventoryCountItem.batch_no,
+            InventoryCountItem.manufacture_date,
+            InventoryCountItem.expiry_date,
+        )
+        .all()
+    )
+    for row in inventory_count_diff_rows:
         _accumulate(
             row.batch_no,
             row.manufacture_date,
@@ -1241,9 +1276,23 @@ async def list_invoices(
 ):
     query = db.query(SalesInvoice).filter(SalesInvoice.is_deleted == False)
     if status:
-        query = query.filter(SalesInvoice.status == status)
+        normalized_status = status.strip().lower()
+        if normalized_status in {"issued", "partial_paid", "paid"}:
+            query = query.filter(SalesInvoice.status.in_(["issued", "partial_paid", "paid"]))
+            if normalized_status == "issued":
+                query = query.filter(SalesInvoice.amount_paid <= 0)
+            elif normalized_status == "partial_paid":
+                query = query.filter(SalesInvoice.amount_paid > 0, SalesInvoice.amount_paid < SalesInvoice.total_amount)
+            elif normalized_status == "paid":
+                query = query.filter(SalesInvoice.total_amount > 0, SalesInvoice.amount_paid >= SalesInvoice.total_amount)
+        else:
+            query = query.filter(SalesInvoice.status == normalized_status)
     total = query.count()
     rows = query.order_by(SalesInvoice.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+
+    for inv in rows:
+        inv.status = _derive_invoice_status(inv.status, int(inv.amount_paid or 0), int(inv.total_amount or 0))
+
     return SalesInvoicesListResponse(
         items=[SalesInvoiceResponse.model_validate(inv) for inv in rows],
         total=total,
@@ -1404,6 +1453,7 @@ async def get_invoice(
     invoice = db.query(SalesInvoice).filter(SalesInvoice.id == invoice_id, SalesInvoice.is_deleted == False).first()
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    invoice.status = _derive_invoice_status(invoice.status, int(invoice.amount_paid or 0), int(invoice.total_amount or 0))
     items = db.query(SalesInvoiceItem).filter(SalesInvoiceItem.invoice_id == invoice_id).all()
     return {"invoice": invoice, "items": items}
 

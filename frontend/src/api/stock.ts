@@ -66,6 +66,37 @@ export type InventoryCountDifferenceResponse = {
   items: InventoryCountDifferenceItem[];
 };
 
+export type InventoryCountDifferenceReasonCode = {
+  code: string;
+  label: string;
+};
+
+export type InventoryCountDifferenceAcceptPayload = {
+  reason_code: string;
+};
+
+export type InventoryCountDifferenceActionItem = {
+  serial_number: number;
+  product_id: string;
+  product_code?: string | null;
+  product_name?: string | null;
+  old_qty: number;
+  new_qty: number;
+  difference_qty: number;
+  reason_code?: string | null;
+};
+
+export type InventoryCountDifferenceActionResponse = {
+  count_number: string;
+  action: string;
+  reason_code?: string | null;
+  total_rows: number;
+  adjusted_rows: number;
+  adjusted_total_qty: number;
+  message: string;
+  items: InventoryCountDifferenceActionItem[];
+};
+
 export type InventoryCountNumberSearchResponse = {
   items: string[];
 };
@@ -123,6 +154,30 @@ export const stockApi = {
 
   getInventoryCountDifference: async (countNumber: string): Promise<InventoryCountDifferenceResponse> => {
     const response = await apiClient.get<InventoryCountDifferenceResponse>(`/api/v1/stock/inventory-counts/${encodeURIComponent(countNumber)}/difference`);
+    return response.data;
+  },
+
+  getInventoryCountDifferenceReasonCodes: async (): Promise<InventoryCountDifferenceReasonCode[]> => {
+    const response = await apiClient.get<InventoryCountDifferenceReasonCode[]>('/api/v1/stock/inventory-counts/differences/reason-codes');
+    return response.data;
+  },
+
+  acceptInventoryCountDifference: async (
+    countNumber: string,
+    payload: InventoryCountDifferenceAcceptPayload,
+  ): Promise<InventoryCountDifferenceActionResponse> => {
+    const response = await apiClient.post<InventoryCountDifferenceActionResponse>(
+      `/api/v1/stock/inventory-counts/${encodeURIComponent(countNumber)}/differences/accept`,
+      payload,
+    );
+    return response.data;
+  },
+
+  recountInventoryCountDifference: async (countNumber: string): Promise<InventoryCountDifferenceActionResponse> => {
+    const response = await apiClient.post<InventoryCountDifferenceActionResponse>(
+      `/api/v1/stock/inventory-counts/${encodeURIComponent(countNumber)}/differences/recount`,
+      {},
+    );
     return response.data;
   },
 };

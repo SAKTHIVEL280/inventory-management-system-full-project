@@ -2,6 +2,27 @@
 
 ---
 
+## BE-93: Recount Uses Same Inventory Count Number and Record
+**Update**: Refactored Inventory Count recount flow to preserve the same `inventory_counts` record (`id` and `count_number`) by switching status to `draft` and clearing existing active line items, then reusing that draft in next-number preview and confirm save instead of creating a new incremented count number.
+
+## BE-92: Initial Stock Difference Batch/MFG/EXP Persistence in Stock Views
+**Update**: Fixed batch-wise stock aggregation to include accepted Inventory Count Difference adjustments (including Initial Stock Upload reason) using difference-audit + count-item metadata, so Batch No, MFG Date, and EXP Date are retained and shown in Stock report and batch-option flows.
+
+## BE-91: Inventory Count Difference Accept 500 Fix (Stock Ledger Reference Type Length)
+**Update**: Fixed `POST /api/v1/stock/inventory-counts/{count_number}/differences/accept` crash by replacing oversized stock-ledger `reference_type` value (`inventory_count_difference`) with a DB-safe token (`inv_count_diff`) that fits `stock_ledger.reference_type VARCHAR(20)`.
+
+## BE-90: Inventory Count Number Uniqueness Fix After Soft-Delete
+**Update**: Fixed Inventory Count number generation to include previously soft-deleted count numbers when computing the next sequence, preventing duplicate `count_number` constraint failures on Confirm after difference accept/recount actions.
+
+## BE-89: Invoice Status Normalization by Paid-vs-Total + Dashboard Recent Status Alignment
+**Update**: Normalized invoice status derivation from actual payment values (`amount_paid` vs `total_amount`) in invoice list/detail responses and status-filter behavior for issued/partial-paid/paid, preventing false fully-paid display on partial payments and ensuring dashboard recent-invoice status tokens reflect real payment progress.
+
+## BE-88: PO Tolerance Guard + Export Amount Words + PDF Unit Column Reorder
+**Update**: Enforced the strict under-delivery tolerance rule (under tolerance must be less than order quantity) in PO create/update and PO-linked GRN create/update flows with the required validation message, switched export invoice amount-in-words to international numbering for non-India countries, and reordered Sales Invoice/Export Invoice/Quotation item-table columns to place Base Unit and Packing / Order Unit immediately after item description.
+
+## BE-87: Inventory Count Difference Accept/Recount Workflow with Audit
+**Update**: Added Inventory Count Difference action APIs with mandatory reason-code acceptance, admin-only accept authorization (Super Admin equivalent), permission-based recount clear flow, stock update-on-accept logic, and per-item acceptance audit logging (old/new/difference/reason/user/timestamp).
+
 ## BE-86: Quotation PDF Approved/Not Approved Watermark Restoration
 **Update**: Fixed Quotation PDF context to pass `watermark_text` using quotation status (`Approved` for non-draft, `Not Approved` for draft), restoring the missing status watermark while preserving existing billing PDF template behavior.
 

@@ -22,6 +22,10 @@ const LoginPage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [changePasswordData, setChangePasswordData] = useState({
     current_password: '',
     new_password: '',
@@ -98,60 +102,96 @@ const LoginPage = () => {
               <label htmlFor="current_password" className="hms-label">
                 Current Password
               </label>
-              <input
-                id="current_password"
-                type="password"
-                autoComplete="current-password"
-                value={changePasswordData.current_password}
-                onChange={(e) =>
-                  setChangePasswordData({
-                    ...changePasswordData,
-                    current_password: e.target.value,
-                  })
-                }
-                className="hms-input"
-                required
-              />
+              <div className="relative">
+                <input
+                  id="current_password"
+                  type={showCurrentPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  value={changePasswordData.current_password}
+                  onChange={(e) =>
+                    setChangePasswordData({
+                      ...changePasswordData,
+                      current_password: e.target.value,
+                    })
+                  }
+                  className="hms-input pr-10"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCurrentPassword((prev) => !prev)}
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-neutral-500 hover:text-neutral-700"
+                  aria-label={showCurrentPassword ? 'Hide current password' : 'Show current password'}
+                >
+                  <span className="material-icons text-base" aria-hidden="true">
+                    {showCurrentPassword ? 'visibility_off' : 'visibility'}
+                  </span>
+                </button>
+              </div>
             </div>
 
             <div>
               <label htmlFor="new_password" className="hms-label">
                 New Password (min 8 chars, 1 uppercase, 1 number)
               </label>
-              <input
-                id="new_password"
-                type="password"
-                autoComplete="new-password"
-                value={changePasswordData.new_password}
-                onChange={(e) =>
-                  setChangePasswordData({
-                    ...changePasswordData,
-                    new_password: e.target.value,
-                  })
-                }
-                className="hms-input"
-                required
-              />
+              <div className="relative">
+                <input
+                  id="new_password"
+                  type={showNewPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  value={changePasswordData.new_password}
+                  onChange={(e) =>
+                    setChangePasswordData({
+                      ...changePasswordData,
+                      new_password: e.target.value,
+                    })
+                  }
+                  className="hms-input pr-10"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword((prev) => !prev)}
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-neutral-500 hover:text-neutral-700"
+                  aria-label={showNewPassword ? 'Hide new password' : 'Show new password'}
+                >
+                  <span className="material-icons text-base" aria-hidden="true">
+                    {showNewPassword ? 'visibility_off' : 'visibility'}
+                  </span>
+                </button>
+              </div>
             </div>
 
             <div>
               <label htmlFor="confirm_password" className="hms-label">
                 Confirm Password
               </label>
-              <input
-                id="confirm_password"
-                type="password"
-                autoComplete="new-password"
-                value={changePasswordData.confirm_password}
-                onChange={(e) =>
-                  setChangePasswordData({
-                    ...changePasswordData,
-                    confirm_password: e.target.value,
-                  })
-                }
-                className="hms-input"
-                required
-              />
+              <div className="relative">
+                <input
+                  id="confirm_password"
+                  type={showConfirmPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  value={changePasswordData.confirm_password}
+                  onChange={(e) =>
+                    setChangePasswordData({
+                      ...changePasswordData,
+                      confirm_password: e.target.value,
+                    })
+                  }
+                  className="hms-input pr-10"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword((prev) => !prev)}
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-neutral-500 hover:text-neutral-700"
+                  aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                >
+                  <span className="material-icons text-base" aria-hidden="true">
+                    {showConfirmPassword ? 'visibility_off' : 'visibility'}
+                  </span>
+                </button>
+              </div>
             </div>
 
             <button
@@ -204,16 +244,28 @@ const LoginPage = () => {
             <label htmlFor="password" className="hms-label">
               Password
             </label>
-            <input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="hms-input"
-              placeholder="••••••••"
-              required
-            />
+            <div className="relative">
+              <input
+                id="password"
+                type={showLoginPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="hms-input pr-10"
+                placeholder="••••••••"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowLoginPassword((prev) => !prev)}
+                className="absolute inset-y-0 right-0 flex items-center px-3 text-neutral-500 hover:text-neutral-700"
+                aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+              >
+                <span className="material-icons text-base" aria-hidden="true">
+                  {showLoginPassword ? 'visibility_off' : 'visibility'}
+                </span>
+              </button>
+            </div>
           </div>
 
           <button

@@ -77,6 +77,22 @@ def _get_partial_qty_grn_ids(db: Session, grn_ids: list[UUID]) -> set[str]:
     return {str(row.grn_id) for row in rows}
 
 
+def _validate_under_delivery_tolerance(under_delivery_tolerance: float, order_quantity: float) -> None:
+    if order_quantity > 0 and under_delivery_tolerance >= order_quantity:
+        raise HTTPException(
+            status_code=400,
+            detail="Under delivery tolerance must be less than order quantity",
+        )
+
+
+def _validate_payload_under_delivery_tolerance(under_delivery_tolerance: float, items: list) -> None:
+    for item in items:
+        _validate_under_delivery_tolerance(
+            float(under_delivery_tolerance or 0),
+            float(getattr(item, "quantity", 0) or 0),
+        )
+
+
 # ────────────────────────────── Purchase Orders ──────────────────────────────
 
 @router.get("/api/v1/purchase-orders")
@@ -126,6 +142,9 @@ async def create_purchase_order(
     # BUG-03: Thread-safe number generation with FOR UPDATE lock
     po_number = generate_po_number(db)
 
+    under_delivery_tolerance = float(payload.under_delivery_tolerance or 0)
+    _validate_payload_under_delivery_tolerance(under_delivery_tolerance, payload.items)
+
     po = PurchaseOrder(
         po_number=po_number,
         supplier_id=payload.supplier_id,
@@ -134,7 +153,7 @@ async def create_purchase_order(
         status="draft",  # BUG-13: Always force draft on create
         currency_code=payload.currency_code,
         exchange_rate=payload.exchange_rate,
-        under_delivery_tolerance=payload.under_delivery_tolerance,
+        under_delivery_tolerance=under_delivery_tolerance,
         over_delivery_tolerance=payload.over_delivery_tolerance,
         notes=payload.notes,
         created_by=current_user.id,
@@ -226,12 +245,15 @@ async def update_purchase_order(
     is_igst = tax_mode["is_igst"]
     gst_applicable = tax_mode["gst_applicable"]
 
+    under_delivery_tolerance = float(payload.under_delivery_tolerance or 0)
+    _validate_payload_under_delivery_tolerance(under_delivery_tolerance, payload.items)
+
     po.supplier_id = payload.supplier_id
     po.order_date = payload.order_date
     po.expected_delivery_date = payload.expected_delivery_date
     po.currency_code = payload.currency_code
     po.exchange_rate = payload.exchange_rate
-    po.under_delivery_tolerance = payload.under_delivery_tolerance
+    po.under_delivery_tolerance = under_delivery_tolerance
     po.over_delivery_tolerance = payload.over_delivery_tolerance
     po.notes = payload.notes
 
@@ -536,6 +558,7 @@ async def create_grn(
             resolved_po_item_id = po_item.id
 
             ordered_qty = float(po_item.quantity or 0)
+            _validate_under_delivery_tolerance(under_delivery_tolerance, ordered_qty)
             previously_received_qty = float(po_item.received_quantity or 0)
             current_receipt_qty = float(item.quantity or 0)
             cumulative_received_qty = previously_received_qty + current_receipt_qty
@@ -742,6 +765,7 @@ async def update_grn(
             resolved_po_item_id = po_item.id
 
             ordered_qty = float(po_item.quantity or 0)
+            _validate_under_delivery_tolerance(float(grn.under_delivery_tolerance or 0), ordered_qty)
             previously_received_qty = float(po_item.received_quantity or 0)
             current_receipt_qty = float(item.quantity or 0)
             cumulative_received_qty = previously_received_qty + current_receipt_qty

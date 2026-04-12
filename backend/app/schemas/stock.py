@@ -100,3 +100,42 @@ class InventoryCountDifferenceResponse(BaseModel):
     count_performed_by: str
     total_items: int
     items: list[InventoryCountDifferenceItemResponse]
+
+
+class InventoryCountDifferenceReasonCodeResponse(BaseModel):
+    code: str
+    label: str
+
+
+class InventoryCountDifferenceAcceptRequest(BaseModel):
+    reason_code: str
+
+    @field_validator("reason_code")
+    @classmethod
+    def validate_reason_code(cls, value: str) -> str:
+        token = (value or "").strip()
+        if not token:
+            raise ValueError("reason_code is required")
+        return token
+
+
+class InventoryCountDifferenceActionItemResponse(BaseModel):
+    serial_number: int
+    product_id: str
+    product_code: Optional[str] = None
+    product_name: Optional[str] = None
+    old_qty: float
+    new_qty: float
+    difference_qty: float
+    reason_code: Optional[str] = None
+
+
+class InventoryCountDifferenceActionResponse(BaseModel):
+    count_number: str
+    action: str
+    reason_code: Optional[str] = None
+    total_rows: int
+    adjusted_rows: int
+    adjusted_total_qty: float
+    message: str
+    items: list[InventoryCountDifferenceActionItemResponse]

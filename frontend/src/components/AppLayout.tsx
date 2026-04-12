@@ -124,7 +124,7 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
       items: [
         { to: '/inventory/stock', label: 'Stock', visible: can('stock_ledger_read'), icon: 'warehouse' },
         { to: '/inventory/count', label: 'Inventory Count', visible: can('stock_ledger_write'), icon: 'fact_check' },
-        { to: '/inventory/count-difference', label: 'Count Difference', visible: isAdmin && can('stock_ledger_read'), icon: 'difference' },
+        { to: '/inventory/count-difference', label: 'Count Difference', visible: can('stock_ledger_read'), icon: 'difference' },
       ],
     },
     {

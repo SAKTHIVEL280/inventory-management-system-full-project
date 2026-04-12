@@ -397,10 +397,32 @@ const InvoicesPage = () => {
     return Math.round(t + t * gstRate / 100);
   };
   const formatAmount = (p: number) => `₹${(p / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
-  // SAL-028: Proper status label formatting with correct capitalization
-  const formatStatusLabel = (status?: string) => {
-    const s = (status || 'unknown').replace('_', ' ');
-    return s.charAt(0).toUpperCase() + s.slice(1);
+  const deriveInvoicePaymentStatusLabel = (invoice?: Pick<SalesInvoice, 'status' | 'amount_paid' | 'total_amount'>) => {
+    if (!invoice) return '-';
+    const token = (invoice.status || '').trim().toLowerCase();
+    if (token === 'draft') return 'Draft';
+    if (token === 'cancelled') return 'Cancelled';
+
+    const paid = Number(invoice.amount_paid || 0);
+    const total = Number(invoice.total_amount || 0);
+
+    if (paid <= 0) return 'Unpaid';
+    if (total > 0 && paid >= total) return 'Fully Received';
+    return 'Partially Received';
+  };
+
+  const invoiceStatusBadgeClass = (invoice?: Pick<SalesInvoice, 'status' | 'amount_paid' | 'total_amount'>) => {
+    if (!invoice) return 'bg-gray-100 text-gray-700';
+    const token = (invoice.status || '').trim().toLowerCase();
+    if (token === 'draft') return 'bg-gray-100 text-gray-700';
+    if (token === 'cancelled') return 'bg-red-100 text-red-700';
+
+    const paid = Number(invoice.amount_paid || 0);
+    const total = Number(invoice.total_amount || 0);
+
+    if (paid <= 0) return 'bg-blue-100 text-blue-700';
+    if (total > 0 && paid >= total) return 'bg-green-100 text-green-700';
+    return 'bg-amber-100 text-amber-700';
   };
   const productById = (id: string) => products.find(p => p.id === id);
   const uomAbbreviationById = useCallback((id?: string | null) => uomOptions.find((u) => u.id === id)?.abbreviation || '', [uomOptions]);
@@ -620,8 +642,6 @@ const InvoicesPage = () => {
     return matchesSearch && matchesFrom && matchesTo;
   });
 
-  const sc: Record<string, string> = { draft: 'bg-gray-100 text-gray-700', issued: 'bg-blue-100 text-blue-700', partial_paid: 'bg-amber-100 text-amber-700', paid: 'bg-green-100 text-green-700', cancelled: 'bg-red-100 text-red-700' };
-
   return (
     <AppLayout title="Sales Invoices">
       <div className="space-y-6">
@@ -689,7 +709,7 @@ const InvoicesPage = () => {
                     <td className="px-4 py-3">{inv.due_date || '-'}</td>
                     <td className="px-4 py-3 text-right font-medium">{formatAmount(inv.total_amount)}</td>
                     <td className="px-4 py-3 text-right font-medium text-red-600">{inv.amount_due > 0 ? formatAmount(inv.amount_due) : '-'}</td>
-                    <td className="px-4 py-3 text-center"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${sc[inv.status] || 'bg-gray-100'}`}>{formatStatusLabel(inv.status)}</span></td>
+                    <td className="px-4 py-3 text-center"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${invoiceStatusBadgeClass(inv)}`}>{deriveInvoicePaymentStatusLabel(inv)}</span></td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-2">
                         <button onClick={() => handleViewInvoice(inv)} className="rounded px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10">View</button>
@@ -967,8 +987,8 @@ const InvoicesPage = () => {
                 </div>
                 <div>
                   <p className="text-xs text-neutral-600">Status</p>
-                  <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${sc[selectedInvoice.status] || 'bg-gray-100'}`}>
-                    {formatStatusLabel(selectedInvoice.status)}
+                  <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${invoiceStatusBadgeClass(selectedInvoice)}`}>
+                    {deriveInvoicePaymentStatusLabel(selectedInvoice)}
                   </span>
                 </div>
                 <div>

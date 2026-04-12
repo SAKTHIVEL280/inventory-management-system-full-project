@@ -217,7 +217,7 @@ function App() {
         <Route
           path="/inventory/count-difference"
           element={
-            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.STOCK_LEDGER_READ} requiredRole="admin">
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.STOCK_LEDGER_READ}>
               <InventoryCountDifferencePage />
             </ProtectedRoute>
           }

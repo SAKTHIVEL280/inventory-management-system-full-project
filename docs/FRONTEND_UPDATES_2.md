@@ -1,5 +1,14 @@
 # Frontend Updates Log
 
+## FE-94: Password Visibility Toggle in User Management and Login
+**Update**: Added eye-icon show/hide password toggles for Create User and Edit User password field in User Management, and for Login + first-login Change Password fields to improve input usability while keeping default masked behavior.
+
+## FE-93: Invoice Payment Status Labels + Dashboard Paid/Issued Wording Consistency
+**Update**: Updated Sales Invoice status display to derive payment labels from actual paid-vs-total amounts (`Unpaid`, `Partially Received`, `Fully Received`) and standardized Dashboard wording/formatting to use title-case labels with consistent badge styling, including `Partially Paid` and properly rendered `Issued` status.
+
+## FE-92: Count Difference Accept/Recount Actions with Reason Enforcement
+**Update**: Enhanced Inventory Count Difference UI with mandatory reason-code dropdown for Accept Difference, admin-only accept control, permission-based Recount action, and live refresh after action completion.
+
 ## FE-91: Frontend Architecture Baseline Mapping and Validation
 **Update**: Completed frontend-wide source validation of app bootstrap, protected routing, auth store, API client patterns, and page-level data-fetching paths to establish an implementation-accurate baseline for upcoming tasks; no frontend runtime behavior changes were introduced.
 

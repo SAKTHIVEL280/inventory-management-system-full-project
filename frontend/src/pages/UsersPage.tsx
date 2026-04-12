@@ -29,6 +29,7 @@ const UsersPage = () => {
   const [formError, setFormError] = useState('');
   const [editingUser, setEditingUser] = useState<UserManagement | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['users'],
@@ -93,12 +94,14 @@ const UsersPage = () => {
   const resetForm = () => {
     setEditingUser(null);
     setFormError('');
+    setShowPassword(false);
     reset({ full_name: '', email: '', password: '', role: 'inventory' });
   };
 
   const startEdit = (user: UserManagement) => {
     setEditingUser(user);
     setFormError('');
+    setShowPassword(false);
     setValue('full_name', user.full_name);
     setValue('email', user.email);
     setValue('role', user.role);
@@ -170,7 +173,26 @@ const UsersPage = () => {
               <label htmlFor="password" className="hms-label">
                 {editingUser ? 'New password (leave blank to keep)' : 'Temporary password'}
               </label>
-              <input id="password" type="password" className="hms-input" placeholder={editingUser ? 'Leave blank to keep current' : 'Temporary password'} autoComplete="new-password" {...register('password')} />
+              <div className="relative">
+                <input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  className="hms-input pr-10"
+                  placeholder={editingUser ? 'Leave blank to keep current' : 'Temporary password'}
+                  autoComplete="new-password"
+                  {...register('password')}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  className="absolute inset-y-0 right-0 flex items-center px-3 text-neutral-500 hover:text-neutral-700"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  <span className="material-icons text-base" aria-hidden="true">
+                    {showPassword ? 'visibility_off' : 'visibility'}
+                  </span>
+                </button>
+              </div>
             </div>
             <div>
               <label htmlFor="role" className="hms-label">Role</label>
