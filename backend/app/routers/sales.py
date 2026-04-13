@@ -19,10 +19,10 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 from app.database import get_db
-from app.dependencies import require_permissions
+from app.dependencies import enforce_resource_ownership, require_permissions
 from app.models.user import User
 from app.models.product import Product
 from app.models.customer import Customer
@@ -61,8 +61,22 @@ from app.services.order_number_service import (
 from app.services.gst_service import determine_tax_mode, determine_default_invoice_type, invoice_type_tax_mode, is_india_country, calc_line_item, split_tax
 from app.services.stock_service import get_current_stock, add_stock_entry, refresh_materialized_view
 from app.config import settings
+from app.utils.input_validation import validate_optional_token
 
 router = APIRouter(tags=["sales"])
+
+
+def _scope_to_owner(query, model, current_user: User):
+    if current_user.role in {"admin", "accounting"}:
+        return query
+    owner_col = getattr(model, "created_by", None)
+    if owner_col is None:
+        return query
+    return query.filter(or_(owner_col == current_user.id, owner_col.is_(None)))
+
+
+def _enforce_owner(record, current_user: User) -> None:
+    enforce_resource_ownership(getattr(record, "created_by", None), current_user)
 
 
 def _compute_invoice_status(amount_paid: int, total_amount: int) -> str:
@@ -368,6 +382,7 @@ def _collect_batch_and_date_errors(
 def _validate_invoice_line_items_for_save(
     db: Session,
     items,
+    current_user: User,
     allow_deleted_products: bool = False,
 ) -> dict[str, Product]:
     """Validate invoice items and return product cache for reuse in save flow."""
@@ -385,6 +400,7 @@ def _validate_invoice_line_items_for_save(
             product = product_query.first()
             if not product:
                 raise HTTPException(status_code=400, detail="Invalid product")
+            _enforce_owner(product, current_user)
             product_cache[product_key] = product
             batch_cache[product_key] = _build_product_batch_snapshot(db, item.product_id)
 
@@ -526,7 +542,14 @@ async def list_quotations(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("quotations_read")),
 ):
+    status = validate_optional_token(
+        status,
+        field_name="status",
+        allowed={"draft", "sent", "accepted", "rejected", "expired", "converted", "cancelled"},
+    )
+
     query = db.query(Quotation)
+    query = _scope_to_owner(query, Quotation, current_user)
     if archived_only:
         query = query.filter(Quotation.is_deleted == True)
     elif not include_archived:
@@ -563,6 +586,7 @@ async def create_quotation(
     customer = db.query(Customer).filter(Customer.id == payload.customer_id, Customer.is_deleted == False).first()
     if not customer:
         raise HTTPException(status_code=400, detail="Invalid customer")
+    _enforce_owner(customer, current_user)
 
     # SAL-006: Valid Until must be a future date
     if payload.valid_until and payload.valid_until <= date.today():
@@ -591,6 +615,10 @@ async def create_quotation(
 
     subtotal = total_discount = total_taxable = total_cgst = total_sgst = total_igst = 0
     for item in payload.items:
+        product = db.query(Product).filter(Product.id == item.product_id, Product.is_deleted == False).first()
+        if not product:
+            raise HTTPException(status_code=400, detail=f"Invalid product: {item.product_id}")
+        _enforce_owner(product, current_user)
         calc = calc_line_item(
             item.quantity,
             item.unit_price,
@@ -643,6 +671,7 @@ async def get_quotation(
     q = db.query(Quotation).filter(Quotation.id == quotation_id, Quotation.is_deleted == False).first()
     if not q:
         raise HTTPException(status_code=404, detail="Quotation not found")
+    _enforce_owner(q, current_user)
     # BUG-14: Auto-expire on read
     _auto_expire_quotation(q)
     db.commit()
@@ -663,6 +692,7 @@ async def update_quotation(
     q = db.query(Quotation).filter(Quotation.id == quotation_id, Quotation.is_deleted == False).first()
     if not q:
         raise HTTPException(status_code=404, detail="Quotation not found")
+    _enforce_owner(q, current_user)
     if q.status not in {"draft", "sent"}:
         raise HTTPException(status_code=400, detail="Quotation cannot be edited in current status")
 
@@ -671,6 +701,11 @@ async def update_quotation(
         raise HTTPException(status_code=400, detail="Valid Until date must be a future date")
 
     # BUG-02: Auto-detect GST mode
+    customer = db.query(Customer).filter(Customer.id == payload.customer_id, Customer.is_deleted == False).first()
+    if not customer:
+        raise HTTPException(status_code=400, detail="Invalid customer")
+    _enforce_owner(customer, current_user)
+
     tax_mode = determine_tax_mode(db, "customer", payload.customer_id)
     is_igst = tax_mode["is_igst"]
     gst_applicable = tax_mode["gst_applicable"]
@@ -689,6 +724,10 @@ async def update_quotation(
 
     subtotal = total_discount = total_taxable = total_cgst = total_sgst = total_igst = 0
     for item in payload.items:
+        product = db.query(Product).filter(Product.id == item.product_id, Product.is_deleted == False).first()
+        if not product:
+            raise HTTPException(status_code=400, detail=f"Invalid product: {item.product_id}")
+        _enforce_owner(product, current_user)
         calc = calc_line_item(
             item.quantity,
             item.unit_price,
@@ -742,6 +781,7 @@ async def quotation_status(
     q = db.query(Quotation).filter(Quotation.id == quotation_id, Quotation.is_deleted == False).first()
     if not q:
         raise HTTPException(status_code=404, detail="Quotation not found")
+    _enforce_owner(q, current_user)
 
     allowed = {
         "draft": {"sent", "expired"},
@@ -766,6 +806,7 @@ async def archive_quotation(
     q = db.query(Quotation).filter(Quotation.id == quotation_id, Quotation.is_deleted == False).first()
     if not q:
         raise HTTPException(status_code=404, detail="Quotation not found")
+    _enforce_owner(q, current_user)
 
     q.is_deleted = True
     q.deleted_at = datetime.utcnow()
@@ -783,6 +824,7 @@ async def restore_quotation(
     q = db.query(Quotation).filter(Quotation.id == quotation_id, Quotation.is_deleted == True).first()
     if not q:
         raise HTTPException(status_code=404, detail="Archived quotation not found")
+    _enforce_owner(q, current_user)
 
     q.is_deleted = False
     q.deleted_at = None
@@ -801,6 +843,7 @@ async def convert_quotation_to_so(
     q = db.query(Quotation).filter(Quotation.id == quotation_id, Quotation.is_deleted == False).first()
     if not q:
         raise HTTPException(status_code=404, detail="Quotation not found")
+    _enforce_owner(q, current_user)
     if q.status not in {"sent", "accepted"}:
         raise HTTPException(status_code=400, detail="Quotation cannot be converted in current status")
 
@@ -867,6 +910,12 @@ async def list_sales_orders(
     current_user: User = Depends(require_permissions("sales_orders_read")),
 ):
     _sales_order_module_removed()
+    status = validate_optional_token(
+        status,
+        field_name="status",
+        allowed={"draft", "confirmed", "partial", "fulfilled", "cancelled"},
+    )
+
     query = db.query(SalesOrder)
     if archived_only:
         query = query.filter(SalesOrder.is_deleted == True)
@@ -1274,7 +1323,14 @@ async def list_invoices(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("sales_invoices_read")),
 ):
+    status = validate_optional_token(
+        status,
+        field_name="status",
+        allowed={"draft", "issued", "partial_paid", "paid", "cancelled"},
+    )
+
     query = db.query(SalesInvoice).filter(SalesInvoice.is_deleted == False)
+    query = _scope_to_owner(query, SalesInvoice, current_user)
     if status:
         normalized_status = status.strip().lower()
         if normalized_status in {"issued", "partial_paid", "paid"}:
@@ -1312,6 +1368,7 @@ async def get_invoice_batch_options(
     product = db.query(Product).filter(Product.id == product_id, Product.is_deleted == False).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
+    _enforce_owner(product, current_user)
 
     snapshot = _build_product_batch_snapshot(db, product_id)
     batch_items = [
@@ -1340,10 +1397,11 @@ async def create_invoice(
     customer = db.query(Customer).filter(Customer.id == payload.customer_id, Customer.is_deleted == False).first()
     if not customer:
         raise HTTPException(status_code=400, detail="Invalid customer")
+    _enforce_owner(customer, current_user)
 
     _validate_shipping_address_for_invoice(customer)
 
-    product_cache = _validate_invoice_line_items_for_save(db, payload.items)
+    product_cache = _validate_invoice_line_items_for_save(db, payload.items, current_user)
 
     calculated_due_date = _calculate_invoice_due_date(payload.invoice_date, customer)
     resolved_due_date = payload.due_date or calculated_due_date
@@ -1453,6 +1511,7 @@ async def get_invoice(
     invoice = db.query(SalesInvoice).filter(SalesInvoice.id == invoice_id, SalesInvoice.is_deleted == False).first()
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    _enforce_owner(invoice, current_user)
     invoice.status = _derive_invoice_status(invoice.status, int(invoice.amount_paid or 0), int(invoice.total_amount or 0))
     items = db.query(SalesInvoiceItem).filter(SalesInvoiceItem.invoice_id == invoice_id).all()
     return {"invoice": invoice, "items": items}
@@ -1468,16 +1527,18 @@ async def update_invoice(
     invoice = db.query(SalesInvoice).filter(SalesInvoice.id == invoice_id, SalesInvoice.is_deleted == False).first()
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    _enforce_owner(invoice, current_user)
     if invoice.status != "draft":
         raise HTTPException(status_code=400, detail="Only draft invoice can be edited")
 
     customer = db.query(Customer).filter(Customer.id == payload.customer_id, Customer.is_deleted == False).first()
     if not customer:
         raise HTTPException(status_code=400, detail="Invalid customer")
+    _enforce_owner(customer, current_user)
 
     _validate_shipping_address_for_invoice(customer)
 
-    product_cache = _validate_invoice_line_items_for_save(db, payload.items)
+    product_cache = _validate_invoice_line_items_for_save(db, payload.items, current_user)
 
     calculated_due_date = _calculate_invoice_due_date(payload.invoice_date, customer)
     resolved_due_date = payload.due_date or calculated_due_date
@@ -1583,13 +1644,14 @@ async def issue_invoice(
     invoice = db.query(SalesInvoice).filter(SalesInvoice.id == invoice_id, SalesInvoice.is_deleted == False).first()
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    _enforce_owner(invoice, current_user)
     if invoice.status != "draft":
         raise HTTPException(status_code=400, detail="Only draft invoices can be issued")
 
     items = db.query(SalesInvoiceItem).filter(SalesInvoiceItem.invoice_id == invoice.id).all()
 
     # SAL-044 safety guard: block issue if stored batch/date data is invalid.
-    _validate_invoice_line_items_for_save(db, items, allow_deleted_products=True)
+    _validate_invoice_line_items_for_save(db, items, current_user, allow_deleted_products=True)
 
     for item in items:
         stock = get_current_stock(db, item.product_id)
@@ -1653,10 +1715,13 @@ async def send_invoice_email(
     invoice = db.query(SalesInvoice).filter(SalesInvoice.id == invoice_id, SalesInvoice.is_deleted == False).first()
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    _enforce_owner(invoice, current_user)
 
     recipient = (payload or {}).get("email") if payload else None
     if not recipient:
         customer = db.query(Customer).filter(Customer.id == invoice.customer_id, Customer.is_deleted == False).first()
+        if customer:
+            _enforce_owner(customer, current_user)
         recipient = customer.email if customer else None
 
     if not recipient:
@@ -1692,6 +1757,7 @@ async def list_sales_returns(
     current_user: User = Depends(require_permissions("sales_returns_read")),
 ):
     query = db.query(SalesReturn).filter(SalesReturn.is_deleted == False)
+    query = _scope_to_owner(query, SalesReturn, current_user)
     total = query.count()
     rows = query.order_by(SalesReturn.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
     return {"items": rows, "total": total, "page": page, "page_size": page_size, "has_more": (page * page_size) < total}
@@ -1706,6 +1772,12 @@ async def create_sales_return(
     invoice = db.query(SalesInvoice).filter(SalesInvoice.id == payload.invoice_id, SalesInvoice.is_deleted == False).first()
     if not invoice:
         raise HTTPException(status_code=400, detail="Invalid invoice")
+    _enforce_owner(invoice, current_user)
+
+    customer = db.query(Customer).filter(Customer.id == payload.customer_id, Customer.is_deleted == False).first()
+    if not customer:
+        raise HTTPException(status_code=400, detail="Invalid customer")
+    _enforce_owner(customer, current_user)
 
     # BUG-19: Keep return tax mode aligned with India-only GST applicability.
     tax_mode = determine_tax_mode(db, "customer", payload.customer_id)
@@ -1727,8 +1799,17 @@ async def create_sales_return(
     subtotal = total_gst = 0
     for item in payload.items:
         invoice_item = db.query(SalesInvoiceItem).filter(SalesInvoiceItem.id == item.invoice_item_id).first() if item.invoice_item_id else None
+        if invoice_item:
+            _enforce_owner(invoice_item, current_user)
+            if invoice_item.invoice_id != payload.invoice_id:
+                raise HTTPException(status_code=400, detail="Invoice item does not belong to invoice")
         if invoice_item and float(item.quantity) > float(invoice_item.quantity):
             raise HTTPException(status_code=400, detail="Return quantity exceeds invoiced quantity")
+
+        product = db.query(Product).filter(Product.id == item.product_id, Product.is_deleted == False).first()
+        if not product:
+            raise HTTPException(status_code=400, detail=f"Invalid product: {item.product_id}")
+        _enforce_owner(product, current_user)
 
         taxable = round(item.unit_price * item.quantity)
         # BUG-19: Use invoice's IGST flag for consistent tax
@@ -1768,6 +1849,7 @@ async def get_sales_return(
     ret = db.query(SalesReturn).filter(SalesReturn.id == return_id, SalesReturn.is_deleted == False).first()
     if not ret:
         raise HTTPException(status_code=404, detail="Sales return not found")
+    _enforce_owner(ret, current_user)
     items = db.query(SalesReturnItem).filter(SalesReturnItem.sales_return_id == return_id).all()
     return {"sales_return": ret, "items": items}
 
@@ -1781,6 +1863,7 @@ async def confirm_sales_return(
     ret = db.query(SalesReturn).filter(SalesReturn.id == return_id, SalesReturn.is_deleted == False).first()
     if not ret:
         raise HTTPException(status_code=404, detail="Sales return not found")
+    _enforce_owner(ret, current_user)
     if ret.status != "draft":
         raise HTTPException(status_code=400, detail="Only draft sales return can be confirmed")
 
@@ -1806,6 +1889,7 @@ async def confirm_sales_return(
     # BUG-25: Adjust invoice amount_due (credit note behavior)
     invoice = db.query(SalesInvoice).filter(SalesInvoice.id == ret.invoice_id).first()
     if invoice:
+        _enforce_owner(invoice, current_user)
         invoice.amount_due = max(0, invoice.amount_due - ret.total_amount)
         if invoice.amount_due == 0:
             invoice.status = "paid"
@@ -1827,6 +1911,7 @@ async def cancel_sales_return(
     ret = db.query(SalesReturn).filter(SalesReturn.id == return_id, SalesReturn.is_deleted == False).first()
     if not ret:
         raise HTTPException(status_code=404, detail="Sales return not found")
+    _enforce_owner(ret, current_user)
     if ret.status != "draft":
         raise HTTPException(status_code=400, detail="Only draft sales return can be cancelled")
 
@@ -1851,6 +1936,7 @@ async def download_invoice_pdf(
     invoice = db.query(SalesInvoice).filter(SalesInvoice.id == invoice_id, SalesInvoice.is_deleted == False).first()
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    _enforce_owner(invoice, current_user)
 
     pdf_bytes = generate_invoice_pdf(db, invoice_id)
     return Response(
@@ -1875,6 +1961,7 @@ async def download_quotation_pdf(
     q = db.query(Quotation).filter(Quotation.id == quotation_id, Quotation.is_deleted == False).first()
     if not q:
         raise HTTPException(status_code=404, detail="Quotation not found")
+    _enforce_owner(q, current_user)
 
     pdf_bytes = generate_quotation_pdf(db, quotation_id)
     return Response(
@@ -1896,10 +1983,13 @@ async def send_quotation_email(
     q = db.query(Quotation).filter(Quotation.id == quotation_id, Quotation.is_deleted == False).first()
     if not q:
         raise HTTPException(status_code=404, detail="Quotation not found")
+    _enforce_owner(q, current_user)
 
     recipient = (payload or {}).get("email") if payload else None
     if not recipient:
         customer = db.query(Customer).filter(Customer.id == q.customer_id, Customer.is_deleted == False).first()
+        if customer:
+            _enforce_owner(customer, current_user)
         recipient = customer.email if customer else None
 
     if not recipient:

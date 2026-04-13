@@ -1,6 +1,8 @@
 """Authentication router."""
+import secrets
 from datetime import timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -22,14 +24,32 @@ from app.services.auth_service import (
     verify_password,
     hash_password,
 )
+from app.services.audit_service import log_audit_event
 from app.config import settings
+from app.rate_limit import limiter
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 
+def _set_csrf_cookie(response: Response) -> None:
+    csrf_token = secrets.token_urlsafe(32)
+    response.set_cookie(
+        key=settings.csrf_cookie_name,
+        value=csrf_token,
+        max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
+        secure=settings.cookie_secure,
+        httponly=False,
+        samesite="lax",
+        path="/",
+    )
+
+
 @router.post("/login", response_model=TokenResponse)
+@limiter.limit(settings.rate_limit_login)
 async def login(
+    request: Request,
     credentials: UserLogin,
+    response: Response,
     db: Session = Depends(get_db),
 ):
     """
@@ -47,12 +67,30 @@ async def login(
     try:
         user = authenticate_user(db, credentials.email, credentials.password)
     except ValueError as e:
+        log_audit_event(
+            db,
+            action="LOGIN",
+            resource_type="auth",
+            status="failure",
+            details={"email": credentials.email, "reason": str(e)},
+            ip_address=request.client.host if request.client else None,
+        )
+        db.commit()
         raise HTTPException(
             status_code=423,
             detail=str(e),
         )
     
     if not user:
+        log_audit_event(
+            db,
+            action="LOGIN",
+            resource_type="auth",
+            status="failure",
+            details={"email": credentials.email, "reason": "invalid_credentials"},
+            ip_address=request.client.host if request.client else None,
+        )
+        db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
@@ -65,6 +103,39 @@ async def login(
     )
     refresh_token = create_refresh_token(data={"sub": str(user.id)})
 
+    # Keep bearer compatibility while migrating clients to cookie-based auth.
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        max_age=settings.access_token_expire_minutes * 60,
+        secure=settings.cookie_secure,
+        httponly=True,
+        samesite="lax",
+        path="/",
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
+        secure=settings.cookie_secure,
+        httponly=True,
+        samesite="lax",
+        path="/",
+    )
+    if settings.csrf_enabled:
+        _set_csrf_cookie(response)
+
+    log_audit_event(
+        db,
+        action="LOGIN",
+        resource_type="auth",
+        status="success",
+        user_id=user.id,
+        details={"email": user.email},
+        ip_address=request.client.host if request.client else None,
+    )
+    db.commit()
+
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -73,8 +144,11 @@ async def login(
 
 
 @router.post("/refresh", response_model=TokenResponse)
+@limiter.limit(settings.rate_limit_refresh)
 async def refresh(
-    request: RefreshTokenRequest,
+    request: Request,
+    response: Response,
+    payload: Optional[RefreshTokenRequest] = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -88,18 +162,34 @@ async def refresh(
     from jose import jwt, JWTError
 
     try:
-        payload = jwt.decode(
-            request.refresh_token,
+        refresh_token = payload.refresh_token if payload else request.cookies.get("refresh_token")
+        if not refresh_token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing refresh token",
+            )
+
+        jwt_payload = jwt.decode(
+            refresh_token,
             settings.secret_key,
             algorithms=[settings.algorithm],
         )
-        user_id = payload.get("sub")
+        user_id = jwt_payload.get("sub")
         if not user_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid refresh token",
             )
     except JWTError:
+        log_audit_event(
+            db,
+            action="TOKEN_REFRESH",
+            resource_type="auth",
+            status="failure",
+            details={"reason": "invalid_refresh_token"},
+            ip_address=request.client.host if request.client else None,
+        )
+        db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid refresh token",
@@ -112,6 +202,15 @@ async def refresh(
     ).first()
 
     if not user:
+        log_audit_event(
+            db,
+            action="TOKEN_REFRESH",
+            resource_type="auth",
+            status="failure",
+            details={"reason": "inactive_or_missing_user"},
+            ip_address=request.client.host if request.client else None,
+        )
+        db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found or inactive",
@@ -123,9 +222,32 @@ async def refresh(
         expires_delta=access_token_expires,
     )
 
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        max_age=settings.access_token_expire_minutes * 60,
+        secure=settings.cookie_secure,
+        httponly=True,
+        samesite="lax",
+        path="/",
+    )
+    if settings.csrf_enabled:
+        _set_csrf_cookie(response)
+
+    log_audit_event(
+        db,
+        action="TOKEN_REFRESH",
+        resource_type="auth",
+        status="success",
+        user_id=user.id,
+        details={"email": user.email},
+        ip_address=request.client.host if request.client else None,
+    )
+    db.commit()
+
     return TokenResponse(
         access_token=access_token,
-        refresh_token=request.refresh_token,
+        refresh_token=refresh_token,
         user=get_user_response(user),
     )
 
@@ -145,35 +267,74 @@ async def get_me(
 
 @router.post("/logout")
 async def logout(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """
-    Logout endpoint - frontend should clear localStorage tokens.
+    Logout endpoint.
     
     Backend doesn't maintain token blacklist for now (stateless JWT).
-    Frontend is responsible for clearing tokens.
+    Browser session cookies are cleared on logout.
     """
+    response.delete_cookie("access_token", path="/")
+    response.delete_cookie("refresh_token", path="/")
+    response.delete_cookie(settings.csrf_cookie_name, path="/")
+
+    log_audit_event(
+        db,
+        action="LOGOUT",
+        resource_type="auth",
+        status="success",
+        user_id=current_user.id,
+        details={"email": current_user.email},
+        ip_address=request.client.host if request.client else None,
+    )
+    db.commit()
     return {"message": "Logged out successfully"}
 
 
 @router.post("/change-password")
 async def change_password(
-    request: ChangePasswordRequest,
+    request: Request,
+    payload: ChangePasswordRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
     Change user password - requires current password for verification.
     """
-    if not verify_password(request.current_password, current_user.hashed_password):
+    if not verify_password(payload.current_password, current_user.hashed_password):
+        log_audit_event(
+            db,
+            action="CHANGE_PASSWORD",
+            resource_type="auth",
+            status="failure",
+            user_id=current_user.id,
+            details={"reason": "invalid_current_password"},
+            ip_address=request.client.host if request.client else None,
+        )
+        db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Current password is incorrect",
         )
 
-    current_user.hashed_password = hash_password(request.new_password)
+    current_user.hashed_password = hash_password(payload.new_password)
     current_user.force_password_change = False
     db.add(current_user)
+    db.commit()
+
+    log_audit_event(
+        db,
+        action="CHANGE_PASSWORD",
+        resource_type="auth",
+        status="success",
+        user_id=current_user.id,
+        details={"email": current_user.email},
+        ip_address=request.client.host if request.client else None,
+    )
     db.commit()
 
     return {"message": "Password changed successfully"}

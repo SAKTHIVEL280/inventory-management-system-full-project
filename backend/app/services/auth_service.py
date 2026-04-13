@@ -138,7 +138,12 @@ def authenticate_user(
     After 5 failed attempts, the account is locked for 30 minutes.
     Raises ValueError with specific messages for lockout scenarios.
     """
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
+
+    def _to_utc(dt: datetime) -> datetime:
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
 
     user = db.query(User).filter(
         User.email == email,
@@ -150,8 +155,11 @@ def authenticate_user(
         return None
 
     # Check if account is locked
-    if user.locked_until and user.locked_until > datetime.utcnow():
-        remaining = (user.locked_until - datetime.utcnow()).total_seconds()
+    now_utc = datetime.now(timezone.utc)
+    locked_until_utc = _to_utc(user.locked_until) if user.locked_until else None
+
+    if locked_until_utc and locked_until_utc > now_utc:
+        remaining = (locked_until_utc - now_utc).total_seconds()
         remaining_minutes = int(remaining // 60) + 1
         raise ValueError(
             f"Account is locked due to too many failed login attempts. "
@@ -159,16 +167,17 @@ def authenticate_user(
         )
     
     # If lock has expired, reset the counter
-    if user.locked_until and user.locked_until <= datetime.utcnow():
+    if locked_until_utc and locked_until_utc <= now_utc:
         user.failed_login_attempts = 0
         user.locked_until = None
+        db.commit()
     
     if not verify_password(password, user.hashed_password):
         # Increment failed attempts
         user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
         
         if user.failed_login_attempts >= 5:
-            user.locked_until = datetime.utcnow() + timedelta(minutes=30)
+            user.locked_until = datetime.now(timezone.utc) + timedelta(minutes=30)
             db.commit()
             raise ValueError(
                 "Account has been locked for 30 minutes due to 5 failed login attempts."

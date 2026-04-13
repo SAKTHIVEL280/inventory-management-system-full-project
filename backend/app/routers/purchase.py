@@ -16,9 +16,10 @@ from datetime import datetime, date
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from app.database import get_db
-from app.dependencies import require_permissions
+from app.dependencies import enforce_resource_ownership, require_permissions
 from app.models.user import User
 from app.models.product import Product
 from app.models.supplier import Supplier
@@ -43,8 +44,22 @@ from app.services.order_number_service import (
 )
 from app.services.gst_service import determine_tax_mode, calc_line_item, split_tax
 from app.services.stock_service import add_stock_entry, refresh_materialized_view
+from app.utils.input_validation import validate_optional_token
 
 router = APIRouter(tags=["purchase"])
+
+
+def _scope_to_owner(query, model, current_user: User):
+    if current_user.role in {"admin", "accounting"}:
+        return query
+    owner_col = getattr(model, "created_by", None)
+    if owner_col is None:
+        return query
+    return query.filter(or_(owner_col == current_user.id, owner_col.is_(None)))
+
+
+def _enforce_owner(record, current_user: User) -> None:
+    enforce_resource_ownership(getattr(record, "created_by", None), current_user)
 
 
 def _derive_grn_status_display(raw_status: str | None, is_partial_qty: bool) -> str:
@@ -106,7 +121,14 @@ async def list_purchase_orders(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("purchase_orders_read")),
 ):
+    status = validate_optional_token(
+        status,
+        field_name="status",
+        allowed={"draft", "sent", "partial", "received", "completed", "cancelled", "confirmed"},
+    )
+
     query = db.query(PurchaseOrder)
+    query = _scope_to_owner(query, PurchaseOrder, current_user)
     if archived_only:
         query = query.filter(PurchaseOrder.is_deleted == True)
     elif not include_archived:
@@ -133,6 +155,8 @@ async def create_purchase_order(
     supplier = db.query(Supplier).filter(Supplier.id == payload.supplier_id, Supplier.is_deleted == False).first()
     if not supplier:
         raise HTTPException(status_code=400, detail="Invalid supplier")
+    _enforce_owner(supplier, current_user)
+    _enforce_owner(supplier, current_user)
 
     # BUG-02: Auto-detect GST mode based on supplier country/state
     tax_mode = determine_tax_mode(db, "supplier", payload.supplier_id)
@@ -166,6 +190,7 @@ async def create_purchase_order(
         product = db.query(Product).filter(Product.id == item.product_id, Product.is_deleted == False).first()
         if not product:
             raise HTTPException(status_code=400, detail=f"Invalid product: {item.product_id}")
+        _enforce_owner(product, current_user)
         calc = calc_line_item(
             item.quantity,
             item.unit_price,
@@ -219,6 +244,7 @@ async def get_purchase_order(
     po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id, PurchaseOrder.is_deleted == False).first()
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
+    _enforce_owner(po, current_user)
     items = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.purchase_order_id == po_id).all()
     return {"purchase_order": po, "items": items}
 
@@ -233,12 +259,14 @@ async def update_purchase_order(
     po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id, PurchaseOrder.is_deleted == False).first()
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
+    _enforce_owner(po, current_user)
     if po.status != "draft":
         raise HTTPException(status_code=400, detail="Only draft purchase orders can be edited")
 
     supplier = db.query(Supplier).filter(Supplier.id == payload.supplier_id, Supplier.is_deleted == False).first()
     if not supplier:
         raise HTTPException(status_code=400, detail="Invalid supplier")
+    _enforce_owner(supplier, current_user)
 
     # BUG-02: Auto-detect GST mode
     tax_mode = determine_tax_mode(db, "supplier", payload.supplier_id)
@@ -266,6 +294,7 @@ async def update_purchase_order(
         product = db.query(Product).filter(Product.id == item.product_id, Product.is_deleted == False).first()
         if not product:
             raise HTTPException(status_code=400, detail=f"Invalid product: {item.product_id}")
+        _enforce_owner(product, current_user)
         calc = calc_line_item(
             item.quantity,
             item.unit_price,
@@ -319,6 +348,7 @@ async def update_purchase_order_status(
     po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id, PurchaseOrder.is_deleted == False).first()
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
+    _enforce_owner(po, current_user)
 
     requested_status = (payload.status or "").strip().lower()
     if requested_status == "received":
@@ -340,6 +370,7 @@ async def update_purchase_order_status(
         supplier = db.query(Supplier).filter(Supplier.id == po.supplier_id, Supplier.is_deleted == False).first()
         if not supplier:
             raise HTTPException(status_code=400, detail="Cannot send PO: supplier reference is invalid")
+        _enforce_owner(supplier, current_user)
 
     # Database check constraint currently stores terminal fulfillment as `received`.
     po.status = "received" if requested_status == "completed" else requested_status
@@ -357,6 +388,7 @@ async def archive_purchase_order(
     po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id, PurchaseOrder.is_deleted == False).first()
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
+    _enforce_owner(po, current_user)
 
     po.is_deleted = True
     po.deleted_at = datetime.utcnow()
@@ -374,6 +406,7 @@ async def restore_purchase_order(
     po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id, PurchaseOrder.is_deleted == True).first()
     if not po:
         raise HTTPException(status_code=404, detail="Archived purchase order not found")
+    _enforce_owner(po, current_user)
 
     po.is_deleted = False
     po.deleted_at = None
@@ -395,7 +428,14 @@ async def list_grn(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("grn_read")),
 ):
+    status = validate_optional_token(
+        status,
+        field_name="status",
+        allowed={"draft", "confirmed", "cancelled"},
+    )
+
     query = db.query(GoodsReceiptNote)
+    query = _scope_to_owner(query, GoodsReceiptNote, current_user)
     if archived_only:
         query = query.filter(GoodsReceiptNote.is_deleted == True)
     elif not include_archived:
@@ -469,6 +509,7 @@ async def create_grn(
         po = db.query(PurchaseOrder).filter(PurchaseOrder.id == payload.purchase_order_id, PurchaseOrder.is_deleted == False).first()
         if not po:
             raise HTTPException(status_code=400, detail="Invalid purchase order")
+        _enforce_owner(po, current_user)
         if po.status not in {"sent", "partial"}:
             raise HTTPException(status_code=400, detail="GRN can be created only from sent or partial purchase orders")
         if po.supplier_id != payload.supplier_id:
@@ -513,6 +554,7 @@ async def create_grn(
         product = db.query(Product).filter(Product.id == item.product_id, Product.is_deleted == False).first()
         if not product:
             raise HTTPException(status_code=400, detail=f"Invalid product: {item.product_id}")
+        _enforce_owner(product, current_user)
 
         # GRN-007: MFG date must be a past date only
         from datetime import date
@@ -627,6 +669,7 @@ async def get_grn(
     grn = db.query(GoodsReceiptNote).filter(GoodsReceiptNote.id == grn_id, GoodsReceiptNote.is_deleted == False).first()
     if not grn:
         raise HTTPException(status_code=404, detail="GRN not found")
+    _enforce_owner(grn, current_user)
     items = db.query(GRNItem).filter(GRNItem.grn_id == grn_id).all()
 
     grn_dict = {c.name: getattr(grn, c.name) for c in grn.__table__.columns}
@@ -639,6 +682,8 @@ async def get_grn(
     is_partial_qty = str(grn.id) in _get_partial_qty_grn_ids(db, [grn.id])
     if grn.purchase_order_id:
         po = db.query(PurchaseOrder).filter(PurchaseOrder.id == grn.purchase_order_id).first()
+        if po:
+            _enforce_owner(po, current_user)
         grn_dict["po_number"] = po.po_number if po else None
     else:
         grn_dict["po_number"] = None
@@ -658,12 +703,14 @@ async def update_grn(
     grn = db.query(GoodsReceiptNote).filter(GoodsReceiptNote.id == grn_id, GoodsReceiptNote.is_deleted == False).first()
     if not grn:
         raise HTTPException(status_code=404, detail="GRN not found")
+    _enforce_owner(grn, current_user)
     if grn.status != "draft":
         raise HTTPException(status_code=400, detail="Only draft GRN can be edited")
 
     supplier = db.query(Supplier).filter(Supplier.id == payload.supplier_id, Supplier.is_deleted == False).first()
     if not supplier:
         raise HTTPException(status_code=400, detail="Invalid supplier")
+    _enforce_owner(supplier, current_user)
 
     # Validate receipt date is not in the future
     from datetime import date
@@ -684,6 +731,7 @@ async def update_grn(
         po = db.query(PurchaseOrder).filter(PurchaseOrder.id == payload.purchase_order_id, PurchaseOrder.is_deleted == False).first()
         if not po:
             raise HTTPException(status_code=400, detail="Invalid purchase order")
+        _enforce_owner(po, current_user)
         if po.status not in {"sent", "partial"}:
             raise HTTPException(status_code=400, detail="GRN can be created only from sent or partial purchase orders")
         if po.supplier_id != payload.supplier_id:
@@ -721,6 +769,7 @@ async def update_grn(
         product = db.query(Product).filter(Product.id == item.product_id, Product.is_deleted == False).first()
         if not product:
             raise HTTPException(status_code=400, detail=f"Invalid product: {item.product_id}")
+        _enforce_owner(product, current_user)
 
         # GRN-007: MFG date must be a past date only
         from datetime import date
@@ -834,6 +883,7 @@ async def confirm_grn(
     grn = db.query(GoodsReceiptNote).filter(GoodsReceiptNote.id == grn_id, GoodsReceiptNote.is_deleted == False).first()
     if not grn:
         raise HTTPException(status_code=404, detail="GRN not found")
+    _enforce_owner(grn, current_user)
     if grn.status != "draft":
         raise HTTPException(status_code=400, detail="GRN is not in draft status")
 
@@ -884,6 +934,8 @@ async def confirm_grn(
     # Update PO status based on fulfillment
     if grn.purchase_order_id:
         po = db.query(PurchaseOrder).filter(PurchaseOrder.id == grn.purchase_order_id).first()
+        if po:
+            _enforce_owner(po, current_user)
         if po and po.status not in {"received", "completed", "cancelled"}:
             po_items = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.purchase_order_id == po.id).all()
             if po_items:
@@ -912,6 +964,7 @@ async def cancel_grn(
     grn = db.query(GoodsReceiptNote).filter(GoodsReceiptNote.id == grn_id, GoodsReceiptNote.is_deleted == False).first()
     if not grn:
         raise HTTPException(status_code=404, detail="GRN not found")
+    _enforce_owner(grn, current_user)
     if grn.status != "draft":
         raise HTTPException(status_code=400, detail="Confirmed GRN cannot be cancelled")
     grn.status = "cancelled"
@@ -929,6 +982,7 @@ async def archive_grn(
     grn = db.query(GoodsReceiptNote).filter(GoodsReceiptNote.id == grn_id, GoodsReceiptNote.is_deleted == False).first()
     if not grn:
         raise HTTPException(status_code=404, detail="GRN not found")
+    _enforce_owner(grn, current_user)
 
     grn.is_deleted = True
     grn.deleted_at = datetime.utcnow()
@@ -946,6 +1000,7 @@ async def restore_grn(
     grn = db.query(GoodsReceiptNote).filter(GoodsReceiptNote.id == grn_id, GoodsReceiptNote.is_deleted == True).first()
     if not grn:
         raise HTTPException(status_code=404, detail="Archived GRN not found")
+    _enforce_owner(grn, current_user)
 
     grn.is_deleted = False
     grn.deleted_at = None
@@ -964,6 +1019,7 @@ async def list_purchase_returns(
     current_user: User = Depends(require_permissions("purchase_returns_read")),
 ):
     query = db.query(PurchaseReturn).filter(PurchaseReturn.is_deleted == False)
+    query = _scope_to_owner(query, PurchaseReturn, current_user)
     total = query.count()
     rows = query.order_by(PurchaseReturn.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
     return {"items": rows, "total": total, "page": page, "page_size": page_size, "has_more": (page * page_size) < total}
@@ -978,6 +1034,7 @@ async def create_purchase_return(
     grn = db.query(GoodsReceiptNote).filter(GoodsReceiptNote.id == payload.grn_id, GoodsReceiptNote.status == "confirmed", GoodsReceiptNote.is_deleted == False).first()
     if not grn:
         raise HTTPException(status_code=400, detail="Invalid confirmed GRN")
+    _enforce_owner(grn, current_user)
 
     # BUG-02: Auto-detect GST mode based on supplier
     tax_mode = determine_tax_mode(db, "supplier", payload.supplier_id)
@@ -1044,6 +1101,7 @@ async def get_purchase_return(
     ret = db.query(PurchaseReturn).filter(PurchaseReturn.id == return_id, PurchaseReturn.is_deleted == False).first()
     if not ret:
         raise HTTPException(status_code=404, detail="Purchase return not found")
+    _enforce_owner(ret, current_user)
     items = db.query(PurchaseReturnItem).filter(PurchaseReturnItem.purchase_return_id == return_id).all()
     return {"purchase_return": ret, "items": items}
 
@@ -1057,6 +1115,7 @@ async def confirm_purchase_return(
     ret = db.query(PurchaseReturn).filter(PurchaseReturn.id == return_id, PurchaseReturn.is_deleted == False).first()
     if not ret:
         raise HTTPException(status_code=404, detail="Purchase return not found")
+    _enforce_owner(ret, current_user)
     if ret.status != "draft":
         raise HTTPException(status_code=400, detail="Only draft purchase return can be confirmed")
 
@@ -1095,6 +1154,7 @@ async def cancel_purchase_return(
     ret = db.query(PurchaseReturn).filter(PurchaseReturn.id == return_id, PurchaseReturn.is_deleted == False).first()
     if not ret:
         raise HTTPException(status_code=404, detail="Purchase return not found")
+    _enforce_owner(ret, current_user)
     if ret.status != "draft":
         raise HTTPException(status_code=400, detail="Only draft purchase return can be cancelled")
     ret.status = "cancelled"
@@ -1118,6 +1178,7 @@ async def download_po_pdf(
     po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id, PurchaseOrder.is_deleted == False).first()
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
+    _enforce_owner(po, current_user)
 
     pdf_bytes = generate_po_pdf(db, po_id)
     return Response(

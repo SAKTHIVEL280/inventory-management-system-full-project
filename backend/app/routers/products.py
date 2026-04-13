@@ -8,9 +8,10 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import require_permissions
+from app.dependencies import enforce_resource_ownership, require_permissions
 from app.models.product import Product, ProductCategory, StockLedger, UnitOfMeasure
 from app.models.user import User
+from app.utils.input_validation import normalize_search_query
 from app.schemas.product import (
     ProductCategoryCreateRequest,
     ProductCategoryResponse,
@@ -22,6 +23,15 @@ from app.schemas.product import (
 )
 
 router = APIRouter(prefix="/api/v1/products", tags=["products"])
+
+
+def _scope_to_owner(query, model_cls, current_user: User):
+    if current_user.role in {"admin", "accounting"}:
+        return query
+    owner_col = getattr(model_cls, "created_by", None)
+    if owner_col is None:
+        return query
+    return query.filter(or_(owner_col == current_user.id, owner_col.is_(None)))
 
 
 def _to_integrity_http_error(exc: IntegrityError) -> HTTPException:
@@ -43,6 +53,26 @@ def _current_stock(db: Session, product_id: UUID) -> Decimal:
         .scalar()
     )
     return Decimal(quantity or 0)
+
+
+def _current_stock_map(db: Session, product_ids: list[UUID]) -> dict[UUID, Decimal]:
+    if not product_ids:
+        return {}
+
+    rows = (
+        db.query(
+            StockLedger.product_id,
+            func.coalesce(func.sum(StockLedger.quantity), 0).label("quantity"),
+        )
+        .filter(
+            StockLedger.product_id.in_(product_ids),
+            StockLedger.is_deleted == False,
+        )
+        .group_by(StockLedger.product_id)
+        .all()
+    )
+
+    return {row.product_id: Decimal(row.quantity or 0) for row in rows}
 
 
 def _to_product_with_stock(product: Product, stock: Decimal) -> ProductWithStockResponse:
@@ -82,7 +112,9 @@ async def list_products(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("products_read")),
 ):
+    search = normalize_search_query(search)
     query = db.query(Product).filter(Product.is_deleted == False)
+    query = _scope_to_owner(query, Product, current_user)
 
     if search:
         like_text = f"%{search}%"
@@ -114,7 +146,11 @@ async def list_products(
             .all()
         )
 
-    items = [_to_product_with_stock(product, _current_stock(db, product.id)) for product in products]
+    stock_by_product = _current_stock_map(db, [product.id for product in products])
+    items = [
+        _to_product_with_stock(product, stock_by_product.get(product.id, Decimal(0)))
+        for product in products
+    ]
 
     return ProductsListResponse(
         items=items,
@@ -138,6 +174,7 @@ async def create_product(
     )
     if not category:
         raise HTTPException(status_code=400, detail="Invalid category_id")
+    enforce_resource_ownership(category.created_by, current_user)
 
     primary_uom = None
     if payload.uom_id:
@@ -193,12 +230,9 @@ async def list_categories(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("categories_read")),
 ):
-    categories = (
-        db.query(ProductCategory)
-        .filter(ProductCategory.is_deleted == False)
-        .order_by(ProductCategory.name.asc())
-        .all()
-    )
+    query = db.query(ProductCategory).filter(ProductCategory.is_deleted == False)
+    query = _scope_to_owner(query, ProductCategory, current_user)
+    categories = query.order_by(ProductCategory.name.asc()).all()
     return [ProductCategoryResponse.model_validate(category) for category in categories]
 
 
@@ -213,6 +247,8 @@ async def create_category(
         .filter(func.lower(ProductCategory.name) == payload.name.lower())
         .first()
     )
+    if existing:
+        enforce_resource_ownership(existing.created_by, current_user)
     if existing and not existing.is_deleted:
         raise HTTPException(status_code=400, detail="Category already exists")
 
@@ -262,6 +298,7 @@ async def apply_category_action(
     )
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
+    enforce_resource_ownership(category.created_by, current_user)
 
     if action.lower() == "update":
         if not name:
@@ -313,6 +350,7 @@ async def get_product(
     product = db.query(Product).filter(Product.id == product_id, Product.is_deleted == False).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
+    enforce_resource_ownership(product.created_by, current_user)
     return _to_product_with_stock(product, _current_stock(db, product.id))
 
 
@@ -326,6 +364,7 @@ async def update_product(
     product = db.query(Product).filter(Product.id == product_id, Product.is_deleted == False).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
+    enforce_resource_ownership(product.created_by, current_user)
 
     category = (
         db.query(ProductCategory)
@@ -334,6 +373,7 @@ async def update_product(
     )
     if not category:
         raise HTTPException(status_code=400, detail="Invalid category_id")
+    enforce_resource_ownership(category.created_by, current_user)
 
     primary_uom = None
     if payload.uom_id:
@@ -371,6 +411,7 @@ async def delete_product(
     product = db.query(Product).filter(Product.id == product_id, Product.is_deleted == False).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
+    enforce_resource_ownership(product.created_by, current_user)
 
     stock = _current_stock(db, product_id)
     if stock > 0:

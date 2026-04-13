@@ -1,24 +1,31 @@
 """FastAPI dependencies for auth and database."""
 from datetime import datetime, timedelta
 from typing import Optional
+from uuid import UUID
 from jose import JWTError, jwt
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer
+from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
 from app.models.user import User
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
-    credentials = Depends(security),
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: Session = Depends(get_db),
 ) -> User:
-    """Extract and validate JWT token, return current user."""
-    token = credentials.credentials
+    """Extract and validate JWT token from bearer header or cookie."""
+    token = credentials.credentials if credentials else request.cookies.get("access_token")
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
     
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
@@ -78,6 +85,28 @@ def require_permissions(*permissions: str):
         return current_user
 
     return check_permissions
+
+
+def enforce_resource_ownership(
+    record_owner_id: UUID | None,
+    current_user: User,
+    *,
+    privileged_roles: tuple[str, ...] = ("admin", "accounting"),
+) -> None:
+    """Block access to user-owned resources when requester is not privileged.
+
+    Records created before ownership tracking may have a null owner and remain
+    accessible to avoid breaking legacy data workflows.
+    """
+    if current_user.role in privileged_roles:
+        return
+    if record_owner_id is None:
+        return
+    if str(record_owner_id) != str(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient permissions for this resource",
+        )
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:

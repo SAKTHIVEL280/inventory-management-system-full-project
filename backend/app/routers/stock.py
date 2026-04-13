@@ -9,11 +9,11 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import require_permissions, require_role
+from app.dependencies import enforce_resource_ownership, require_permissions, require_role
 from app.models.inventory_count import InventoryCount, InventoryCountDifferenceAudit, InventoryCountItem
 from app.models.purchase import GoodsReceiptNote, GRNItem, PurchaseReturn, PurchaseReturnItem
 from app.models.product import Product, StockLedger
@@ -37,6 +37,19 @@ from app.schemas.stock import (
 from app.services.stock_service import refresh_materialized_view
 
 router = APIRouter(prefix="/api/v1/stock", tags=["stock"])
+
+
+def _scope_to_owner(query, model, current_user: User):
+    if current_user.role in {"admin", "accounting"}:
+        return query
+    owner_col = getattr(model, "created_by", None)
+    if owner_col is None:
+        return query
+    return query.filter(or_(owner_col == current_user.id, owner_col.is_(None)))
+
+
+def _enforce_owner(record, current_user: User) -> None:
+    enforce_resource_ownership(getattr(record, "created_by", None), current_user)
 
 
 INVENTORY_COUNT_DIFFERENCE_REASON_CODES: dict[str, str] = {
@@ -417,6 +430,7 @@ async def adjust_stock(
     ).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
+    _enforce_owner(product, current_user)
     
     # Validate quantity
     if payload.quantity == 0:
@@ -484,6 +498,7 @@ async def get_product_stock_ledger(
     ).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
+    _enforce_owner(product, current_user)
     
     ledger_entries = (
         db.query(StockLedger)
@@ -546,6 +561,7 @@ async def get_inventory_count_batch_options(
     product = db.query(Product).filter(Product.id == product_id, Product.is_deleted == False).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
+    _enforce_owner(product, current_user)
 
     snapshot = _build_product_batch_snapshot(db, product_id)
     batch_items = [
@@ -582,11 +598,13 @@ async def create_inventory_count(
 
     product_ids = [item.product_id for item in payload.items]
     existing_products = (
-        db.query(Product.id)
+        db.query(Product)
         .filter(Product.id.in_(product_ids), Product.is_deleted == False)
         .all()
     )
-    existing_product_ids = {str(row[0]) for row in existing_products}
+    for product in existing_products:
+        _enforce_owner(product, current_user)
+    existing_product_ids = {str(row.id) for row in existing_products}
     missing_products = [str(pid) for pid in product_ids if str(pid) not in existing_product_ids]
     if missing_products:
         raise HTTPException(status_code=400, detail=f"Invalid product ids: {', '.join(missing_products)}")
@@ -684,6 +702,7 @@ async def search_inventory_count_numbers(
         InventoryCount.is_deleted == False,
         InventoryCount.status == "confirmed",
     )
+    query = _scope_to_owner(query, InventoryCount, current_user)
     if token:
         query = query.filter(InventoryCount.count_number.ilike(f"%{token}%"))
 
@@ -703,7 +722,7 @@ async def list_inventory_count_differences(
     current_user: User = Depends(require_permissions("stock_ledger_read")),
 ):
     inventory_counts = (
-        db.query(InventoryCount)
+        _scope_to_owner(db.query(InventoryCount), InventoryCount, current_user)
         .filter(
             InventoryCount.is_deleted == False,
             InventoryCount.status == "confirmed",
@@ -814,6 +833,7 @@ async def get_inventory_count_difference(
     )
     if not inventory_count:
         raise HTTPException(status_code=404, detail="Inventory count not found")
+    _enforce_owner(inventory_count, current_user)
 
     items, _ = _compute_inventory_count_difference_rows(db, inventory_count)
 
@@ -856,6 +876,7 @@ async def recount_inventory_count_difference(
     )
     if not inventory_count:
         raise HTTPException(status_code=404, detail="Inventory count difference not found")
+    _enforce_owner(inventory_count, current_user)
 
     items, _ = _compute_inventory_count_difference_rows(db, inventory_count)
 
@@ -930,6 +951,7 @@ async def accept_inventory_count_difference(
     )
     if not inventory_count:
         raise HTTPException(status_code=404, detail="Inventory count difference not found")
+    _enforce_owner(inventory_count, current_user)
 
     items, rows = _compute_inventory_count_difference_rows(db, inventory_count)
 

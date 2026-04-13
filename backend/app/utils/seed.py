@@ -1,4 +1,6 @@
 """Database seeding script - creates initial data."""
+import os
+import secrets
 import sys
 from pathlib import Path
 
@@ -22,21 +24,42 @@ def seed_database():
     db = SessionLocal()
 
     try:
+        configured_email = (os.getenv("IMS_ADMIN_EMAIL") or "").strip().lower()
+        generated_email = ""
+        admin_email = configured_email
+        if not admin_email:
+            generated_email = f"bootstrap-admin-{secrets.token_hex(4)}@local.invalid"
+            admin_email = generated_email
+
+        configured_password = (os.getenv("IMS_ADMIN_PASSWORD") or "").strip()
+        generated_password = ""
+        if not configured_password:
+            generated_password = secrets.token_urlsafe(12)
+            configured_password = generated_password
+
         # Check if admin user already exists
-        admin_user = db.query(User).filter(User.email == "admin@company.com").first()
+        admin_user = db.query(User).filter(User.email == admin_email).first()
         if not admin_user:
-            # Create default admin user
+            # Create bootstrap admin user using configured or generated password.
             admin_user = User(
                 full_name="System Administrator",
-                email="admin@company.com",
-                hashed_password=hash_password("Admin@123"),
+                email=admin_email,
+                hashed_password=hash_password(configured_password),
                 role="admin",
                 is_active=True,
                 force_password_change=True,  # Force admin to change password on first login
             )
             db.add(admin_user)
             db.commit()
-            print("[OK] Created admin user: admin@company.com / Admin@123")
+            print(f"[OK] Created admin user: {admin_email}")
+            if generated_email:
+                print(f"[SECURITY] Generated admin email: {generated_email}")
+            else:
+                print("[SECURITY] Admin email source: IMS_ADMIN_EMAIL environment variable")
+            if generated_password:
+                print(f"[SECURITY] Generated admin password: {generated_password}")
+            else:
+                print("[SECURITY] Admin password source: IMS_ADMIN_PASSWORD environment variable")
             print("  Note: Admin will be prompted to change password on first login")
         else:
             print("[OK] Admin user already exists")
@@ -107,5 +130,6 @@ if __name__ == "__main__":
     seed_database()
     print("\n[OK] Database seeding completed successfully!")
     print("\nBootstrap data created:")
-    print("  - Admin user: admin@company.com / Admin@123")
+    print("  - Admin user: from IMS_ADMIN_EMAIL or generated at runtime")
+    print("  - Admin password: from IMS_ADMIN_PASSWORD or generated at runtime")
     print("  - Default company, units of measure, and General category")

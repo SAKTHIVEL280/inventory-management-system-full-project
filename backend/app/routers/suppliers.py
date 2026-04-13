@@ -8,10 +8,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import require_permissions
+from app.dependencies import enforce_resource_ownership, require_permissions
 from app.models.customization_option import CustomizationOption
 from app.models.supplier import Supplier
 from app.models.user import User
+from app.services.data_masking import DataMasker, should_mask_sensitive_fields
+from app.utils.input_validation import normalize_search_query
 from app.utils.state_mappings import (
     canonical_state_code,
     state_abbreviation_from_code,
@@ -27,6 +29,15 @@ from app.schemas.supplier import (
 )
 
 router = APIRouter(prefix="/api/v1/suppliers", tags=["suppliers"])
+
+
+def _scope_to_owner(query, model_cls, current_user: User):
+    if current_user.role in {"admin", "accounting"}:
+        return query
+    owner_col = getattr(model_cls, "created_by", None)
+    if owner_col is None:
+        return query
+    return query.filter(or_(owner_col == current_user.id, owner_col.is_(None)))
 
 
 STATE_ABBREVIATIONS = {
@@ -305,6 +316,21 @@ def _supplier_balance(db: Session, supplier_id: UUID) -> SupplierBalanceResponse
     )
 
 
+def _to_supplier_response(supplier: Supplier, current_user: User) -> SupplierResponse:
+    response = SupplierResponse.model_validate(supplier)
+    if not should_mask_sensitive_fields(current_user.role):
+        return response
+
+    payload = response.model_dump()
+    payload["email"] = DataMasker.mask_email(payload.get("email"))
+    payload["phone"] = DataMasker.mask_phone(payload.get("phone"))
+    payload["alternate_phone"] = DataMasker.mask_phone(payload.get("alternate_phone"))
+    payload["pan"] = DataMasker.mask_pan(payload.get("pan"))
+    payload["gstin"] = DataMasker.mask_gstin(payload.get("gstin"))
+    payload["bank_account_no"] = DataMasker.mask_bank_account(payload.get("bank_account_no"))
+    return SupplierResponse.model_validate(payload)
+
+
 @router.get("", response_model=SuppliersListResponse)
 async def list_suppliers(
     search: str | None = Query(default=None),
@@ -314,7 +340,9 @@ async def list_suppliers(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("suppliers_read")),
 ):
+    search = normalize_search_query(search)
     query = db.query(Supplier).filter(Supplier.is_deleted == False)
+    query = _scope_to_owner(query, Supplier, current_user)
 
     if search:
         like_text = f"%{search}%"
@@ -338,7 +366,7 @@ async def list_suppliers(
     )
 
     return SuppliersListResponse(
-        items=[SupplierResponse.model_validate(item) for item in items],
+        items=[_to_supplier_response(item, current_user) for item in items],
         total=total,
         page=page,
         page_size=page_size,
@@ -418,7 +446,7 @@ async def create_supplier(
     _persist_supplier_customization_values(db, payload, current_user.id)
 
     supplier = Supplier(
-        **payload.model_dump(exclude={"supplier_code"}),
+        **payload.model_dump(exclude={"supplier_code", "state_code"}),
         supplier_code=payload.supplier_code or _generate_supplier_code(db, payload),
         state_code=_state_code_from_payload(payload),
         created_by=current_user.id,
@@ -438,7 +466,8 @@ async def get_supplier(
     supplier = db.query(Supplier).filter(Supplier.id == supplier_id, Supplier.is_deleted == False).first()
     if not supplier:
         raise HTTPException(status_code=404, detail="Supplier not found")
-    return SupplierResponse.model_validate(supplier)
+    enforce_resource_ownership(supplier.created_by, current_user)
+    return _to_supplier_response(supplier, current_user)
 
 
 @router.put("/{supplier_id}", response_model=SupplierResponse)
@@ -451,6 +480,7 @@ async def update_supplier(
     supplier = db.query(Supplier).filter(Supplier.id == supplier_id, Supplier.is_deleted == False).first()
     if not supplier:
         raise HTTPException(status_code=404, detail="Supplier not found")
+    enforce_resource_ownership(supplier.created_by, current_user)
 
     _apply_gstin_policy(payload)
     _normalize_supplier_currency(payload)
@@ -488,6 +518,7 @@ async def delete_supplier(
     supplier = db.query(Supplier).filter(Supplier.id == supplier_id, Supplier.is_deleted == False).first()
     if not supplier:
         raise HTTPException(status_code=404, detail="Supplier not found")
+    enforce_resource_ownership(supplier.created_by, current_user)
 
     supplier.is_deleted = True
     supplier.deleted_at = datetime.utcnow()
@@ -505,6 +536,7 @@ async def supplier_ledger(
     supplier = db.query(Supplier).filter(Supplier.id == supplier_id, Supplier.is_deleted == False).first()
     if not supplier:
         raise HTTPException(status_code=404, detail="Supplier not found")
+    enforce_resource_ownership(supplier.created_by, current_user)
 
     # Fetch confirmed GRNs
     try:
@@ -565,4 +597,5 @@ async def supplier_balance(
     supplier = db.query(Supplier).filter(Supplier.id == supplier_id, Supplier.is_deleted == False).first()
     if not supplier:
         raise HTTPException(status_code=404, detail="Supplier not found")
+    enforce_resource_ownership(supplier.created_by, current_user)
     return _supplier_balance(db, supplier.id)

@@ -12,20 +12,37 @@ import re
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 
 from app.database import get_db
-from app.dependencies import require_permissions
+from app.dependencies import enforce_resource_ownership, require_permissions
 from app.models.user import User
 from app.models.company import Company
+from app.models.customer import Customer
+from app.models.supplier import Supplier
 from app.models.payment import Payment, PaymentAllocation
 from app.models.sales import SalesInvoice
 from app.models.purchase import GoodsReceiptNote, PurchaseOrder
 from app.schemas.payment import PaymentCreateRequest, PaymentStatusRequest
 from app.services.order_number_service import generate_payment_number
+from app.utils.input_validation import validate_optional_token
 
 router = APIRouter(prefix="/api/v1/payments", tags=["payments"])
 
 PO_ID_META_REGEX = re.compile(r"\[PO_ID:([0-9a-fA-F-]{36})\]")
+
+
+def _scope_to_owner(query, model, current_user: User):
+    if current_user.role in {"admin", "accounting"}:
+        return query
+    owner_col = getattr(model, "created_by", None)
+    if owner_col is None:
+        return query
+    return query.filter(or_(owner_col == current_user.id, owner_col.is_(None)))
+
+
+def _enforce_owner(record, current_user: User) -> None:
+    enforce_resource_ownership(getattr(record, "created_by", None), current_user)
 
 
 def _to_minor_units(value) -> int:
@@ -297,7 +314,28 @@ async def list_payments(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("payments_read", "receipts_read")),
 ):
+    party_type = validate_optional_token(
+        party_type,
+        field_name="party_type",
+        allowed={"customer", "supplier"},
+    )
+    status = validate_optional_token(
+        status,
+        field_name="status",
+        allowed={
+            "draft",
+            "pending",
+            "cleared",
+            "bounced",
+            "cancelled",
+            "advance_payment_cleared",
+            "advance_cleared",
+            "full_payment_cleared",
+        },
+    )
+
     query = db.query(Payment)
+    query = _scope_to_owner(query, Payment, current_user)
     if archived_only:
         query = query.filter(Payment.is_deleted == True)
     elif not include_archived:
@@ -418,9 +456,16 @@ async def create_payment(
         raise HTTPException(status_code=400, detail="supplier_id is required for supplier payments")
 
     if payload.party_type == "customer" and payload.customer_id:
+        customer = db.query(Customer).filter(Customer.id == payload.customer_id, Customer.is_deleted == False).first()
+        if not customer:
+            raise HTTPException(status_code=400, detail="Invalid customer")
+        _enforce_owner(customer, current_user)
+
         open_invoices = _get_customer_open_invoices(db, payload.customer_id)
         if not open_invoices:
             raise HTTPException(status_code=400, detail="No Open Invoice")
+        for invoice in open_invoices:
+            _enforce_owner(invoice, current_user)
 
         open_invoice_ids = {invoice.id for invoice in open_invoices}
         for allocation in payload.allocations:
@@ -436,6 +481,11 @@ async def create_payment(
 
     selected_po = None
     if payload.party_type == "supplier" and payload.purchase_order_id:
+        supplier = db.query(Supplier).filter(Supplier.id == payload.supplier_id, Supplier.is_deleted == False).first()
+        if not supplier:
+            raise HTTPException(status_code=400, detail="Invalid supplier")
+        _enforce_owner(supplier, current_user)
+
         selected_po = db.query(PurchaseOrder).filter(
             PurchaseOrder.id == payload.purchase_order_id,
             PurchaseOrder.supplier_id == payload.supplier_id,
@@ -443,6 +493,13 @@ async def create_payment(
         ).first()
         if not selected_po:
             raise HTTPException(status_code=400, detail="Invalid Purchase Order for selected supplier")
+        _enforce_owner(selected_po, current_user)
+
+    if payload.party_type == "supplier" and payload.supplier_id and not payload.purchase_order_id:
+        supplier = db.query(Supplier).filter(Supplier.id == payload.supplier_id, Supplier.is_deleted == False).first()
+        if not supplier:
+            raise HTTPException(status_code=400, detail="Invalid supplier")
+        _enforce_owner(supplier, current_user)
 
     if payload.party_type == "supplier" and not payload.allocations and not payload.purchase_order_id:
         raise HTTPException(status_code=400, detail="PO Number is required for supplier advance payment")
@@ -461,6 +518,7 @@ async def create_payment(
             ).first()
             if not grn:
                 raise HTTPException(status_code=400, detail="Invalid confirmed GRN allocation")
+            _enforce_owner(grn, current_user)
             if payload.supplier_id and grn.supplier_id != payload.supplier_id:
                 raise HTTPException(status_code=400, detail="Selected GRN does not belong to supplier")
             if not grn.purchase_order_id:
@@ -536,6 +594,7 @@ async def get_payment(
     payment = db.query(Payment).filter(Payment.id == payment_id, Payment.is_deleted == False).first()
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
+    _enforce_owner(payment, current_user)
     allocations = db.query(PaymentAllocation).filter(PaymentAllocation.payment_id == payment_id).all()
     return {"payment": payment, "allocations": allocations}
 
@@ -550,6 +609,7 @@ async def update_payment_status(
     payment = db.query(Payment).filter(Payment.id == payment_id, Payment.is_deleted == False).first()
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
+    _enforce_owner(payment, current_user)
 
     if payment.status in {"cleared", "advance_payment_cleared", "advance_cleared", "full_payment_cleared"}:
         raise HTTPException(status_code=400, detail="Cleared payments cannot be changed")
@@ -585,6 +645,7 @@ async def archive_payment(
     payment = db.query(Payment).filter(Payment.id == payment_id, Payment.is_deleted == False).first()
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
+    _enforce_owner(payment, current_user)
 
     payment.is_deleted = True
     payment.deleted_at = datetime.utcnow()
@@ -602,6 +663,7 @@ async def restore_payment(
     payment = db.query(Payment).filter(Payment.id == payment_id, Payment.is_deleted == True).first()
     if not payment:
         raise HTTPException(status_code=404, detail="Archived payment not found")
+    _enforce_owner(payment, current_user)
 
     payment.is_deleted = False
     payment.deleted_at = None

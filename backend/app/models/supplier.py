@@ -3,6 +3,7 @@ from uuid import uuid4
 from datetime import datetime
 from sqlalchemy import Column, String, Integer, Boolean, DateTime, UUID, ForeignKey
 from app.database import Base
+from app.services.encryption import EncryptedString
 
 
 class Supplier(Base):
@@ -19,7 +20,7 @@ class Supplier(Base):
     alternate_phone = Column(String(15), nullable=True)
     gstin_status = Column(String(20), nullable=False, default="non-registered")
     gstin = Column(String(15), nullable=True, index=True)
-    pan = Column(String(10), nullable=True)
+    pan = Column(EncryptedString(255), nullable=True)
     business_type = Column(String(20), nullable=False, default="domestic")
     company_director_name = Column(String(255), nullable=True)
     company_director_contact = Column(String(255), nullable=True)
@@ -34,7 +35,7 @@ class Supplier(Base):
     place_of_supply = Column(String(255), nullable=True)
 
     bank_name = Column(String(150), nullable=True)
-    bank_account_no = Column(String(50), nullable=True)
+    bank_account_no = Column(EncryptedString(255), nullable=True)
     bank_ifsc = Column(String(20), nullable=True)
 
     payment_terms_days = Column(Integer, nullable=False, default=30)

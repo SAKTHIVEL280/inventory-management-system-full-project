@@ -8,11 +8,13 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import require_permissions
+from app.dependencies import enforce_resource_ownership, require_permissions
 from app.models.company import Company
 from app.models.customer import Customer
 from app.models.customization_option import CustomizationOption
 from app.models.user import User
+from app.services.data_masking import DataMasker, should_mask_sensitive_fields
+from app.utils.input_validation import normalize_search_query
 from app.utils.state_mappings import validate_and_autofill_state_fields
 from app.schemas.customer import (
     CustomerCreateRequest,
@@ -24,6 +26,15 @@ from app.schemas.customer import (
 )
 
 router = APIRouter(prefix="/api/v1/customers", tags=["customers"])
+
+
+def _scope_to_owner(query, model_cls, current_user: User):
+    if current_user.role in {"admin", "accounting"}:
+        return query
+    owner_col = getattr(model_cls, "created_by", None)
+    if owner_col is None:
+        return query
+    return query.filter(or_(owner_col == current_user.id, owner_col.is_(None)))
 
 
 STATE_ABBREVIATIONS = {
@@ -366,6 +377,20 @@ def _customer_balance(db: Session, customer_id: UUID) -> CustomerBalanceResponse
     )
 
 
+def _to_customer_response(customer: Customer, current_user: User) -> CustomerResponse:
+    response = CustomerResponse.model_validate(customer)
+    if not should_mask_sensitive_fields(current_user.role):
+        return response
+
+    payload = response.model_dump()
+    payload["email"] = DataMasker.mask_email(payload.get("email"))
+    payload["phone"] = DataMasker.mask_phone(payload.get("phone"))
+    payload["alternate_phone"] = DataMasker.mask_phone(payload.get("alternate_phone"))
+    payload["pan"] = DataMasker.mask_pan(payload.get("pan"))
+    payload["gstin"] = DataMasker.mask_gstin(payload.get("gstin"))
+    return CustomerResponse.model_validate(payload)
+
+
 @router.get("", response_model=CustomersListResponse)
 async def list_customers(
     search: str | None = Query(default=None),
@@ -375,7 +400,9 @@ async def list_customers(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("customers_read")),
 ):
+    search = normalize_search_query(search)
     query = db.query(Customer).filter(Customer.is_deleted == False)
+    query = _scope_to_owner(query, Customer, current_user)
 
     if search:
         like_text = f"%{search}%"
@@ -399,7 +426,7 @@ async def list_customers(
     )
 
     return CustomersListResponse(
-        items=[CustomerResponse.model_validate(item) for item in items],
+        items=[_to_customer_response(item, current_user) for item in items],
         total=total,
         page=page,
         page_size=page_size,
@@ -502,7 +529,8 @@ async def get_customer(
     customer = db.query(Customer).filter(Customer.id == customer_id, Customer.is_deleted == False).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
-    return CustomerResponse.model_validate(customer)
+    enforce_resource_ownership(customer.created_by, current_user)
+    return _to_customer_response(customer, current_user)
 
 
 @router.put("/{customer_id}", response_model=CustomerResponse)
@@ -515,6 +543,7 @@ async def update_customer(
     customer = db.query(Customer).filter(Customer.id == customer_id, Customer.is_deleted == False).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
+    enforce_resource_ownership(customer.created_by, current_user)
 
     _apply_gstin_policy(payload)
     _normalize_customer_currency(payload)
@@ -554,6 +583,7 @@ async def delete_customer(
     customer = db.query(Customer).filter(Customer.id == customer_id, Customer.is_deleted == False).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
+    enforce_resource_ownership(customer.created_by, current_user)
 
     balance = _customer_balance(db, customer.id)
     if balance.balance_due > 0:
@@ -578,6 +608,7 @@ async def customer_ledger(
     customer = db.query(Customer).filter(Customer.id == customer_id, Customer.is_deleted == False).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
+    enforce_resource_ownership(customer.created_by, current_user)
 
     # Fetch invoices
     try:
@@ -638,4 +669,5 @@ async def customer_balance(
     customer = db.query(Customer).filter(Customer.id == customer_id, Customer.is_deleted == False).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
+    enforce_resource_ownership(customer.created_by, current_user)
     return _customer_balance(db, customer.id)

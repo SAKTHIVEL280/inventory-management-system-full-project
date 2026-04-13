@@ -244,6 +244,11 @@ def main() -> int:
             # Customer international phone support
             "ALTER TABLE customers ALTER COLUMN phone TYPE VARCHAR(20)",
             "ALTER TABLE customers ALTER COLUMN alternate_phone TYPE VARCHAR(20)",
+
+            # Sensitive-field encryption storage compatibility
+            "ALTER TABLE customers ALTER COLUMN pan TYPE VARCHAR(255)",
+            "ALTER TABLE suppliers ALTER COLUMN pan TYPE VARCHAR(255)",
+            "ALTER TABLE suppliers ALTER COLUMN bank_account_no TYPE VARCHAR(255)",
     ]
 
     with engine.begin() as conn:
