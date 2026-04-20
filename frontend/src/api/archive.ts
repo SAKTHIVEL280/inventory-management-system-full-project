@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+﻿import { apiClient } from './client';
 
 export interface ArchiveModuleAlert {
   key: string;
@@ -39,16 +39,17 @@ export interface ArchivePurgeConfirmResponse {
 
 class ArchiveApiClient {
   async getLoginAlerts() {
-    return apiClient.get<ArchiveLoginAlertsResponse>('/api/v1/archive/login-alerts');
+    return apiClient.get<ArchiveLoginAlertsResponse>('/api/v2/archive/login-alerts');
   }
 
   async getPurgePreview() {
-    return apiClient.get<ArchivePurgePreviewResponse>('/api/v1/archive/purge-preview');
+    return apiClient.get<ArchivePurgePreviewResponse>('/api/v2/archive/purge-preview');
   }
 
   async confirmPurge(confirmation_text: string) {
-    return apiClient.post<ArchivePurgeConfirmResponse>('/api/v1/archive/purge-confirm', { confirmation_text });
+    return apiClient.post<ArchivePurgeConfirmResponse>('/api/v2/archive/purge-confirm', { confirmation_text });
   }
 }
 
 export const archiveApi = new ArchiveApiClient();
+

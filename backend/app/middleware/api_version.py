@@ -13,7 +13,9 @@ class ApiVersionCompatibilityMiddleware(BaseHTTPMiddleware):
         original_path = request.scope.get("path", "")
         requested_version = "v1"
 
-        if original_path == "/api/v2" or original_path.startswith("/api/v2/"):
+        if original_path in {"/api/v2", "/api/v2/"}:
+            requested_version = "v2"
+        elif original_path.startswith("/api/v2/"):
             request.scope["path"] = "/api/v1" + original_path[len("/api/v2") :]
             requested_version = "v2"
 

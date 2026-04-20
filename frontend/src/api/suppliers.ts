@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+﻿import { apiClient } from './client';
 import { Supplier, SupplierCustomizationOptions, PaginatedResponse } from '../types';
 
 type CreateSupplierPayload = {
@@ -41,31 +41,32 @@ type ListSuppliersParams = {
 
 export const suppliersApi = {
   list: async (params: ListSuppliersParams = {}): Promise<PaginatedResponse<Supplier>> => {
-    const response = await apiClient.get<PaginatedResponse<Supplier>>('/api/v1/suppliers', { params });
+    const response = await apiClient.get<PaginatedResponse<Supplier>>('/api/v2/suppliers', { params });
     return response.data;
   },
 
   get: async (id: string): Promise<Supplier> => {
-    const response = await apiClient.get<Supplier>(`/api/v1/suppliers/${id}`);
+    const response = await apiClient.get<Supplier>(`/api/v2/suppliers/${id}`);
     return response.data;
   },
 
   getCustomizationOptions: async (): Promise<SupplierCustomizationOptions> => {
-    const response = await apiClient.get<SupplierCustomizationOptions>('/api/v1/suppliers/customization-options');
+    const response = await apiClient.get<SupplierCustomizationOptions>('/api/v2/suppliers/customization-options');
     return response.data;
   },
 
   create: async (payload: CreateSupplierPayload): Promise<Supplier> => {
-    const response = await apiClient.post<Supplier>('/api/v1/suppliers', payload);
+    const response = await apiClient.post<Supplier>('/api/v2/suppliers', payload);
     return response.data;
   },
 
   update: async (id: string, payload: Partial<CreateSupplierPayload>): Promise<Supplier> => {
-    const response = await apiClient.put<Supplier>(`/api/v1/suppliers/${id}`, payload);
+    const response = await apiClient.put<Supplier>(`/api/v2/suppliers/${id}`, payload);
     return response.data;
   },
 
   delete: async (id: string): Promise<void> => {
-    await apiClient.delete(`/api/v1/suppliers/${id}`);
+    await apiClient.delete(`/api/v2/suppliers/${id}`);
   },
 };
+

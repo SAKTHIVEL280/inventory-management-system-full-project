@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Receivables Page (Customer Payments / Receipts)
  * Record payments from customers, allocate against invoices.
  *
@@ -63,7 +63,7 @@ const ReceivablesPage = () => {
     }
   };
   const fetchCustomers = async () => {
-    try { const res = await apiClient.get('/api/v1/customers', { params: { page_size: 100 } }); setCustomers(res.data.items || []); } catch { /* */ }
+    try { const res = await apiClient.get('/api/v2/customers', { params: { page_size: 100 } }); setCustomers(res.data.items || []); } catch { /* */ }
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchPayments should run when archiveView changes
@@ -383,3 +383,4 @@ const ReceivablesPage = () => {
 };
 
 export default ReceivablesPage;
+

@@ -29,27 +29,8 @@ INSERT INTO product_categories (name, description, is_active)
 SELECT 'General', 'Default category', TRUE
 WHERE NOT EXISTS (SELECT 1 FROM product_categories WHERE name = 'General');
 
--- Default Admin User
--- NOTE:
--- The hashed_password MUST be a valid bcrypt hash of "Admin@123".
--- If you change the password, you must replace the hash accordingly.
-INSERT INTO users (full_name, email, hashed_password, role, is_active, force_password_change)
-SELECT
-  'System Administrator',
-  'admin@company.com',
-  '$2b$12$K7FoG9K.8fI.ZeLtyrWWaujcON4a9.5P6Ky/.qatWZy9iTPC88KQq',
-  'admin',
-  TRUE,
-  TRUE
-WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = 'admin@company.com');
-
--- Ensure existing admin account keeps required defaults for first login flow
-UPDATE users
-SET
-  role = 'admin',
-  is_active = TRUE,
-  force_password_change = TRUE
-WHERE email = 'admin@company.com';
+-- Admin user bootstrap is intentionally handled by backend/app/utils/seed.py
+-- using IMS_ADMIN_EMAIL / IMS_ADMIN_PASSWORD or generated secure credentials.
 
 COMMIT;
 

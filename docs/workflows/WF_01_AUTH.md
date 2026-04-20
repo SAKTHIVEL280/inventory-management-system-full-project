@@ -1,4 +1,4 @@
-# WF-01: Authentication Workflow
+﻿# WF-01: Authentication Workflow
 
 ## Overview
 JWT-based authentication with access tokens (8 hours) and refresh tokens (7 days). Four roles: admin, accounting, sales, inventory. Every protected route requires a valid Bearer token. Access control uses role defaults plus optional admin-managed module overrides per user.
@@ -41,7 +41,7 @@ JWT-based authentication with access tokens (8 hours) and refresh tokens (7 days
 5. Frontend redirects to `/login`.
 
 ### First Login (Password Change)
-1. Admin seeds the database. Default admin password is `Admin@123`.
+1. Admin seeds the database. Default admin password is `IMS_ADMIN_PASSWORD`.
 2. On first login, backend returns `{ force_password_change: true }` in the user object.
 3. Frontend detects this flag and shows a "Change Password" modal before allowing navigation.
 4. User must enter current password, new password, confirm new password.
@@ -121,4 +121,6 @@ def require_role(*roles: str):
 | Expired refresh token | 401 | Clear session, redirect to /login |
 | Overrides reset by admin | 200 | Refresh `/auth/me`; UI falls back to role-default permissions |
 | Insufficient role | 403 | Show permission error toast |
-| Network error on login | — | Show "Cannot connect to server" error |
+| Network error on login | â€” | Show "Cannot connect to server" error |
+
+

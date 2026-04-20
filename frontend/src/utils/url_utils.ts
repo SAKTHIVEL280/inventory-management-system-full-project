@@ -21,7 +21,7 @@ const getBackendOrigin = (): string => {
     }
   }
 
-  // Relative API URLs (e.g. /api/v1): serve static files from current origin.
+  // Relative API URLs (e.g. /api or /api/v2): serve static files from current origin.
   if (typeof window !== 'undefined') {
     return window.location.origin;
   }

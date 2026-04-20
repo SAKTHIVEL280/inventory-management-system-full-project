@@ -148,7 +148,7 @@ python setup_db.py
 **What it does:**
 1. [OK] Connects to the PostgreSQL database
 2. [OK] Creates all tables (via SQLAlchemy metadata)
-3. [OK] Seeds admin user: `admin@company.com` / `Admin@123`
+3. [OK] Seeds admin user: `IMS_ADMIN_EMAIL` / `IMS_ADMIN_PASSWORD`
 4. [OK] Seeds product units: PCS, KG, LTR, BOX, etc.
 5. [OK] Creates default company record
 
@@ -316,5 +316,7 @@ A: PostgreSQL handles billions of rows. No practical limit for this application.
 
 **Last Updated:** March 25, 2026  
 **Database Version:** PostgreSQL 15+
+
+
 
 

@@ -1,8 +1,9 @@
 """Customer master router."""
+import logging
 import re
 from datetime import datetime
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -13,6 +14,7 @@ from app.models.company import Company
 from app.models.customer import Customer
 from app.models.customization_option import CustomizationOption
 from app.models.user import User
+from app.services.audit_service import log_audit_event
 from app.services.data_masking import DataMasker, should_mask_sensitive_fields
 from app.utils.input_validation import normalize_search_query
 from app.utils.state_mappings import validate_and_autofill_state_fields
@@ -26,9 +28,16 @@ from app.schemas.customer import (
 )
 
 router = APIRouter(prefix="/api/v1/customers", tags=["customers"])
+logger = logging.getLogger(__name__)
 
 
 def _scope_to_owner(query, model_cls, current_user: User):
+    company_col = getattr(model_cls, "company_id", None)
+    if company_col is not None:
+        if current_user.company_id is None:
+            raise HTTPException(status_code=403, detail="User is not assigned to a company")
+        query = query.filter(company_col == current_user.company_id)
+
     if current_user.role in {"admin", "accounting"}:
         return query
     owner_col = getattr(model_cls, "created_by", None)
@@ -393,7 +402,7 @@ def _to_customer_response(customer: Customer, current_user: User) -> CustomerRes
 
 @router.get("", response_model=CustomersListResponse)
 async def list_customers(
-    search: str | None = Query(default=None),
+    search: str | None = Query(default=None, max_length=100),
     is_active: bool | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=500),
@@ -488,14 +497,26 @@ async def get_customer_customization_options(
 @router.post("", response_model=CustomerResponse, status_code=201)
 async def create_customer(
     payload: CustomerCreateRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("customers_write")),
 ):
+    if current_user.company_id is None:
+        raise HTTPException(status_code=403, detail="User is not assigned to a company")
+
     _apply_gstin_policy(payload)
     _normalize_customer_currency(payload)
 
     if payload.gstin:
-        duplicate = db.query(Customer).filter(Customer.gstin == payload.gstin, Customer.is_deleted == False).first()
+        duplicate = (
+            db.query(Customer)
+            .filter(
+                Customer.gstin == payload.gstin,
+                Customer.company_id == current_user.company_id,
+                Customer.is_deleted == False,
+            )
+            .first()
+        )
         if duplicate:
             raise HTTPException(
                 status_code=400,
@@ -512,11 +533,38 @@ async def create_customer(
     customer = Customer(
         **payload.model_dump(exclude={"customer_code"}),
         customer_code=payload.customer_code or _generate_customer_code(db, payload),
+        company_id=current_user.company_id,
         created_by=current_user.id,
     )
     db.add(customer)
     db.commit()
     db.refresh(customer)
+
+    correlation_id = getattr(request.state, "correlation_id", getattr(request.state, "request_id", None))
+    log_audit_event(
+        db,
+        action="CUSTOMER_CREATE",
+        resource_type="customers",
+        status="success",
+        user_id=current_user.id,
+        resource_id=customer.id,
+        details={
+            "company_id": str(current_user.company_id),
+            "customer_code": customer.customer_code,
+            "correlation_id": correlation_id,
+        },
+    )
+    db.commit()
+    logger.info(
+        "User created customer",
+        extra={
+            "user_id": str(current_user.id),
+            "company_id": str(current_user.company_id),
+            "customer_id": str(customer.id),
+            "correlation_id": correlation_id,
+        },
+    )
+
     return CustomerResponse.model_validate(customer)
 
 
@@ -526,7 +574,14 @@ async def get_customer(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("customers_read")),
 ):
-    customer = db.query(Customer).filter(Customer.id == customer_id, Customer.is_deleted == False).first()
+    customer = (
+        _scope_to_owner(
+            db.query(Customer).filter(Customer.id == customer_id, Customer.is_deleted == False),
+            Customer,
+            current_user,
+        )
+        .first()
+    )
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
     enforce_resource_ownership(customer.created_by, current_user)
@@ -537,10 +592,18 @@ async def get_customer(
 async def update_customer(
     customer_id: UUID,
     payload: CustomerUpdateRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("customers_write")),
 ):
-    customer = db.query(Customer).filter(Customer.id == customer_id, Customer.is_deleted == False).first()
+    customer = (
+        _scope_to_owner(
+            db.query(Customer).filter(Customer.id == customer_id, Customer.is_deleted == False),
+            Customer,
+            current_user,
+        )
+        .first()
+    )
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
     enforce_resource_ownership(customer.created_by, current_user)
@@ -551,7 +614,12 @@ async def update_customer(
     if payload.gstin:
         duplicate = (
             db.query(Customer)
-            .filter(Customer.gstin == payload.gstin, Customer.id != customer_id, Customer.is_deleted == False)
+            .filter(
+                Customer.gstin == payload.gstin,
+                Customer.company_id == current_user.company_id,
+                Customer.id != customer_id,
+                Customer.is_deleted == False,
+            )
             .first()
         )
         if duplicate:
@@ -571,16 +639,50 @@ async def update_customer(
 
     db.commit()
     db.refresh(customer)
+
+    correlation_id = getattr(request.state, "correlation_id", getattr(request.state, "request_id", None))
+    log_audit_event(
+        db,
+        action="CUSTOMER_UPDATE",
+        resource_type="customers",
+        status="success",
+        user_id=current_user.id,
+        resource_id=customer.id,
+        details={
+            "company_id": str(current_user.company_id) if current_user.company_id else None,
+            "customer_code": customer.customer_code,
+            "correlation_id": correlation_id,
+        },
+    )
+    db.commit()
+    logger.info(
+        "User updated customer",
+        extra={
+            "user_id": str(current_user.id),
+            "company_id": str(current_user.company_id) if current_user.company_id else None,
+            "customer_id": str(customer.id),
+            "correlation_id": correlation_id,
+        },
+    )
+
     return CustomerResponse.model_validate(customer)
 
 
 @router.delete("/{customer_id}")
 async def delete_customer(
     customer_id: UUID,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("customers_write")),
 ):
-    customer = db.query(Customer).filter(Customer.id == customer_id, Customer.is_deleted == False).first()
+    customer = (
+        _scope_to_owner(
+            db.query(Customer).filter(Customer.id == customer_id, Customer.is_deleted == False),
+            Customer,
+            current_user,
+        )
+        .first()
+    )
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
     enforce_resource_ownership(customer.created_by, current_user)
@@ -595,6 +697,32 @@ async def delete_customer(
     customer.is_deleted = True
     customer.deleted_at = datetime.utcnow()
     db.commit()
+
+    correlation_id = getattr(request.state, "correlation_id", getattr(request.state, "request_id", None))
+    log_audit_event(
+        db,
+        action="CUSTOMER_DELETE",
+        resource_type="customers",
+        status="success",
+        user_id=current_user.id,
+        resource_id=customer.id,
+        details={
+            "company_id": str(current_user.company_id) if current_user.company_id else None,
+            "customer_code": customer.customer_code,
+            "correlation_id": correlation_id,
+        },
+    )
+    db.commit()
+    logger.info(
+        "User deleted customer",
+        extra={
+            "user_id": str(current_user.id),
+            "company_id": str(current_user.company_id) if current_user.company_id else None,
+            "customer_id": str(customer.id),
+            "correlation_id": correlation_id,
+        },
+    )
+
     return {"message": "Customer deleted"}
 
 
@@ -605,7 +733,14 @@ async def customer_ledger(
     current_user: User = Depends(require_permissions("customers_read")),
 ):
     """BUG-10 fix: Return actual transaction history for the customer."""
-    customer = db.query(Customer).filter(Customer.id == customer_id, Customer.is_deleted == False).first()
+    customer = (
+        _scope_to_owner(
+            db.query(Customer).filter(Customer.id == customer_id, Customer.is_deleted == False),
+            Customer,
+            current_user,
+        )
+        .first()
+    )
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
     enforce_resource_ownership(customer.created_by, current_user)
@@ -666,7 +801,14 @@ async def customer_balance(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("customers_read")),
 ):
-    customer = db.query(Customer).filter(Customer.id == customer_id, Customer.is_deleted == False).first()
+    customer = (
+        _scope_to_owner(
+            db.query(Customer).filter(Customer.id == customer_id, Customer.is_deleted == False),
+            Customer,
+            current_user,
+        )
+        .first()
+    )
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
     enforce_resource_ownership(customer.created_by, current_user)

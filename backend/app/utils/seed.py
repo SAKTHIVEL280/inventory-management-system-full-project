@@ -24,11 +24,34 @@ def seed_database():
     db = SessionLocal()
 
     try:
+        # Create default company first so users can be tenant-scoped from day one.
+        company = db.query(Company).first()
+        if not company:
+            company = Company(
+                name="My Company",
+                gstin="27AABCM1234A1Z1",
+                pan="AABCM1234A",
+                address_line1="123 Business Street",
+                city="Mumbai",
+                state="Maharashtra",
+                pincode="400001",
+                phone="02212345678",
+                email="info@mycompany.com",
+                po_prefix="PO",
+                po_counter=1,
+                grn_prefix="GRN",
+                grn_counter=1,
+            )
+            db.add(company)
+            db.commit()
+            db.refresh(company)
+            print("[OK] Created default company")
+
         configured_email = (os.getenv("IMS_ADMIN_EMAIL") or "").strip().lower()
         generated_email = ""
         admin_email = configured_email
         if not admin_email:
-            generated_email = f"bootstrap-admin-{secrets.token_hex(4)}@local.invalid"
+            generated_email = f"bootstrap-admin-{secrets.token_hex(4)}@example.com"
             admin_email = generated_email
 
         configured_password = (os.getenv("IMS_ADMIN_PASSWORD") or "").strip()
@@ -48,6 +71,7 @@ def seed_database():
                 role="admin",
                 is_active=True,
                 force_password_change=True,  # Force admin to change password on first login
+                company_id=company.id,
             )
             db.add(admin_user)
             db.commit()
@@ -62,6 +86,9 @@ def seed_database():
                 print("[SECURITY] Admin password source: IMS_ADMIN_PASSWORD environment variable")
             print("  Note: Admin will be prompted to change password on first login")
         else:
+            if admin_user.company_id is None:
+                admin_user.company_id = company.id
+                db.commit()
             print("[OK] Admin user already exists")
 
         # Create units of measure
@@ -96,28 +123,6 @@ def seed_database():
             print("[OK] Created default product category")
         else:
             print("[OK] Default product category already exists")
-
-        # Create default company
-        company = db.query(Company).first()
-        if not company:
-            company = Company(
-                name="My Company",
-                gstin="27AABCM1234A1Z1",
-                pan="AABCM1234A",
-                address_line1="123 Business Street",
-                city="Mumbai",
-                state="Maharashtra",
-                pincode="400001",
-                phone="02212345678",
-                email="info@mycompany.com",
-                po_prefix="PO",
-                po_counter=1,
-                grn_prefix="GRN",
-                grn_counter=1,
-            )
-            db.add(company)
-            db.commit()
-            print("[OK] Created default company")
 
     except Exception as e:
         db.rollback()

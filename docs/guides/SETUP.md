@@ -148,7 +148,7 @@ python run_migration.py
 ## 5. First Login
 
 1. Open http://localhost:3001 (or current Vite port)
-2. Login with: **admin@company.com** / **Admin@123**
+2. Login with: **IMS_ADMIN_EMAIL** / **IMS_ADMIN_PASSWORD**
 3. You will be prompted to change your password immediately.
 4. Go to Masters > Company and fill in your company details (name, GSTIN, state, bank details).
 5. Go to Masters > Users and create users for each role.
@@ -241,4 +241,6 @@ pip install -r requirements.txt
 ```
 
 Do not maintain a duplicate package list in this document; keep `backend/requirements.txt` as the single source of truth.
+
+
 

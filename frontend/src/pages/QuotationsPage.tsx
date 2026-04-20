@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Quotations Page
  * List, create, edit quotations. Approve, download/send PDF.
  *
@@ -7,7 +7,7 @@
  * SAL-005: Product Description column
  * SAL-006: Valid Until must be future date
  * SAL-007: Removed SO reference/convert
- * SAL-008: Renamed Send → Approve
+ * SAL-008: Renamed Send â†’ Approve
  * SAL-009: Download PDF
  * SAL-010: Send PDF
  * SAL-011: Quotation output format same as Tax Invoice
@@ -78,8 +78,8 @@ const QuotationsPage = () => {
   const fetchMasterData = async () => {
     try {
       const [custRes, prodRes] = await Promise.all([
-        apiClient.get('/api/v1/customers', { params: { page_size: 100 } }),
-        apiClient.get('/api/v1/products', { params: { page_size: 100 } }),
+        apiClient.get('/api/v2/customers', { params: { page_size: 100 } }),
+        apiClient.get('/api/v2/products', { params: { page_size: 100 } }),
       ]);
       setCustomers(custRes.data.items || []);
       setProducts(prodRes.data.items || []);
@@ -405,7 +405,7 @@ const QuotationsPage = () => {
                         {archiveView === 'active' && (q.status === 'draft' || q.status === 'sent') && (
                           <button onClick={() => handleEdit(q)} className="rounded px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10">Edit</button>
                         )}
-                        {/* SAL-008: Renamed Send → Approve */}
+                        {/* SAL-008: Renamed Send â†’ Approve */}
                         {archiveView === 'active' && q.status === 'draft' && (
                           <button onClick={() => handleStatusChange(q.id, 'sent')} className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50">Approve</button>
                         )}
@@ -567,3 +567,4 @@ const QuotationsPage = () => {
 };
 
 export default QuotationsPage;
+

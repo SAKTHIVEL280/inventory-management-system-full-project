@@ -1,4 +1,4 @@
-/**
+﻿/**
  * GRN (Goods Receipt Notes) Page
  * List, create, confirm GRNs. Confirms add stock to ledger.
  * 
@@ -129,14 +129,14 @@ const GRNPage = () => {
   /* eslint-disable react-hooks/exhaustive-deps -- loadPOData is intentionally referenced after master data load to resolve pending PO deep-link */
   const fetchMaster = useCallback(async () => {
     try {
-      const s = await apiClient.get('/api/v1/suppliers', { params: { page_size: 100 } });
+      const s = await apiClient.get('/api/v2/suppliers', { params: { page_size: 100 } });
       setSuppliers(Array.isArray(s.data?.items) ? s.data.items : []);
     } catch (err) {
       console.error('Failed to fetch suppliers:', err);
       setSuppliers([]);
     }
     try {
-      const p = await apiClient.get('/api/v1/products', { params: { page_size: 100 } });
+      const p = await apiClient.get('/api/v2/products', { params: { page_size: 100 } });
       setProducts(Array.isArray(p.data?.items) ? p.data.items : []);
     } catch (err) {
       console.error('Failed to fetch products:', err);
@@ -787,7 +787,7 @@ const GRNPage = () => {
           {!loading && <p className="border-t border-neutral-200 px-4 py-3 text-xs text-neutral-500">Showing {filteredGRNs.length} of {grns.length}</p>}
         </div>
 
-        {/* ══════════════════ GRN Detail Modal ══════════════════ */}
+        {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• GRN Detail Modal â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
         {detailGRN && createPortal(
           <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm" onClick={() => setDetailGRN(null)}>
             <div className="hms-card my-8 w-full max-w-4xl space-y-6 p-6" onClick={(e) => e.stopPropagation()}>
@@ -892,7 +892,7 @@ const GRNPage = () => {
           document.body
         )}
 
-        {/* ══════════════════ Create GRN Form Modal ══════════════════ */}
+        {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• Create GRN Form Modal â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
         {showForm && createPortal(
           <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-2 sm:p-4 backdrop-blur-sm">
             <div className="hms-card my-4 sm:my-8 w-[min(96vw,1600px)] max-w-none space-y-6 p-4 sm:p-6">
@@ -910,7 +910,7 @@ const GRNPage = () => {
               {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>}
               {suppliers.length === 0 && !error && (
                 <div className="rounded-lg bg-amber-50 p-3 text-sm text-amber-700">
-                  No suppliers available. Create a supplier first in <Link to="/masters/suppliers" className="font-semibold underline">Masters → Suppliers</Link>.
+                  No suppliers available. Create a supplier first in <Link to="/masters/suppliers" className="font-semibold underline">Masters â†’ Suppliers</Link>.
                 </div>
               )}
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -1212,4 +1212,5 @@ const GRNPage = () => {
 };
 
 export default GRNPage;
+
 

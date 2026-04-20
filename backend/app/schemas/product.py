@@ -2,7 +2,7 @@
 from typing import Optional, List
 from uuid import UUID
 from decimal import Decimal
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class ProductCategoryCreateRequest(BaseModel):
@@ -115,6 +115,15 @@ class ProductsListResponse(BaseModel):
     page: int
     page_size: int
     has_more: bool
+
+
+class ProductListQueryParams(BaseModel):
+    search: Optional[str] = Field(default=None, max_length=100)
+    category_id: Optional[UUID] = None
+    is_active: Optional[bool] = None
+    all_products: bool = False
+    page: int = Field(default=1, ge=1)
+    page_size: int = Field(default=20, ge=1, le=500)
 
 
 class StockAdjustmentRequest(BaseModel):

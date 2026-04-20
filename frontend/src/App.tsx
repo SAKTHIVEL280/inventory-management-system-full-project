@@ -32,31 +32,38 @@ import { authApi } from './api/auth';
 import { ConfirmDialogHost } from './components/ConfirmDialogHost';
 
 function App() {
-  const { initializeFromLocalStorage, isAuthenticated, setUser, logout } = useAuthStore();
+  const { isAuthenticated, setUser, setAuthenticated, logout } = useAuthStore();
   const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
-    // Initialize auth from localStorage on app startup
-    initializeFromLocalStorage();
-    setIsInitialized(true);
-  }, [initializeFromLocalStorage]);
+    let active = true;
 
-  useEffect(() => {
-    if (!isInitialized || !isAuthenticated) {
-      return;
-    }
-
-    // Always refresh effective permissions from backend so action buttons
-    // don't disappear due to stale localStorage user payload.
-    authApi
-      .getMe()
-      .then((user) => {
+    const bootstrapSession = async () => {
+      try {
+        const user = await authApi.getMe();
+        if (!active) {
+          return;
+        }
         setUser(user);
-      })
-      .catch(() => {
+        setAuthenticated(true);
+      } catch {
+        if (!active) {
+          return;
+        }
         logout();
-      });
-  }, [isInitialized, isAuthenticated, setUser, logout]);
+      } finally {
+        if (active) {
+          setIsInitialized(true);
+        }
+      }
+    };
+
+    void bootstrapSession();
+
+    return () => {
+      active = false;
+    };
+  }, [logout, setAuthenticated, setUser]);
 
   if (!isInitialized) {
     return (

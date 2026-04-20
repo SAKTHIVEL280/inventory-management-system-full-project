@@ -235,7 +235,7 @@ const LoginPage = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="hms-input"
-              placeholder="admin@company.com"
+              placeholder="you@yourcompany.com"
               required
             />
           </div>

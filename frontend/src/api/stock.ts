@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+﻿import { apiClient } from './client';
 import { StockLedger } from '../types';
 
 type StockAdjustmentPayload = {
@@ -107,7 +107,7 @@ export const stockApi = {
    * @param payload - Adjustment details with quantity (negative to remove)
    */
   adjust: async (payload: StockAdjustmentPayload): Promise<StockLedger> => {
-    const response = await apiClient.post<StockLedger>('/api/v1/stock/adjust', payload);
+    const response = await apiClient.post<StockLedger>('/api/v2/stock/adjust', payload);
     return response.data;
   },
 
@@ -115,50 +115,50 @@ export const stockApi = {
    * Get stock ledger transactions for a product
    */
   getLedger: async (productId: string): Promise<StockLedger[]> => {
-    const response = await apiClient.get<StockLedger[]>(`/api/v1/stock/ledger/${productId}`);
+    const response = await apiClient.get<StockLedger[]>(`/api/v2/stock/ledger/${productId}`);
     return response.data;
   },
 
   getInventoryCountNumberPreview: async (countDate?: string): Promise<{ count_number: string; count_date: string }> => {
-    const response = await apiClient.get<{ count_number: string; count_date: string }>('/api/v1/stock/inventory-counts/next-number', {
+    const response = await apiClient.get<{ count_number: string; count_date: string }>('/api/v2/stock/inventory-counts/next-number', {
       params: countDate ? { count_date: countDate } : {},
     });
     return response.data;
   },
 
   getInventoryCountBatchOptions: async (productId: string): Promise<InventoryCountBatchOptionsResponse> => {
-    const response = await apiClient.get<InventoryCountBatchOptionsResponse>('/api/v1/stock/inventory-counts/batch-options', {
+    const response = await apiClient.get<InventoryCountBatchOptionsResponse>('/api/v2/stock/inventory-counts/batch-options', {
       params: { product_id: productId },
     });
     return response.data;
   },
 
   createInventoryCount: async (payload: InventoryCountCreatePayload): Promise<InventoryCountResponse> => {
-    const response = await apiClient.post<InventoryCountResponse>('/api/v1/stock/inventory-counts', payload);
+    const response = await apiClient.post<InventoryCountResponse>('/api/v2/stock/inventory-counts', payload);
     return response.data;
   },
 
   searchInventoryCountNumbers: async (query: string, limit = 10): Promise<InventoryCountNumberSearchResponse> => {
-    const response = await apiClient.get<InventoryCountNumberSearchResponse>('/api/v1/stock/inventory-counts/search', {
+    const response = await apiClient.get<InventoryCountNumberSearchResponse>('/api/v2/stock/inventory-counts/search', {
       params: { q: query, limit },
     });
     return response.data;
   },
 
   getAllInventoryCountDifferences: async (limit = 300): Promise<InventoryCountDifferenceResponse[]> => {
-    const response = await apiClient.get<InventoryCountDifferenceResponse[]>('/api/v1/stock/inventory-counts/differences', {
+    const response = await apiClient.get<InventoryCountDifferenceResponse[]>('/api/v2/stock/inventory-counts/differences', {
       params: { limit },
     });
     return response.data;
   },
 
   getInventoryCountDifference: async (countNumber: string): Promise<InventoryCountDifferenceResponse> => {
-    const response = await apiClient.get<InventoryCountDifferenceResponse>(`/api/v1/stock/inventory-counts/${encodeURIComponent(countNumber)}/difference`);
+    const response = await apiClient.get<InventoryCountDifferenceResponse>(`/api/v2/stock/inventory-counts/${encodeURIComponent(countNumber)}/difference`);
     return response.data;
   },
 
   getInventoryCountDifferenceReasonCodes: async (): Promise<InventoryCountDifferenceReasonCode[]> => {
-    const response = await apiClient.get<InventoryCountDifferenceReasonCode[]>('/api/v1/stock/inventory-counts/differences/reason-codes');
+    const response = await apiClient.get<InventoryCountDifferenceReasonCode[]>('/api/v2/stock/inventory-counts/differences/reason-codes');
     return response.data;
   },
 
@@ -167,7 +167,7 @@ export const stockApi = {
     payload: InventoryCountDifferenceAcceptPayload,
   ): Promise<InventoryCountDifferenceActionResponse> => {
     const response = await apiClient.post<InventoryCountDifferenceActionResponse>(
-      `/api/v1/stock/inventory-counts/${encodeURIComponent(countNumber)}/differences/accept`,
+      `/api/v2/stock/inventory-counts/${encodeURIComponent(countNumber)}/differences/accept`,
       payload,
     );
     return response.data;
@@ -175,9 +175,10 @@ export const stockApi = {
 
   recountInventoryCountDifference: async (countNumber: string): Promise<InventoryCountDifferenceActionResponse> => {
     const response = await apiClient.post<InventoryCountDifferenceActionResponse>(
-      `/api/v1/stock/inventory-counts/${encodeURIComponent(countNumber)}/differences/recount`,
+      `/api/v2/stock/inventory-counts/${encodeURIComponent(countNumber)}/differences/recount`,
       {},
     );
     return response.data;
   },
 };
+

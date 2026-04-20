@@ -1,4 +1,7 @@
 """Backend configuration."""
+import os
+from urllib.parse import urlparse
+
 from pydantic_settings import BaseSettings
 from pydantic import field_validator
 
@@ -34,7 +37,7 @@ class Settings(BaseSettings):
         return env
 
     # Auth
-    secret_key: str
+    secret_key: str = os.getenv("SECRET_KEY", "")
 
     @field_validator("secret_key")
     @classmethod
@@ -42,7 +45,7 @@ class Settings(BaseSettings):
         v = (value or "").strip()
         if len(v) < 32:
             raise ValueError("SECRET_KEY must be at least 32 characters")
-        if "your-" in v.lower() or "dev-secret" in v.lower():
+        if "your-" in v.lower() or "dev-secret" in v.lower() or "change-this-secret" in v.lower():
             raise ValueError("SECRET_KEY uses a placeholder value. Set a strong unique secret")
         return v
 
@@ -75,13 +78,23 @@ class Settings(BaseSettings):
 
     # Rate limiting
     rate_limit_login: str = "5/minute"
-    rate_limit_refresh: str = "10/minute"
+    rate_limit_auth: str = "100/minute"
     rate_limit_api: str = "100/minute"
 
     # CSRF protection (for cookie-auth browser sessions)
     csrf_enabled: bool = True
     csrf_cookie_name: str = "csrf_token"
     csrf_header_name: str = "X-CSRF-Token"
+    cookie_secure: bool = True
+    cookie_samesite: str = "strict"
+
+    @field_validator("cookie_samesite")
+    @classmethod
+    def validate_cookie_samesite(cls, value: str) -> str:
+        token = (value or "strict").strip().lower()
+        if token not in {"strict", "lax", "none"}:
+            raise ValueError("COOKIE_SAMESITE must be one of: strict, lax, none")
+        return token
 
     # Database pooling
     db_pool_size: int = 20
@@ -94,10 +107,6 @@ class Settings(BaseSettings):
     }
 
     @property
-    def cookie_secure(self) -> bool:
-        return self.environment == "production"
-
-    @property
     def csrf_exempt_paths(self) -> list[str]:
         # Login and refresh need to be callable before CSRF token is available.
         return [
@@ -108,6 +117,27 @@ class Settings(BaseSettings):
             "/health",
             "/",
         ]
+
+    @property
+    def frontend_allowed_origins(self) -> list[str]:
+        raw = (os.getenv("FRONTEND_ALLOWED_ORIGINS") or "").strip()
+        if raw:
+            origins = [part.strip().rstrip("/") for part in raw.split(",") if part.strip()]
+        else:
+            origins = [self.frontend_url]
+
+        if self.environment != "production":
+            normalized = []
+            for origin in origins:
+                normalized.append(origin)
+                parsed = urlparse(origin)
+                host = (parsed.hostname or "").lower()
+                if host in {"localhost", "127.0.0.1"} and parsed.scheme and parsed.port:
+                    companion_host = "127.0.0.1" if host == "localhost" else "localhost"
+                    normalized.append(f"{parsed.scheme}://{companion_host}:{parsed.port}")
+            origins = normalized
+
+        return list(dict.fromkeys(origins))
 
 
 settings = Settings()

@@ -5,6 +5,7 @@ This script is intentionally idempotent. You can run it multiple times.
 from __future__ import annotations
 
 import os
+import secrets
 import subprocess
 import sys
 from pathlib import Path
@@ -25,17 +26,41 @@ def _run(cmd: list[str], cwd: Path | None = None, check: bool = True) -> subproc
     return subprocess.run(cmd, cwd=str(cwd) if cwd else None, text=True, capture_output=True, check=check)
 
 
+def _upsert_env_value(env_text: str, key: str, value: str) -> str:
+    lines = env_text.splitlines()
+    replaced = False
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        existing_key = stripped.split("=", 1)[0].strip()
+        if existing_key == key:
+            lines[index] = f"{key}={value}"
+            replaced = True
+            break
+
+    if not replaced:
+        lines.append(f"{key}={value}")
+
+    return "\n".join(lines).rstrip() + "\n"
+
+
 def _write_default_env_if_missing() -> None:
     if BACKEND_ENV.exists():
         print("  - backend/.env exists")
         return
 
+    generated_secret = secrets.token_urlsafe(48)
+    generated_admin_email = f"bootstrap-admin-{secrets.token_hex(4)}@example.com"
+    generated_admin_password = secrets.token_urlsafe(16)
     default_env = (
         "DATABASE_URL=postgresql://postgres:root@localhost:5432/ims_db\n"
-        "SECRET_KEY=dev-only-change-this-secret-key\n"
+        f"SECRET_KEY={generated_secret}\n"
         "ALGORITHM=HS256\n"
         "ACCESS_TOKEN_EXPIRE_MINUTES=480\n"
         "REFRESH_TOKEN_EXPIRE_DAYS=7\n"
+        f"IMS_ADMIN_EMAIL={generated_admin_email}\n"
+        f"IMS_ADMIN_PASSWORD={generated_admin_password}\n"
         "MAIL_USERNAME=your@gmail.com\n"
         "MAIL_PASSWORD=your-gmail-app-password\n"
         "MAIL_FROM=noreply@yourcompany.com\n"
@@ -48,11 +73,19 @@ def _write_default_env_if_missing() -> None:
     )
 
     if BACKEND_ENV_EXAMPLE.exists():
-        BACKEND_ENV.write_text(BACKEND_ENV_EXAMPLE.read_text(encoding="utf-8"), encoding="utf-8")
+        env_text = BACKEND_ENV_EXAMPLE.read_text(encoding="utf-8")
+        env_text = _upsert_env_value(env_text, "SECRET_KEY", generated_secret)
+        env_text = _upsert_env_value(env_text, "IMS_ADMIN_EMAIL", generated_admin_email)
+        env_text = _upsert_env_value(env_text, "IMS_ADMIN_PASSWORD", generated_admin_password)
+        BACKEND_ENV.write_text(env_text, encoding="utf-8")
         print("  - Created backend/.env from backend/.env.example")
     else:
         BACKEND_ENV.write_text(default_env, encoding="utf-8")
         print("  - Created backend/.env with development defaults")
+
+    print("  - Generated secure bootstrap credentials in backend/.env")
+    print(f"    IMS_ADMIN_EMAIL={generated_admin_email}")
+    print(f"    IMS_ADMIN_PASSWORD={generated_admin_password}")
 
 
 def _load_env_file(path: Path) -> dict[str, str]:
@@ -182,9 +215,9 @@ def main() -> int:
     print("\nNext steps:")
     print(f"  1. Backend:  cd backend && {venv_dir_name}\\Scripts\\activate && uvicorn app.main:app --reload --host 127.0.0.1 --port 8001")
     print("  2. Frontend: cd frontend && npm install && npm run dev")
-    print("\nDefault login:")
-    print("  Email: admin@company.com")
-    print("  Password: Admin@123")
+    print("\nBootstrap login credentials:")
+    print("  - Uses IMS_ADMIN_EMAIL / IMS_ADMIN_PASSWORD when set in backend/.env")
+    print("  - If not set, secure random credentials are generated and printed by backend seeding")
     return 0
 
 

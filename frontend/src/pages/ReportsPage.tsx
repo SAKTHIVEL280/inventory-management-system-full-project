@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Reports Page
  * Visual analytics hub with charts, tables, and financial summaries.
  * Uses Recharts for data visualization.
@@ -104,12 +104,12 @@ const ReportsPage = () => {
     const failedSections: string[] = [];
     try {
       const [dashRes, plRes, stockRes, salesRes, gstRes, gstr3bRes] = await Promise.allSettled([
-        apiClient.get('/api/v1/reports/dashboard'),
-        apiClient.get('/api/v1/reports/pl', { params: { from_date: fromDate, to_date: toDate } }),
-        apiClient.get('/api/v1/reports/stock'),
-        apiClient.get('/api/v1/reports/sales', { params: { from_date: fromDate, to_date: toDate } }),
-        apiClient.get('/api/v1/reports/gstr1', { params: { from_date: fromDate, to_date: toDate } }),
-        apiClient.get('/api/v1/reports/gstr3b', { params: { from_date: fromDate, to_date: toDate } }),
+        apiClient.get('/api/v2/reports/dashboard'),
+        apiClient.get('/api/v2/reports/pl', { params: { from_date: fromDate, to_date: toDate } }),
+        apiClient.get('/api/v2/reports/stock'),
+        apiClient.get('/api/v2/reports/sales', { params: { from_date: fromDate, to_date: toDate } }),
+        apiClient.get('/api/v2/reports/gstr1', { params: { from_date: fromDate, to_date: toDate } }),
+        apiClient.get('/api/v2/reports/gstr3b', { params: { from_date: fromDate, to_date: toDate } }),
       ]);
 
       if (dashRes.status === 'fulfilled') {
@@ -430,3 +430,4 @@ const ReportsPage = () => {
 };
 
 export default ReportsPage;
+

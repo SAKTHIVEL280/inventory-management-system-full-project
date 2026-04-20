@@ -1,8 +1,9 @@
 """Product master router."""
+import logging
 from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
@@ -11,11 +12,13 @@ from app.database import get_db
 from app.dependencies import enforce_resource_ownership, require_permissions
 from app.models.product import Product, ProductCategory, StockLedger, UnitOfMeasure
 from app.models.user import User
+from app.services.audit_service import log_audit_event
 from app.utils.input_validation import normalize_search_query
 from app.schemas.product import (
     ProductCategoryCreateRequest,
     ProductCategoryResponse,
     ProductCreateRequest,
+    ProductListQueryParams,
     ProductUpdateRequest,
     ProductWithStockResponse,
     ProductsListResponse,
@@ -23,9 +26,16 @@ from app.schemas.product import (
 )
 
 router = APIRouter(prefix="/api/v1/products", tags=["products"])
+logger = logging.getLogger(__name__)
 
 
 def _scope_to_owner(query, model_cls, current_user: User):
+    company_col = getattr(model_cls, "company_id", None)
+    if company_col is not None:
+        if current_user.company_id is None:
+            raise HTTPException(status_code=403, detail="User is not assigned to a company")
+        query = query.filter(company_col == current_user.company_id)
+
     if current_user.role in {"admin", "accounting"}:
         return query
     owner_col = getattr(model_cls, "created_by", None)
@@ -103,21 +113,16 @@ def _to_product_with_stock(product: Product, stock: Decimal) -> ProductWithStock
 
 @router.get("", response_model=ProductsListResponse)
 async def list_products(
-    search: str | None = Query(default=None),
-    category_id: UUID | None = Query(default=None),
-    is_active: bool | None = Query(default=None),
-    all_products: bool = Query(default=False),
-    page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=500),
+    params: ProductListQueryParams = Depends(),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("products_read")),
 ):
-    search = normalize_search_query(search)
+    search = normalize_search_query(params.search)
     query = db.query(Product).filter(Product.is_deleted == False)
     query = _scope_to_owner(query, Product, current_user)
 
     if search:
-        like_text = f"%{search}%"
+        like_text = "%" + search + "%"
         query = query.filter(
             or_(
                 Product.product_code.ilike(like_text),
@@ -126,14 +131,14 @@ async def list_products(
             )
         )
 
-    if category_id:
-        query = query.filter(Product.category_id == category_id)
+    if params.category_id:
+        query = query.filter(Product.category_id == params.category_id)
 
-    if is_active is not None:
-        query = query.filter(Product.is_active == is_active)
+    if params.is_active is not None:
+        query = query.filter(Product.is_active == params.is_active)
 
     # If all_products is True, fetch all products sorted by name
-    if all_products:
+    if params.all_products:
         products = query.order_by(Product.name.asc()).all()
         total = len(products)
     else:
@@ -141,8 +146,8 @@ async def list_products(
         total = query.count()
         products = (
             query.order_by(Product.name.asc())
-            .offset((page - 1) * page_size)
-            .limit(page_size)
+            .offset((params.page - 1) * params.page_size)
+            .limit(params.page_size)
             .all()
         )
 
@@ -155,18 +160,33 @@ async def list_products(
     return ProductsListResponse(
         items=items,
         total=total,
-        page=page if not all_products else 1,
-        page_size=page_size if not all_products else total,
-        has_more=False if all_products else (page * page_size) < total,
+        page=params.page if not params.all_products else 1,
+        page_size=params.page_size if not params.all_products else total,
+        has_more=False if params.all_products else (params.page * params.page_size) < total,
     )
+
+
+@router.get("/list", response_model=list[ProductWithStockResponse])
+async def list_products_flat(
+    params: ProductListQueryParams = Depends(),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("products_read")),
+):
+    """List endpoint returning only product rows (no pagination envelope)."""
+    paged = await list_products(params=params, db=db, current_user=current_user)
+    return paged.items
 
 
 @router.post("", response_model=ProductWithStockResponse, status_code=status.HTTP_201_CREATED)
 async def create_product(
     payload: ProductCreateRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("products_write")),
 ):
+    if current_user.company_id is None:
+        raise HTTPException(status_code=403, detail="User is not assigned to a company")
+
     category = (
         db.query(ProductCategory)
         .filter(ProductCategory.id == payload.category_id, ProductCategory.is_deleted == False)
@@ -193,6 +213,7 @@ async def create_product(
         **payload.model_dump(exclude={"product_code", "uom_id"}),
         uom_id=primary_uom.id,
         product_code=payload.product_code or _generate_product_code(db),
+        company_id=current_user.company_id,
         created_by=current_user.id,
     )
     db.add(product)
@@ -222,6 +243,32 @@ async def create_product(
         db.rollback()
         raise _to_integrity_http_error(exc)
     db.refresh(product)
+
+    correlation_id = getattr(request.state, "correlation_id", getattr(request.state, "request_id", None))
+    log_audit_event(
+        db,
+        action="PRODUCT_CREATE",
+        resource_type="products",
+        status="success",
+        user_id=current_user.id,
+        resource_id=product.id,
+        details={
+            "company_id": str(current_user.company_id),
+            "product_code": product.product_code,
+            "correlation_id": correlation_id,
+        },
+    )
+    db.commit()
+    logger.info(
+        "User created product",
+        extra={
+            "user_id": str(current_user.id),
+            "company_id": str(current_user.company_id),
+            "product_id": str(product.id),
+            "correlation_id": correlation_id,
+        },
+    )
+
     return _to_product_with_stock(product, _current_stock(db, product.id))
 
 
@@ -347,7 +394,9 @@ async def get_product(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("products_read")),
 ):
-    product = db.query(Product).filter(Product.id == product_id, Product.is_deleted == False).first()
+    query = db.query(Product).filter(Product.id == product_id, Product.is_deleted == False)
+    query = _scope_to_owner(query, Product, current_user)
+    product = query.first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     enforce_resource_ownership(product.created_by, current_user)
@@ -358,10 +407,13 @@ async def get_product(
 async def update_product(
     product_id: UUID,
     payload: ProductUpdateRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("products_write")),
 ):
-    product = db.query(Product).filter(Product.id == product_id, Product.is_deleted == False).first()
+    query = db.query(Product).filter(Product.id == product_id, Product.is_deleted == False)
+    query = _scope_to_owner(query, Product, current_user)
+    product = query.first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     enforce_resource_ownership(product.created_by, current_user)
@@ -399,16 +451,45 @@ async def update_product(
         db.rollback()
         raise _to_integrity_http_error(exc)
     db.refresh(product)
+
+    correlation_id = getattr(request.state, "correlation_id", getattr(request.state, "request_id", None))
+    log_audit_event(
+        db,
+        action="PRODUCT_UPDATE",
+        resource_type="products",
+        status="success",
+        user_id=current_user.id,
+        resource_id=product.id,
+        details={
+            "company_id": str(current_user.company_id) if current_user.company_id else None,
+            "product_code": product.product_code,
+            "correlation_id": correlation_id,
+        },
+    )
+    db.commit()
+    logger.info(
+        "User updated product",
+        extra={
+            "user_id": str(current_user.id),
+            "company_id": str(current_user.company_id) if current_user.company_id else None,
+            "product_id": str(product.id),
+            "correlation_id": correlation_id,
+        },
+    )
+
     return _to_product_with_stock(product, _current_stock(db, product.id))
 
 
 @router.delete("/{product_id}")
 async def delete_product(
     product_id: UUID,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("products_write")),
 ):
-    product = db.query(Product).filter(Product.id == product_id, Product.is_deleted == False).first()
+    query = db.query(Product).filter(Product.id == product_id, Product.is_deleted == False)
+    query = _scope_to_owner(query, Product, current_user)
+    product = query.first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     enforce_resource_ownership(product.created_by, current_user)
@@ -423,4 +504,30 @@ async def delete_product(
     product.is_deleted = True
     product.deleted_at = datetime.utcnow()
     db.commit()
+
+    correlation_id = getattr(request.state, "correlation_id", getattr(request.state, "request_id", None))
+    log_audit_event(
+        db,
+        action="PRODUCT_DELETE",
+        resource_type="products",
+        status="success",
+        user_id=current_user.id,
+        resource_id=product.id,
+        details={
+            "company_id": str(current_user.company_id) if current_user.company_id else None,
+            "product_code": product.product_code,
+            "correlation_id": correlation_id,
+        },
+    )
+    db.commit()
+    logger.info(
+        "User deleted product",
+        extra={
+            "user_id": str(current_user.id),
+            "company_id": str(current_user.company_id) if current_user.company_id else None,
+            "product_id": str(product.id),
+            "correlation_id": correlation_id,
+        },
+    )
+
     return {"message": "Product deleted"}

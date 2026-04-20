@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Purchase API Client
  * 
  * Handles all purchase workflow operations:
@@ -186,31 +186,31 @@ class PurchaseApiClient {
     if (options?.archived_only) params.archived_only = true;
     if (options?.include_archived) params.include_archived = true;
     if (options?.supplier_id) params.supplier_id = options.supplier_id;
-    return apiClient.get<{ items: PurchaseOrder[]; total: number }>('/api/v1/purchase-orders', { params });
+    return apiClient.get<{ items: PurchaseOrder[]; total: number }>('/api/v2/purchase-orders', { params });
   }
 
   async getPO(id: string) {
-    return apiClient.get<PurchaseOrderDetail>(`/api/v1/purchase-orders/${id}`);
+    return apiClient.get<PurchaseOrderDetail>(`/api/v2/purchase-orders/${id}`);
   }
 
   async createPO(payload: CreatePOPayload) {
-    return apiClient.post<PurchaseOrder>('/api/v1/purchase-orders', payload);
+    return apiClient.post<PurchaseOrder>('/api/v2/purchase-orders', payload);
   }
 
   async updatePO(id: string, payload: UpdatePOPayload) {
-    return apiClient.put<PurchaseOrder>(`/api/v1/purchase-orders/${id}`, payload);
+    return apiClient.put<PurchaseOrder>(`/api/v2/purchase-orders/${id}`, payload);
   }
 
   async updatePOStatus(id: string, status: string) {
-    return apiClient.patch<PurchaseOrder>(`/api/v1/purchase-orders/${id}/status`, { status });
+    return apiClient.patch<PurchaseOrder>(`/api/v2/purchase-orders/${id}/status`, { status });
   }
 
   async archivePO(id: string) {
-    return apiClient.patch<PurchaseOrder>(`/api/v1/purchase-orders/${id}/archive`, {});
+    return apiClient.patch<PurchaseOrder>(`/api/v2/purchase-orders/${id}/archive`, {});
   }
 
   async restorePO(id: string) {
-    return apiClient.patch<PurchaseOrder>(`/api/v1/purchase-orders/${id}/restore`, {});
+    return apiClient.patch<PurchaseOrder>(`/api/v2/purchase-orders/${id}/restore`, {});
   }
 
   // ========== Goods Receipt Notes ==========
@@ -226,68 +226,69 @@ class PurchaseApiClient {
     if (options?.archived_only) params.archived_only = true;
     if (options?.include_archived) params.include_archived = true;
     if (options?.supplier_id) params.supplier_id = options.supplier_id;
-    return apiClient.get<{ items: GoodsReceiptNote[]; total: number }>('/api/v1/grn', { params });
+    return apiClient.get<{ items: GoodsReceiptNote[]; total: number }>('/api/v2/grn', { params });
   }
 
   async getGRN(id: string) {
-    return apiClient.get<GRNDetail>(`/api/v1/grn/${id}`);
+    return apiClient.get<GRNDetail>(`/api/v2/grn/${id}`);
   }
 
   async createGRN(payload: CreateGRNPayload) {
-    return apiClient.post<GoodsReceiptNote>('/api/v1/grn', payload);
+    return apiClient.post<GoodsReceiptNote>('/api/v2/grn', payload);
   }
 
   async updateGRN(id: string, payload: UpdateGRNPayload) {
-    return apiClient.put<GoodsReceiptNote>(`/api/v1/grn/${id}`, payload);
+    return apiClient.put<GoodsReceiptNote>(`/api/v2/grn/${id}`, payload);
   }
 
   async confirmGRN(id: string) {
-    return apiClient.post<GoodsReceiptNote>(`/api/v1/grn/${id}/confirm`, {});
+    return apiClient.post<GoodsReceiptNote>(`/api/v2/grn/${id}/confirm`, {});
   }
 
   async cancelGRN(id: string) {
-    return apiClient.post<GoodsReceiptNote>(`/api/v1/grn/${id}/cancel`, {});
+    return apiClient.post<GoodsReceiptNote>(`/api/v2/grn/${id}/cancel`, {});
   }
 
   async archiveGRN(id: string) {
-    return apiClient.patch<GoodsReceiptNote>(`/api/v1/grn/${id}/archive`, {});
+    return apiClient.patch<GoodsReceiptNote>(`/api/v2/grn/${id}/archive`, {});
   }
 
   async restoreGRN(id: string) {
-    return apiClient.patch<GoodsReceiptNote>(`/api/v1/grn/${id}/restore`, {});
+    return apiClient.patch<GoodsReceiptNote>(`/api/v2/grn/${id}/restore`, {});
   }
 
   // ========== Purchase Returns ==========
 
   async listPurchaseReturns(page = 1, page_size = 20) {
-    return apiClient.get<{ items: PurchaseReturn[]; total: number }>('/api/v1/purchase-returns', {
+    return apiClient.get<{ items: PurchaseReturn[]; total: number }>('/api/v2/purchase-returns', {
       params: { page, page_size },
     });
   }
 
   async getPurchaseReturn(id: string) {
-    return apiClient.get<PurchaseReturn>(`/api/v1/purchase-returns/${id}`);
+    return apiClient.get<PurchaseReturn>(`/api/v2/purchase-returns/${id}`);
   }
 
   async createPurchaseReturn(payload: CreatePurchaseReturnPayload) {
-    return apiClient.post<PurchaseReturn>('/api/v1/purchase-returns', payload);
+    return apiClient.post<PurchaseReturn>('/api/v2/purchase-returns', payload);
   }
 
   async confirmPurchaseReturn(id: string) {
-    return apiClient.post<PurchaseReturn>(`/api/v1/purchase-returns/${id}/confirm`, {});
+    return apiClient.post<PurchaseReturn>(`/api/v2/purchase-returns/${id}/confirm`, {});
   }
 
   async cancelPurchaseReturn(id: string) {
-    return apiClient.post<PurchaseReturn>(`/api/v1/purchase-returns/${id}/cancel`, {});
+    return apiClient.post<PurchaseReturn>(`/api/v2/purchase-returns/${id}/cancel`, {});
   }
 
   // ========== PDF Download ==========
 
   async downloadPOPdf(id: string) {
-    return apiClient.get(`/api/v1/purchase-orders/${id}/pdf`, {
+    return apiClient.get(`/api/v2/purchase-orders/${id}/pdf`, {
       responseType: 'blob',
     });
   }
 }
 
 export const purchaseApi = new PurchaseApiClient();
+

@@ -1,11 +1,14 @@
 """Main FastAPI application."""
 import logging
-import uuid
 from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 from sqlalchemy.exc import IntegrityError
 from app.config import settings
 from app.logging_setup import configure_logging
@@ -15,10 +18,9 @@ from app.middleware import (
     CSRFMiddleware,
     HTTPSRedirectMiddleware,
     RequestContextMiddleware,
-    SecurityHeadersMiddleware,
 )
-from app.rate_limit import limiter
-from app.routers import auth, company, users, customers, suppliers, products, purchase, sales, payments, reports, stock, archive, compliance
+from app.middleware.request_context import correlation_id
+from app import rate_limit as rate_limit_module
 from fastapi.staticfiles import StaticFiles
 
 configure_logging()
@@ -36,11 +38,48 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# Explicit slowapi wiring for application-wide and route-level limits.
+limiter = Limiter(key_func=get_remote_address, default_limits=[settings.rate_limit_api])
+rate_limit_module.limiter = limiter
+
+from app.routers import auth, company, users, customers, suppliers, products, purchase, sales, payments, reports, stock, archive, compliance
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Attach baseline browser security headers to every response."""
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response = await call_next(request)
+
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; "
+            "img-src 'self' data:; "
+            "style-src 'self' https://fonts.googleapis.com; "
+            "script-src 'self'; "
+            "font-src 'self' data: https://fonts.gstatic.com; "
+            "connect-src 'self' http://localhost:8001 http://127.0.0.1:8001; "
+            "frame-ancestors 'none'; "
+            "base-uri 'self'; "
+            "form-action 'self'; "
+            "object-src 'none'",
+        )
+
+        if request.url.scheme == "https":
+            response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+
+        return response
+
 # Mount static files for company logo and assets
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # Register shared rate limiter instance.
 app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 @app.exception_handler(RateLimitExceeded)
@@ -77,24 +116,18 @@ if settings.csrf_enabled:
 # Baseline audit trail for all mutating API requests.
 app.add_middleware(AuditTrailMiddleware)
 
-# CORS configuration - MUST BE ADDED FIRST
-allowed_origins = [settings.frontend_url]
-if settings.environment != "production":
-    allowed_origins.extend([
-        "http://localhost:3001",
-        "http://127.0.0.1:3001",
-    ])
-allowed_origins = list(dict.fromkeys(allowed_origins))
-# For development, we can also use allow_origin_regex or just "*" if we trust the environment
-# app.add_middleware(CORSMiddleware, allow_origins=["*"], ...)
+# CORS configuration
+allowed_origins = [origin for origin in settings.frontend_allowed_origins if origin and origin != "*"]
+if not allowed_origins:
+    raise RuntimeError("CORS allow_origins must use explicit trusted origins; wildcard '*' is not allowed")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", settings.csrf_header_name, "X-Request-ID"],
-    expose_headers=["Content-Range", "X-API-Version", "X-API-Compatible-With", "X-Request-ID"],
+    allow_headers=["Authorization", "Content-Type", settings.csrf_header_name, "X-Request-ID", "X-Correlation-ID"],
+    expose_headers=["Content-Range", "X-API-Version", "X-API-Compatible-With", "X-Request-ID", "X-Correlation-ID"],
     max_age=3600,
 )
 
@@ -144,15 +177,16 @@ async def integrity_error_handler(request: Request, exc: IntegrityError):
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    error_id = str(uuid.uuid4())
-    logger.exception("Unhandled server error on %s %s", request.method, request.url.path)
+    logger.error(
+        "Unhandled server error on %s %s",
+        request.method,
+        request.url.path,
+        exc_info=True,
+        extra={"correlation_id": correlation_id.get()},
+    )
     return JSONResponse(
         status_code=500,
-        content={
-            "detail": "Internal server error",
-            "error_id": error_id,
-            "path": request.url.path,
-        },
+        content={"error": "Internal server error"},
     )
 
 
@@ -188,9 +222,30 @@ async def health_check():
 async def api_versions():
     """Report available API versions and compatibility behavior."""
     return {
-        "default": "v1",
+        "default": "v2",
         "supported": ["v1", "v2"],
         "v2_mode": "compatibility_alias_to_v1",
+    }
+
+
+@app.get("/api/v1")
+@app.get("/api/v1/")
+async def api_v1_root():
+    """API v1 root endpoint."""
+    return {
+        "version": "v1",
+        "status": "active",
+    }
+
+
+@app.get("/api/v2")
+@app.get("/api/v2/")
+async def api_v2_root():
+    """API v2 root endpoint (compatibility mode mapped to v1 handlers)."""
+    return {
+        "version": "v2",
+        "compatibility": "v1",
+        "status": "active",
     }
 
 

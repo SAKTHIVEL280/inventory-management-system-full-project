@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Sales API Client
  * 
  * Handles all sales workflow operations:
@@ -208,41 +208,41 @@ class SalesApiClient {
     if (status) params.status = status;
     if (options?.archived_only) params.archived_only = true;
     if (options?.include_archived) params.include_archived = true;
-    return apiClient.get<{ items: Quotation[]; total: number }>('/api/v1/quotations', { params });
+    return apiClient.get<{ items: Quotation[]; total: number }>('/api/v2/quotations', { params });
   }
 
   async getQuotation(id: string) {
-    return apiClient.get<Quotation>(`/api/v1/quotations/${id}`);
+    return apiClient.get<Quotation>(`/api/v2/quotations/${id}`);
   }
 
   async createQuotation(payload: CreateQuotationPayload) {
-    return apiClient.post<Quotation>('/api/v1/quotations', payload);
+    return apiClient.post<Quotation>('/api/v2/quotations', payload);
   }
 
   async updateQuotation(id: string, payload: UpdateQuotationPayload) {
-    return apiClient.put<Quotation>(`/api/v1/quotations/${id}`, payload);
+    return apiClient.put<Quotation>(`/api/v2/quotations/${id}`, payload);
   }
 
   async updateQuotationStatus(id: string, status: string) {
-    return apiClient.patch<Quotation>(`/api/v1/quotations/${id}/status`, { status });
+    return apiClient.patch<Quotation>(`/api/v2/quotations/${id}/status`, { status });
   }
 
   async archiveQuotation(id: string) {
-    return apiClient.patch<Quotation>(`/api/v1/quotations/${id}/archive`, {});
+    return apiClient.patch<Quotation>(`/api/v2/quotations/${id}/archive`, {});
   }
 
   async restoreQuotation(id: string) {
-    return apiClient.patch<Quotation>(`/api/v1/quotations/${id}/restore`, {});
+    return apiClient.patch<Quotation>(`/api/v2/quotations/${id}/restore`, {});
   }
 
   async downloadQuotationPdf(id: string) {
-    return apiClient.get(`/api/v1/quotations/${id}/pdf`, {
+    return apiClient.get(`/api/v2/quotations/${id}/pdf`, {
       responseType: 'blob',
     });
   }
 
   async sendQuotationEmail(id: string, email?: string) {
-    return apiClient.post(`/api/v1/quotations/${id}/send-email`, { email });
+    return apiClient.post(`/api/v2/quotations/${id}/send-email`, { email });
   }
 
   // ========== Sales Invoices ==========
@@ -250,72 +250,73 @@ class SalesApiClient {
   async listInvoices(status?: string, page = 1, page_size = 20) {
     const params: Record<string, string | number> = { page, page_size };
     if (status) params.status = status;
-    return apiClient.get<{ items: SalesInvoice[]; total: number }>('/api/v1/invoices', { params });
+    return apiClient.get<{ items: SalesInvoice[]; total: number }>('/api/v2/invoices', { params });
   }
 
   async getInvoice(id: string) {
-    return apiClient.get<InvoiceDetailResponse>(`/api/v1/invoices/${id}`);
+    return apiClient.get<InvoiceDetailResponse>(`/api/v2/invoices/${id}`);
   }
 
   async getInvoiceBatchOptions(productId: string) {
-    return apiClient.get<InvoiceBatchOptionsResponse>('/api/v1/invoices/batch-options', {
+    return apiClient.get<InvoiceBatchOptionsResponse>('/api/v2/invoices/batch-options', {
       params: { product_id: productId },
     });
   }
 
   async createInvoice(payload: CreateInvoicePayload, options?: ApiCallOptions) {
-    return apiClient.post<SalesInvoice>('/api/v1/invoices', payload, {
+    return apiClient.post<SalesInvoice>('/api/v2/invoices', payload, {
       ...(options?.suppressGlobalErrorToast ? { skipErrorToast: true } : {}),
     } as unknown as Record<string, unknown>);
   }
 
   async updateInvoice(id: string, payload: UpdateInvoicePayload, options?: ApiCallOptions) {
-    return apiClient.put<SalesInvoice>(`/api/v1/invoices/${id}`, payload, {
+    return apiClient.put<SalesInvoice>(`/api/v2/invoices/${id}`, payload, {
       ...(options?.suppressGlobalErrorToast ? { skipErrorToast: true } : {}),
     } as unknown as Record<string, unknown>);
   }
 
   async issueInvoice(id: string, options?: ApiCallOptions) {
-    return apiClient.post<SalesInvoice>(`/api/v1/invoices/${id}/issue`, {}, {
+    return apiClient.post<SalesInvoice>(`/api/v2/invoices/${id}/issue`, {}, {
       ...(options?.suppressGlobalErrorToast ? { skipErrorToast: true } : {}),
     } as unknown as Record<string, unknown>);
   }
 
   async sendInvoiceEmail(id: string, email: string) {
-    return apiClient.post<{ message: string }>(`/api/v1/invoices/${id}/send-email`, { email });
+    return apiClient.post<{ message: string }>(`/api/v2/invoices/${id}/send-email`, { email });
   }
 
   // ========== Sales Returns ==========
 
   async listSalesReturns(page = 1, page_size = 20) {
-    return apiClient.get<{ items: SalesReturn[]; total: number }>('/api/v1/sales-returns', {
+    return apiClient.get<{ items: SalesReturn[]; total: number }>('/api/v2/sales-returns', {
       params: { page, page_size },
     });
   }
 
   async getSalesReturn(id: string) {
-    return apiClient.get<SalesReturn>(`/api/v1/sales-returns/${id}`);
+    return apiClient.get<SalesReturn>(`/api/v2/sales-returns/${id}`);
   }
 
   async createSalesReturn(payload: CreateSalesReturnPayload) {
-    return apiClient.post<SalesReturn>('/api/v1/sales-returns', payload);
+    return apiClient.post<SalesReturn>('/api/v2/sales-returns', payload);
   }
 
   async confirmSalesReturn(id: string) {
-    return apiClient.post<SalesReturn>(`/api/v1/sales-returns/${id}/confirm`, {});
+    return apiClient.post<SalesReturn>(`/api/v2/sales-returns/${id}/confirm`, {});
   }
 
   async cancelSalesReturn(id: string) {
-    return apiClient.post<SalesReturn>(`/api/v1/sales-returns/${id}/cancel`, {});
+    return apiClient.post<SalesReturn>(`/api/v2/sales-returns/${id}/cancel`, {});
   }
 
   // ========== PDF Download ==========
 
   async downloadInvoicePdf(id: string) {
-    return apiClient.get(`/api/v1/invoices/${id}/pdf`, {
+    return apiClient.get(`/api/v2/invoices/${id}/pdf`, {
       responseType: 'blob',
     });
   }
 }
 
 export const salesApi = new SalesApiClient();
+

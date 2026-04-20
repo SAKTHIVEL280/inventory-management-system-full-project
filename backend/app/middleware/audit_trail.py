@@ -70,6 +70,7 @@ class AuditTrailMiddleware(BaseHTTPMiddleware):
                     "path": request.url.path,
                     "status_code": response.status_code,
                     "request_id": getattr(request.state, "request_id", None),
+                    "correlation_id": getattr(request.state, "correlation_id", None),
                 }
                 if error:
                     detail_payload["error"] = error

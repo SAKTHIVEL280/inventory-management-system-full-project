@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Payments API Client
  * 
  * Handles all payments workflow operations:
@@ -109,28 +109,29 @@ class PaymentsApiClient {
     if (options?.archived_only) params.archived_only = true;
     if (options?.include_archived) params.include_archived = true;
 
-    return apiClient.get<PaymentListResponse>('/api/v1/payments', { params });
+    return apiClient.get<PaymentListResponse>('/api/v2/payments', { params });
   }
 
   async getPayment(id: string) {
-    return apiClient.get<PaymentDetail>(`/api/v1/payments/${id}`);
+    return apiClient.get<PaymentDetail>(`/api/v2/payments/${id}`);
   }
 
   async createPayment(payload: CreatePaymentPayload) {
-    return apiClient.post<Payment>('/api/v1/payments', payload);
+    return apiClient.post<Payment>('/api/v2/payments', payload);
   }
 
   async updatePaymentStatus(id: string, status: string) {
-    return apiClient.patch<Payment>(`/api/v1/payments/${id}/status`, { status });
+    return apiClient.patch<Payment>(`/api/v2/payments/${id}/status`, { status });
   }
 
   async archivePayment(id: string) {
-    return apiClient.patch<Payment>(`/api/v1/payments/${id}/archive`, {});
+    return apiClient.patch<Payment>(`/api/v2/payments/${id}/archive`, {});
   }
 
   async restorePayment(id: string) {
-    return apiClient.patch<Payment>(`/api/v1/payments/${id}/restore`, {});
+    return apiClient.patch<Payment>(`/api/v2/payments/${id}/restore`, {});
   }
 }
 
 export const paymentsApi = new PaymentsApiClient();
+

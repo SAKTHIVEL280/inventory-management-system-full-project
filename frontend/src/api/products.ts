@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+﻿import { apiClient } from './client';
 import { Product, ProductCategory, UnitOfMeasure, PaginatedResponse } from '../types';
 
 export type CreateProductPayload = {
@@ -24,35 +24,35 @@ export type CreateProductPayload = {
 
 export const productsApi = {
   list: async (): Promise<PaginatedResponse<Product>> => {
-    const response = await apiClient.get<PaginatedResponse<Product>>('/api/v1/products');
+    const response = await apiClient.get<PaginatedResponse<Product>>('/api/v2/products');
     return response.data;
   },
 
   listAll: async (): Promise<PaginatedResponse<Product>> => {
-    const response = await apiClient.get<PaginatedResponse<Product>>('/api/v1/products', {
+    const response = await apiClient.get<PaginatedResponse<Product>>('/api/v2/products', {
       params: { all_products: true },
     });
     return response.data;
   },
 
   get: async (id: string): Promise<Product> => {
-    const response = await apiClient.get<Product>(`/api/v1/products/${id}`);
+    const response = await apiClient.get<Product>(`/api/v2/products/${id}`);
     return response.data;
   },
 
   listCategories: async (): Promise<ProductCategory[]> => {
-    const response = await apiClient.get<ProductCategory[]>('/api/v1/products/categories');
+    const response = await apiClient.get<ProductCategory[]>('/api/v2/products/categories');
     return response.data;
   },
 
   createCategory: async (payload: Pick<ProductCategory, 'name' | 'description'>): Promise<ProductCategory> => {
-    const response = await apiClient.post<ProductCategory>('/api/v1/products/categories', payload);
+    const response = await apiClient.post<ProductCategory>('/api/v2/products/categories', payload);
     return response.data;
   },
 
   updateCategory: async (id: string, payload: Partial<ProductCategory>): Promise<ProductCategory> => {
     const response = await apiClient.post<ProductCategory>(
-      '/api/v1/products/apply-category-action',
+      '/api/v2/products/apply-category-action',
       null,
       {
         params: {
@@ -68,7 +68,7 @@ export const productsApi = {
 
   deleteCategory: async (id: string): Promise<void> => {
     await apiClient.post(
-      '/api/v1/products/apply-category-action',
+      '/api/v2/products/apply-category-action',
       null,
       {
         params: {
@@ -80,21 +80,22 @@ export const productsApi = {
   },
 
   listUom: async (): Promise<UnitOfMeasure[]> => {
-    const response = await apiClient.get<UnitOfMeasure[]>('/api/v1/products/uom');
+    const response = await apiClient.get<UnitOfMeasure[]>('/api/v2/products/uom');
     return response.data;
   },
 
   create: async (payload: CreateProductPayload): Promise<Product> => {
-    const response = await apiClient.post<Product>('/api/v1/products', payload);
+    const response = await apiClient.post<Product>('/api/v2/products', payload);
     return response.data;
   },
 
   update: async (id: string, payload: CreateProductPayload): Promise<Product> => {
-    const response = await apiClient.put<Product>(`/api/v1/products/${id}`, payload);
+    const response = await apiClient.put<Product>(`/api/v2/products/${id}`, payload);
     return response.data;
   },
 
   delete: async (id: string): Promise<void> => {
-    await apiClient.delete(`/api/v1/products/${id}`);
+    await apiClient.delete(`/api/v2/products/${id}`);
   },
 };
+

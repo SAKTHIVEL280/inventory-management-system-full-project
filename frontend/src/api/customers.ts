@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+﻿import { apiClient } from './client';
 import { Customer, CustomerCustomizationOptions, PaginatedResponse } from '../types';
 
 type CreateCustomerPayload = {
@@ -47,31 +47,32 @@ type ListCustomersParams = {
 
 export const customersApi = {
   list: async (params: ListCustomersParams = {}): Promise<PaginatedResponse<Customer>> => {
-    const response = await apiClient.get<PaginatedResponse<Customer>>('/api/v1/customers', { params });
+    const response = await apiClient.get<PaginatedResponse<Customer>>('/api/v2/customers', { params });
     return response.data;
   },
 
   get: async (id: string): Promise<Customer> => {
-    const response = await apiClient.get<Customer>(`/api/v1/customers/${id}`);
+    const response = await apiClient.get<Customer>(`/api/v2/customers/${id}`);
     return response.data;
   },
 
   getCustomizationOptions: async (): Promise<CustomerCustomizationOptions> => {
-    const response = await apiClient.get<CustomerCustomizationOptions>('/api/v1/customers/customization-options');
+    const response = await apiClient.get<CustomerCustomizationOptions>('/api/v2/customers/customization-options');
     return response.data;
   },
 
   create: async (payload: CreateCustomerPayload): Promise<Customer> => {
-    const response = await apiClient.post<Customer>('/api/v1/customers', payload);
+    const response = await apiClient.post<Customer>('/api/v2/customers', payload);
     return response.data;
   },
 
   update: async (id: string, payload: Partial<CreateCustomerPayload>): Promise<Customer> => {
-    const response = await apiClient.put<Customer>(`/api/v1/customers/${id}`, payload);
+    const response = await apiClient.put<Customer>(`/api/v2/customers/${id}`, payload);
     return response.data;
   },
 
   delete: async (id: string): Promise<void> => {
-    await apiClient.delete(`/api/v1/customers/${id}`);
+    await apiClient.delete(`/api/v2/customers/${id}`);
   },
 };
+

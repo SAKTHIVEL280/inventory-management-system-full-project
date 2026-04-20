@@ -8,6 +8,9 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 
+_LOG_RECORD_RESERVED = set(logging.LogRecord("", 0, "", 0, "", (), None).__dict__.keys())
+
+
 class JsonLikeFormatter(logging.Formatter):
     """Format logs as compact JSON-like strings without extra dependencies."""
 
@@ -18,6 +21,13 @@ class JsonLikeFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
+        extras = {
+            key: value
+            for key, value in record.__dict__.items()
+            if key not in _LOG_RECORD_RESERVED and not key.startswith("_")
+        }
+        if extras:
+            payload["extra"] = extras
         if record.exc_info:
             payload["exc"] = self.formatException(record.exc_info)
         return json.dumps(payload, ensure_ascii=True)

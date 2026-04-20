@@ -37,15 +37,15 @@ def _set_csrf_cookie(response: Response) -> None:
         key=settings.csrf_cookie_name,
         value=csrf_token,
         max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
-        secure=settings.cookie_secure,
+        secure=True,
         httponly=False,
-        samesite="lax",
+        samesite="strict",
         path="/",
     )
 
 
 @router.post("/login", response_model=TokenResponse)
-@limiter.limit(settings.rate_limit_login)
+@limiter.limit("5/minute")
 async def login(
     request: Request,
     credentials: UserLogin,
@@ -108,18 +108,18 @@ async def login(
         key="access_token",
         value=access_token,
         max_age=settings.access_token_expire_minutes * 60,
-        secure=settings.cookie_secure,
+        secure=True,
         httponly=True,
-        samesite="lax",
+        samesite="strict",
         path="/",
     )
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
         max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
-        secure=settings.cookie_secure,
+        secure=True,
         httponly=True,
-        samesite="lax",
+        samesite="strict",
         path="/",
     )
     if settings.csrf_enabled:
@@ -144,7 +144,7 @@ async def login(
 
 
 @router.post("/refresh", response_model=TokenResponse)
-@limiter.limit(settings.rate_limit_refresh)
+@limiter.limit("100/minute")
 async def refresh(
     request: Request,
     response: Response,
@@ -226,9 +226,9 @@ async def refresh(
         key="access_token",
         value=access_token,
         max_age=settings.access_token_expire_minutes * 60,
-        secure=settings.cookie_secure,
+        secure=True,
         httponly=True,
-        samesite="lax",
+        samesite="strict",
         path="/",
     )
     if settings.csrf_enabled:
@@ -253,7 +253,9 @@ async def refresh(
 
 
 @router.get("/me")
+@limiter.limit("100/minute")
 async def get_me(
+    request: Request,
     current_user: User = Depends(get_current_user),
 ):
     """
@@ -266,6 +268,7 @@ async def get_me(
 
 
 @router.post("/logout")
+@limiter.limit("100/minute")
 async def logout(
     request: Request,
     response: Response,
@@ -296,6 +299,7 @@ async def logout(
 
 
 @router.post("/change-password")
+@limiter.limit("100/minute")
 async def change_password(
     request: Request,
     payload: ChangePasswordRequest,

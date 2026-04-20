@@ -42,6 +42,75 @@ def main() -> int:
         # Auth hardening fields
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ NULL",
+        "UPDATE users SET email = regexp_replace(email, '@local\\.invalid$', '@example.com') WHERE email ~* '@local\\.invalid$'",
+
+        # Tenant scoping fields for IDOR protection
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id UUID",
+        "ALTER TABLE products ADD COLUMN IF NOT EXISTS company_id UUID",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS company_id UUID",
+        "CREATE INDEX IF NOT EXISTS ix_users_company_id ON users (company_id)",
+        "CREATE INDEX IF NOT EXISTS ix_products_company_id ON products (company_id)",
+        "CREATE INDEX IF NOT EXISTS ix_customers_company_id ON customers (company_id)",
+        """
+        DO $$
+        DECLARE company_uuid UUID;
+        BEGIN
+            SELECT id INTO company_uuid
+            FROM company
+            ORDER BY created_at ASC
+            LIMIT 1;
+
+            IF company_uuid IS NOT NULL THEN
+                UPDATE users
+                SET company_id = company_uuid
+                WHERE company_id IS NULL;
+
+                UPDATE products p
+                SET company_id = COALESCE(
+                    (SELECT u.company_id FROM users u WHERE u.id = p.created_by),
+                    company_uuid
+                )
+                WHERE p.company_id IS NULL;
+
+                UPDATE customers c
+                SET company_id = COALESCE(
+                    (SELECT u.company_id FROM users u WHERE u.id = c.created_by),
+                    company_uuid
+                )
+                WHERE c.company_id IS NULL;
+            END IF;
+        END $$
+        """,
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_users_company') THEN
+                ALTER TABLE users
+                    ADD CONSTRAINT fk_users_company
+                    FOREIGN KEY (company_id) REFERENCES company(id);
+            END IF;
+        END $$
+        """,
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_products_company') THEN
+                ALTER TABLE products
+                    ADD CONSTRAINT fk_products_company
+                    FOREIGN KEY (company_id) REFERENCES company(id);
+            END IF;
+        END $$
+        """,
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_customers_company') THEN
+                ALTER TABLE customers
+                    ADD CONSTRAINT fk_customers_company
+                    FOREIGN KEY (company_id) REFERENCES company(id);
+            END IF;
+        END $$
+        """,
 
         # Inventory/model compatibility
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS safety_stock INTEGER NOT NULL DEFAULT 0",

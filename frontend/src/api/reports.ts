@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Reports API
  *
  * Dashboard statistics and reports API calls.
@@ -70,7 +70,7 @@ export interface StockReportResponse {
  * Fetch dashboard statistics
  */
 export const getDashboardStats = async (): Promise<DashboardStats> => {
-  const response = await apiClient.get('/api/v1/reports/dashboard');
+  const response = await apiClient.get('/api/v2/reports/dashboard');
   return response.data;
 };
 
@@ -78,7 +78,7 @@ export const getDashboardStats = async (): Promise<DashboardStats> => {
  * Fetch stock report
  */
 export const getStockReport = async (lowStockOnly = false): Promise<StockReportResponse> => {
-  const response = await apiClient.get('/api/v1/reports/stock', {
+  const response = await apiClient.get('/api/v2/reports/stock', {
     params: { low_stock_only: lowStockOnly },
   });
   return response.data;
@@ -88,7 +88,7 @@ export const getStockReport = async (lowStockOnly = false): Promise<StockReportR
  * Fetch sales report
  */
 export const getSalesReport = async (fromDate: string, toDate: string) => {
-  const response = await apiClient.get('/api/v1/reports/sales', {
+  const response = await apiClient.get('/api/v2/reports/sales', {
     params: { from_date: fromDate, to_date: toDate },
   });
   return response.data;
@@ -98,7 +98,7 @@ export const getSalesReport = async (fromDate: string, toDate: string) => {
  * Fetch outstanding receivables
  */
 export const getOutstandingReceivables = async () => {
-  const response = await apiClient.get('/api/v1/reports/outstanding-receivables');
+  const response = await apiClient.get('/api/v2/reports/outstanding-receivables');
   return response.data;
 };
 
@@ -106,6 +106,7 @@ export const getOutstandingReceivables = async () => {
  * Fetch outstanding payables
  */
 export const getOutstandingPayables = async () => {
-  const response = await apiClient.get('/api/v1/reports/outstanding-payables');
+  const response = await apiClient.get('/api/v2/reports/outstanding-payables');
   return response.data;
 };
+

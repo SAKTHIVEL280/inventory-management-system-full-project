@@ -51,8 +51,9 @@ npm run dev
 ### 5. Login
 
 - URL: http://localhost:3001
-- Email: admin@company.com
-- Password: Admin@123
+- Credentials are provided by backend seeding:
+	- set `IMS_ADMIN_EMAIL` and `IMS_ADMIN_PASSWORD` in `backend/.env`, or
+	- use the generated secure credentials printed by `python setup_db.py`
 
 ## Local URLs
 

@@ -22,6 +22,12 @@ router = APIRouter(prefix="/api/v1/users", tags=["users"])
 ADMIN_ONLY_PERMISSIONS = {"company_read", "company_write", "users_read", "users_write"}
 
 
+def _scope_to_company(query, current_user: User):
+    if current_user.company_id is None:
+        raise HTTPException(status_code=403, detail="User is not assigned to a company")
+    return query.filter(User.company_id == current_user.company_id)
+
+
 def _to_user_response(user: User) -> UserManagementResponse:
     return UserManagementResponse(
         id=user.id,
@@ -43,6 +49,7 @@ async def list_users(
     current_user: User = Depends(require_permissions("users_read")),
 ):
     query = db.query(User).filter(User.is_deleted == False)
+    query = _scope_to_company(query, current_user)
     total = query.count()
     users = (
         query.order_by(User.created_at.desc())
@@ -66,7 +73,11 @@ async def create_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("users_write")),
 ):
-    existing = db.query(User).filter(User.email == payload.email, User.is_deleted == False).first()
+    existing = (
+        _scope_to_company(db.query(User), current_user)
+        .filter(User.email == payload.email, User.is_deleted == False)
+        .first()
+    )
     if existing:
         raise HTTPException(status_code=400, detail="Email already exists")
 
@@ -83,6 +94,7 @@ async def create_user(
         permission_overrides=payload.permission_overrides,
         is_active=payload.is_active,
         force_password_change=True,
+        company_id=current_user.company_id,
         created_by=current_user.id,
     )
     db.add(user)
@@ -97,7 +109,11 @@ async def get_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("users_read")),
 ):
-    user = db.query(User).filter(User.id == user_id, User.is_deleted == False).first()
+    user = (
+        _scope_to_company(db.query(User), current_user)
+        .filter(User.id == user_id, User.is_deleted == False)
+        .first()
+    )
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return _to_user_response(user)
@@ -110,12 +126,16 @@ async def update_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("users_write")),
 ):
-    user = db.query(User).filter(User.id == user_id, User.is_deleted == False).first()
+    user = (
+        _scope_to_company(db.query(User), current_user)
+        .filter(User.id == user_id, User.is_deleted == False)
+        .first()
+    )
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
     email_owner = (
-        db.query(User)
+        _scope_to_company(db.query(User), current_user)
         .filter(User.email == payload.email, User.id != user_id, User.is_deleted == False)
         .first()
     )
@@ -151,7 +171,11 @@ async def update_user_permissions(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("users_write")),
 ):
-    user = db.query(User).filter(User.id == user_id, User.is_deleted == False).first()
+    user = (
+        _scope_to_company(db.query(User), current_user)
+        .filter(User.id == user_id, User.is_deleted == False)
+        .first()
+    )
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -173,7 +197,11 @@ async def clear_user_permissions(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("users_write")),
 ):
-    user = db.query(User).filter(User.id == user_id, User.is_deleted == False).first()
+    user = (
+        _scope_to_company(db.query(User), current_user)
+        .filter(User.id == user_id, User.is_deleted == False)
+        .first()
+    )
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
@@ -189,7 +217,11 @@ async def delete_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("users_write")),
 ):
-    user = db.query(User).filter(User.id == user_id, User.is_deleted == False).first()
+    user = (
+        _scope_to_company(db.query(User), current_user)
+        .filter(User.id == user_id, User.is_deleted == False)
+        .first()
+    )
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Sales Invoices Page
  * List, create, edit, issue invoices. GST-aware line items.
  */
@@ -255,10 +255,10 @@ const InvoicesPage = () => {
   const fetchMasterData = async () => {
     try {
       const [c, p, comp, uom] = await Promise.all([
-        apiClient.get('/api/v1/customers', { params: { page_size: 100 } }),
-        apiClient.get('/api/v1/products', { params: { page_size: 100 } }),
-        apiClient.get('/api/v1/company'),
-        apiClient.get('/api/v1/products/uom'),
+        apiClient.get('/api/v2/customers', { params: { page_size: 100 } }),
+        apiClient.get('/api/v2/products', { params: { page_size: 100 } }),
+        apiClient.get('/api/v2/company'),
+        apiClient.get('/api/v2/products/uom'),
       ]);
       setCustomers(c.data.items || []);
       setProducts(p.data.items || []);
@@ -1073,4 +1073,5 @@ const InvoicesPage = () => {
 };
 
 export default InvoicesPage;
+
 

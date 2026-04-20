@@ -25,6 +25,7 @@ CREATE TABLE users (
   deleted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
+  company_id UUID,
   created_by UUID REFERENCES users(id)
 );
 
@@ -68,6 +69,12 @@ CREATE TABLE company (
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE users
+  ADD CONSTRAINT fk_users_company
+  FOREIGN KEY (company_id) REFERENCES company(id);
+
+CREATE INDEX IF NOT EXISTS ix_users_company_id ON users (company_id);
 
 -- 5.6 Units of Measure
 CREATE TABLE units_of_measure (
@@ -153,6 +160,7 @@ CREATE TABLE product_categories (
   deleted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
+  company_id UUID REFERENCES company(id),
   created_by UUID REFERENCES users(id)
 );
 
@@ -181,8 +189,11 @@ CREATE TABLE products (
   deleted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
+  company_id UUID REFERENCES company(id),
   created_by UUID REFERENCES users(id)
 );
+
+CREATE INDEX IF NOT EXISTS ix_products_company_id ON products (company_id);
 
 -- 5.3 Customers
 CREATE TABLE customers (
@@ -220,6 +231,8 @@ CREATE TABLE customers (
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   created_by UUID REFERENCES users(id)
 );
+
+CREATE INDEX IF NOT EXISTS ix_customers_company_id ON customers (company_id);
 
 -- 5.4 Suppliers
 CREATE TABLE suppliers (

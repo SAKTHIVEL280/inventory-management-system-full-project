@@ -1,6 +1,9 @@
-import axios, { AxiosError, AxiosInstance } from 'axios';
+﻿import axios, { AxiosError, AxiosInstance, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
+import Cookies from 'js-cookie';
 import { useAuthStore } from '../store/auth';
 import { toast } from 'sonner';
+
+axios.defaults.withCredentials = true;
 
 const defaultApiBaseUrl =
   typeof window !== 'undefined'
@@ -17,8 +20,8 @@ const API_BASE_URL = (() => {
     return '';
   }
 
-  // Endpoints in this app already include '/api/v1/...'.
-  // For any relative base like '/api' or '/api/v1', use same-origin empty base.
+  // Endpoints in this app already include '/api/v2/...'.
+  // For any relative base like '/api' or '/api/v2', use same-origin empty base.
   if (trimmed.startsWith('/')) {
     return '';
   }
@@ -28,8 +31,8 @@ const API_BASE_URL = (() => {
       const url = new URL(trimmed);
       return url.origin;
     } catch {
-      const noApiV1 = trimmed.replace(/\/api\/v1$/i, '');
-      return noApiV1.replace(/\/api$/i, '');
+      const noApiV2 = trimmed.replace(/\/api\/v2$/i, '');
+      return noApiV2.replace(/\/api$/i, '');
     }
   }
 
@@ -37,8 +40,13 @@ const API_BASE_URL = (() => {
 })();
 
 const AUTH_REFRESH_URL = API_BASE_URL.startsWith('http')
-  ? `${API_BASE_URL}/api/v1/auth/refresh`
-  : '/api/v1/auth/refresh';
+  ? `${API_BASE_URL}/api/v2/auth/refresh`
+  : '/api/v2/auth/refresh';
+
+const ACCESS_TOKEN_COOKIE_NAMES = ['accessToken', 'access_token'];
+const CSRF_COOKIE_NAME = 'csrf_token';
+const CSRF_HEADER_NAME = 'X-CSRF-Token';
+const MUTATING_METHODS = new Set(['post', 'put', 'patch', 'delete']);
 
 type ApiErrorDetail =
   | string
@@ -58,9 +66,24 @@ interface ApiErrorResponse {
   detail?: ApiErrorDetail;
 }
 
-interface ToastControlRequestConfig {
+interface RetryRequestConfig extends InternalAxiosRequestConfig {
+  skipErrorToast?: boolean;
+  _retry?: boolean;
+}
+
+export interface ApiRequestConfig extends AxiosRequestConfig {
   skipErrorToast?: boolean;
 }
+
+const getAccessTokenFromCookie = (): string | null => {
+  for (const cookieName of ACCESS_TOKEN_COOKIE_NAMES) {
+    const token = Cookies.get(cookieName);
+    if (token) {
+      return token;
+    }
+  }
+  return null;
+};
 
 const normalizeApiErrorMessage = (error: unknown): string => {
   const axiosError = error as AxiosError<ApiErrorResponse>;
@@ -122,16 +145,43 @@ const shouldShowToast = (message: string): boolean => {
 
 class ApiClient {
   public readonly instance: AxiosInstance;
+  private readonly refreshClient: AxiosInstance;
 
   constructor() {
     this.instance = axios.create({
       baseURL: API_BASE_URL,
+      withCredentials: true,
     });
 
-    this.instance.interceptors.request.use((config) => {
-      const token = localStorage.getItem('accessToken');
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+    this.refreshClient = axios.create({
+      baseURL: API_BASE_URL,
+      withCredentials: true,
+    });
+
+    this.instance.interceptors.request.use((config: InternalAxiosRequestConfig) => {
+      const accessToken = getAccessTokenFromCookie();
+      if (accessToken) {
+        const headers = config.headers || {};
+        config.headers = headers;
+        if (typeof (headers as { set?: (k: string, v: string) => void }).set === 'function') {
+          (headers as { set: (k: string, v: string) => void }).set('Authorization', `Bearer ${accessToken}`);
+        } else if (!(headers as Record<string, string>).Authorization) {
+          (headers as Record<string, string>).Authorization = `Bearer ${accessToken}`;
+        }
+      }
+
+      const method = String(config.method || 'get').toLowerCase();
+      if (MUTATING_METHODS.has(method)) {
+        const csrfToken = Cookies.get(CSRF_COOKIE_NAME);
+        if (csrfToken) {
+          const headers = config.headers || {};
+          config.headers = headers;
+          if (typeof (headers as { set?: (k: string, v: string) => void }).set === 'function') {
+            (headers as { set: (k: string, v: string) => void }).set(CSRF_HEADER_NAME, csrfToken);
+          } else {
+            (headers as Record<string, string>)[CSRF_HEADER_NAME] = csrfToken;
+          }
+        }
       }
       return config;
     });
@@ -139,41 +189,34 @@ class ApiClient {
     this.instance.interceptors.response.use(
       (response) => response,
       async (error) => {
-        const originalRequest = error.config;
+        const originalRequest = (error.config || {}) as RetryRequestConfig;
+        const requestPath = String(originalRequest.url || '');
+        const isLoginRequest = requestPath.includes('/api/v2/auth/login');
+        const isRefreshRequest = requestPath.includes('/api/v2/auth/refresh');
 
-        if (error.response?.status === 401 && !originalRequest?._retry) {
+        if (error.response?.status === 401 && !originalRequest._retry && !isLoginRequest && !isRefreshRequest) {
           originalRequest._retry = true;
+
           try {
-            const refreshToken = localStorage.getItem('refreshToken');
-            if (!refreshToken) {
-              throw new Error('No refresh token');
-            }
+            const refreshResponse = await this.refreshClient.post(AUTH_REFRESH_URL);
+            const { user } = refreshResponse.data || {};
 
-            const refreshResponse = await axios.post(
-              AUTH_REFRESH_URL,
-              { refresh_token: refreshToken }
-            );
-
-            const { access_token, user } = refreshResponse.data;
-            useAuthStore.getState().setAccessToken(access_token);
             if (user) {
               useAuthStore.getState().setUser(user);
             }
+            useAuthStore.getState().setAuthenticated(true);
 
-            originalRequest.headers.Authorization = `Bearer ${access_token}`;
             return this.instance(originalRequest);
           } catch (_refreshError) {
             useAuthStore.getState().logout();
-            if (shouldShowToast('Session expired. Please login again.')) {
+            if (!originalRequest.skipErrorToast && shouldShowToast('Session expired. Please login again.')) {
               toast.error('Session expired. Please login again.');
             }
             return Promise.reject(_refreshError);
           }
         }
 
-        // Global user-facing error message for all API failures.
-        // Pages can still show inline form errors; this ensures errors never stay console-only.
-        const requestConfig = (error?.config || {}) as ToastControlRequestConfig;
+        const requestConfig = (error?.config || {}) as RetryRequestConfig;
         if (!requestConfig.skipErrorToast) {
           const message = normalizeApiErrorMessage(error);
           if (shouldShowToast(message)) {
@@ -188,3 +231,4 @@ class ApiClient {
 }
 
 export const apiClient = new ApiClient().instance;
+

@@ -15,18 +15,19 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
         response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 
-        # Keep CSP strict while allowing inline styles used by the current UI.
+        # Strict CSP with explicit trusted sources only.
         response.headers.setdefault(
             "Content-Security-Policy",
             "default-src 'self'; "
-            "img-src 'self' data: https:; "
-            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; "
+            "style-src 'self' https://fonts.googleapis.com; "
             "script-src 'self'; "
-            "font-src 'self' data:; "
-            "connect-src 'self' http: https:; "
+            "font-src 'self' data: https://fonts.gstatic.com; "
+            "connect-src 'self' http://localhost:8001 http://127.0.0.1:8001; "
             "frame-ancestors 'none'; "
             "base-uri 'self'; "
-            "form-action 'self'",
+            "form-action 'self'; "
+            "object-src 'none'",
         )
 
         if request.url.scheme == "https":

@@ -26,10 +26,10 @@ UNION ALL SELECT 'payments', COUNT(*) FROM payments
 UNION ALL SELECT 'stock_ledger', COUNT(*) FROM stock_ledger
 ORDER BY tbl;
 
--- Verify admin exists
+-- Verify at least one active admin exists
 SELECT id, email, role, is_active, force_password_change
 FROM users
-WHERE email = 'admin@company.com';
+WHERE role = 'admin' AND is_active = TRUE;
 
 -- Verify critical columns introduced via compatibility migrations
 SELECT table_name, column_name

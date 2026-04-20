@@ -140,8 +140,8 @@ npm run dev
 Go to the URL from step 7 (usually http://localhost:3001)
 
 **Use these credentials:**
-- **Email:** admin@company.com
-- **Password:** Admin@123
+- **Email:** IMS_ADMIN_EMAIL
+- **Password:** IMS_ADMIN_PASSWORD
 
 You should now see the Dashboard!
 
@@ -233,8 +233,8 @@ npm install
 ### [FAIL] Can't login (wrong credentials)
 
 **Default credentials are:**
-- Email: admin@company.com
-- Password: Admin@123
+- Email: IMS_ADMIN_EMAIL
+- Password: IMS_ADMIN_PASSWORD
 
 If these don't work, the database seed may have failed. Re-run from backend folder:
 ```powershell
@@ -260,5 +260,7 @@ python setup_db.py
 ```
 
 It is idempotent and safe to run multiple times.
+
+
 
 

@@ -1,4 +1,4 @@
-#  Mecandria ERP — Master AI Specification
+﻿#  Mecandria ERP â€” Master AI Specification
 
 ## Document Purpose
 This file is the single source of truth for an AI coding agent to build the complete  Mecandria ERP from scratch. Every module, every field, every API route, every database table, every business rule, and every UI component is defined here. No assumptions. No hallucinations. Build exactly what is written.
@@ -28,7 +28,7 @@ This file is the single source of truth for an AI coding agent to build the comp
 | Email | FastAPI-Mail | latest |
 | PDF (server) | WeasyPrint | latest |
 | Database | PostgreSQL | 15+ |
-| Task Queue | None (synchronous for v1) | — |
+| Task Queue | None (synchronous for v1) | â€” |
 
 ---
 
@@ -36,192 +36,192 @@ This file is the single source of truth for an AI coding agent to build the comp
 
 ```
 project-root/
-├── database/
-│   ├── alembic/
-│   │   ├── versions/
-│   │   └── env.py
-│   ├── alembic.ini
-│   ├── sql/
-│   │   ├── init_extensions.sql
-│   │   └── materialized_views.sql
-│   └── README.md
-├── backend/
-│   ├── app/
-│   │   ├── __init__.py
-│   │   ├── main.py
-│   │   ├── config.py
-│   │   ├── database.py
-│   │   ├── dependencies.py
-│   │   ├── models/
-│   │   │   ├── __init__.py
-│   │   │   ├── user.py
-│   │   │   ├── company.py
-│   │   │   ├── customer.py
-│   │   │   ├── supplier.py
-│   │   │   ├── product.py
-│   │   │   ├── purchase.py
-│   │   │   ├── sales.py
-│   │   │   ├── payment.py
-│   │   │   └── stock.py
-│   │   ├── schemas/
-│   │   │   ├── __init__.py
-│   │   │   ├── user.py
-│   │   │   ├── company.py
-│   │   │   ├── customer.py
-│   │   │   ├── supplier.py
-│   │   │   ├── product.py
-│   │   │   ├── purchase.py
-│   │   │   ├── sales.py
-│   │   │   ├── payment.py
-│   │   │   └── stock.py
-│   │   ├── routers/
-│   │   │   ├── __init__.py
-│   │   │   ├── auth.py
-│   │   │   ├── company.py
-│   │   │   ├── customers.py
-│   │   │   ├── suppliers.py
-│   │   │   ├── products.py
-│   │   │   ├── purchase.py
-│   │   │   ├── sales.py
-│   │   │   ├── payments.py
-│   │   │   ├── stock.py
-│   │   │   └── reports.py
-│   │   ├── services/
-│   │   │   ├── __init__.py
-│   │   │   ├── auth_service.py
-│   │   │   ├── gst_service.py
-│   │   │   ├── stock_service.py
-│   │   │   ├── invoice_service.py
-│   │   │   ├── order_number_service.py
-│   │   │   └── email_service.py
-│   │   └── utils/
-│   │       ├── __init__.py
-│   │       └── helpers.py
-│   ├── .env
-│   └── requirements.txt
-├── frontend/
-│   ├── public/
-│   ├── src/
-│   │   ├── main.tsx
-│   │   ├── App.tsx
-│   │   ├── index.css
-│   │   ├── api/
-│   │   │   ├── client.ts
-│   │   │   ├── auth.ts
-│   │   │   ├── customers.ts
-│   │   │   ├── suppliers.ts
-│   │   │   ├── products.ts
-│   │   │   ├── purchase.ts
-│   │   │   ├── sales.ts
-│   │   │   ├── payments.ts
-│   │   │   ├── stock.ts
-│   │   │   └── reports.ts
-│   │   ├── components/
-│   │   │   ├── layout/
-│   │   │   │   ├── AppLayout.tsx
-│   │   │   │   ├── Sidebar.tsx
-│   │   │   │   ├── TopBar.tsx
-│   │   │   │   └── PageHeader.tsx
-│   │   │   ├── ui/
-│   │   │   │   ├── Button.tsx
-│   │   │   │   ├── Input.tsx
-│   │   │   │   ├── Select.tsx
-│   │   │   │   ├── Modal.tsx
-│   │   │   │   ├── Table.tsx
-│   │   │   │   ├── Badge.tsx
-│   │   │   │   ├── Card.tsx
-│   │   │   │   ├── Spinner.tsx
-│   │   │   │   ├── EmptyState.tsx
-│   │   │   │   └── ConfirmDialog.tsx
-│   │   │   └── shared/
-│   │   │       ├── SearchableSelect.tsx
-│   │   │       ├── DatePicker.tsx
-│   │   │       ├── AmountDisplay.tsx
-│   │   │       ├── GSTBreakdown.tsx
-│   │   │       └── StatusBadge.tsx
-│   │   ├── pages/
-│   │   │   ├── auth/
-│   │   │   │   └── LoginPage.tsx
-│   │   │   ├── dashboard/
-│   │   │   │   └── DashboardPage.tsx
-│   │   │   ├── masters/
-│   │   │   │   ├── CompanyPage.tsx
-│   │   │   │   ├── CustomersPage.tsx
-│   │   │   │   ├── CustomerFormPage.tsx
-│   │   │   │   ├── SuppliersPage.tsx
-│   │   │   │   ├── SupplierFormPage.tsx
-│   │   │   │   ├── ProductsPage.tsx
-│   │   │   │   └── ProductFormPage.tsx
-│   │   │   ├── inventory/
-│   │   │   │   ├── StockPage.tsx
-│   │   │   │   └── StockAdjustmentPage.tsx
-│   │   │   ├── purchase/
-│   │   │   │   ├── PurchaseOrdersPage.tsx
-│   │   │   │   ├── PurchaseOrderFormPage.tsx
-│   │   │   │   ├── GRNPage.tsx
-│   │   │   │   ├── GRNFormPage.tsx
-│   │   │   │   ├── PurchaseReturnPage.tsx
-│   │   │   │   └── PurchaseReturnFormPage.tsx
-│   │   │   ├── sales/
-│   │   │   │   ├── QuotationsPage.tsx
-│   │   │   │   ├── QuotationFormPage.tsx
-│   │   │   │   ├── SalesOrdersPage.tsx
-│   │   │   │   ├── SalesOrderFormPage.tsx
-│   │   │   │   ├── InvoicesPage.tsx
-│   │   │   │   ├── InvoiceFormPage.tsx
-│   │   │   │   ├── InvoiceViewPage.tsx
-│   │   │   │   └── SalesReturnPage.tsx
-│   │   │   ├── payments/
-│   │   │   │   ├── ReceivablesPage.tsx
-│   │   │   │   └── PayablesPage.tsx
-│   │   │   ├── reports/
-│   │   │   │   ├── StockReportPage.tsx
-│   │   │   │   ├── SalesReportPage.tsx
-│   │   │   │   ├── PurchaseReportPage.tsx
-│   │   │   │   ├── OutstandingReportPage.tsx
-│   │   │   │   ├── GSTReportPage.tsx
-│   │   │   │   └── PLReportPage.tsx
-│   │   │   └── admin/
-│   │   │       └── UsersPage.tsx
-│   │   ├── store/
-│   │   │   ├── authStore.ts
-│   │   │   └── uiStore.ts
-│   │   ├── hooks/
-│   │   │   ├── useAuth.ts
-│   │   │   └── usePermissions.ts
-│   │   ├── types/
-│   │   │   └── index.ts
-│   │   ├── utils/
-│   │   │   ├── gst.ts
-│   │   │   ├── formatters.ts
-│   │   │   └── validators.ts
-│   │   └── routes/
-│   │       ├── index.tsx
-│   │       └── ProtectedRoute.tsx
-│   ├── index.html
-│   ├── package.json
-│   ├── tsconfig.json
-│   ├── tailwind.config.ts
-│   └── vite.config.ts
-├── docs/
-│   ├── MASTER_SPEC.md          (this file)
-│   ├── SETUP.md
-│   ├── DATABASE_SCHEMA.md
-│   ├── API_REFERENCE.md
-│   ├── workflows/
-│   │   ├── WF_01_AUTH.md
-│   │   ├── WF_02_MASTERS.md
-│   │   ├── WF_03_PURCHASE.md
-│   │   ├── WF_04_SALES.md
-│   │   ├── WF_05_PAYMENTS.md
-│   │   └── WF_06_REPORTS.md
-│   └── CODING_STANDARDS.md
-└── docker-compose.yml
+â”œâ”€â”€ database/
+â”‚   â”œâ”€â”€ alembic/
+â”‚   â”‚   â”œâ”€â”€ versions/
+â”‚   â”‚   â””â”€â”€ env.py
+â”‚   â”œâ”€â”€ alembic.ini
+â”‚   â”œâ”€â”€ sql/
+â”‚   â”‚   â”œâ”€â”€ init_extensions.sql
+â”‚   â”‚   â””â”€â”€ materialized_views.sql
+â”‚   â””â”€â”€ README.md
+â”œâ”€â”€ backend/
+â”‚   â”œâ”€â”€ app/
+â”‚   â”‚   â”œâ”€â”€ __init__.py
+â”‚   â”‚   â”œâ”€â”€ main.py
+â”‚   â”‚   â”œâ”€â”€ config.py
+â”‚   â”‚   â”œâ”€â”€ database.py
+â”‚   â”‚   â”œâ”€â”€ dependencies.py
+â”‚   â”‚   â”œâ”€â”€ models/
+â”‚   â”‚   â”‚   â”œâ”€â”€ __init__.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ user.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ company.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ customer.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ supplier.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ product.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ purchase.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ sales.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ payment.py
+â”‚   â”‚   â”‚   â””â”€â”€ stock.py
+â”‚   â”‚   â”œâ”€â”€ schemas/
+â”‚   â”‚   â”‚   â”œâ”€â”€ __init__.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ user.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ company.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ customer.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ supplier.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ product.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ purchase.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ sales.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ payment.py
+â”‚   â”‚   â”‚   â””â”€â”€ stock.py
+â”‚   â”‚   â”œâ”€â”€ routers/
+â”‚   â”‚   â”‚   â”œâ”€â”€ __init__.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ auth.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ company.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ customers.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ suppliers.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ products.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ purchase.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ sales.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ payments.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ stock.py
+â”‚   â”‚   â”‚   â””â”€â”€ reports.py
+â”‚   â”‚   â”œâ”€â”€ services/
+â”‚   â”‚   â”‚   â”œâ”€â”€ __init__.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ auth_service.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ gst_service.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ stock_service.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ invoice_service.py
+â”‚   â”‚   â”‚   â”œâ”€â”€ order_number_service.py
+â”‚   â”‚   â”‚   â””â”€â”€ email_service.py
+â”‚   â”‚   â””â”€â”€ utils/
+â”‚   â”‚       â”œâ”€â”€ __init__.py
+â”‚   â”‚       â””â”€â”€ helpers.py
+â”‚   â”œâ”€â”€ .env
+â”‚   â””â”€â”€ requirements.txt
+â”œâ”€â”€ frontend/
+â”‚   â”œâ”€â”€ public/
+â”‚   â”œâ”€â”€ src/
+â”‚   â”‚   â”œâ”€â”€ main.tsx
+â”‚   â”‚   â”œâ”€â”€ App.tsx
+â”‚   â”‚   â”œâ”€â”€ index.css
+â”‚   â”‚   â”œâ”€â”€ api/
+â”‚   â”‚   â”‚   â”œâ”€â”€ client.ts
+â”‚   â”‚   â”‚   â”œâ”€â”€ auth.ts
+â”‚   â”‚   â”‚   â”œâ”€â”€ customers.ts
+â”‚   â”‚   â”‚   â”œâ”€â”€ suppliers.ts
+â”‚   â”‚   â”‚   â”œâ”€â”€ products.ts
+â”‚   â”‚   â”‚   â”œâ”€â”€ purchase.ts
+â”‚   â”‚   â”‚   â”œâ”€â”€ sales.ts
+â”‚   â”‚   â”‚   â”œâ”€â”€ payments.ts
+â”‚   â”‚   â”‚   â”œâ”€â”€ stock.ts
+â”‚   â”‚   â”‚   â””â”€â”€ reports.ts
+â”‚   â”‚   â”œâ”€â”€ components/
+â”‚   â”‚   â”‚   â”œâ”€â”€ layout/
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ AppLayout.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ Sidebar.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ TopBar.tsx
+â”‚   â”‚   â”‚   â”‚   â””â”€â”€ PageHeader.tsx
+â”‚   â”‚   â”‚   â”œâ”€â”€ ui/
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ Button.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ Input.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ Select.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ Modal.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ Table.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ Badge.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ Card.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ Spinner.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ EmptyState.tsx
+â”‚   â”‚   â”‚   â”‚   â””â”€â”€ ConfirmDialog.tsx
+â”‚   â”‚   â”‚   â””â”€â”€ shared/
+â”‚   â”‚   â”‚       â”œâ”€â”€ SearchableSelect.tsx
+â”‚   â”‚   â”‚       â”œâ”€â”€ DatePicker.tsx
+â”‚   â”‚   â”‚       â”œâ”€â”€ AmountDisplay.tsx
+â”‚   â”‚   â”‚       â”œâ”€â”€ GSTBreakdown.tsx
+â”‚   â”‚   â”‚       â””â”€â”€ StatusBadge.tsx
+â”‚   â”‚   â”œâ”€â”€ pages/
+â”‚   â”‚   â”‚   â”œâ”€â”€ auth/
+â”‚   â”‚   â”‚   â”‚   â””â”€â”€ LoginPage.tsx
+â”‚   â”‚   â”‚   â”œâ”€â”€ dashboard/
+â”‚   â”‚   â”‚   â”‚   â””â”€â”€ DashboardPage.tsx
+â”‚   â”‚   â”‚   â”œâ”€â”€ masters/
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ CompanyPage.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ CustomersPage.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ CustomerFormPage.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ SuppliersPage.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ SupplierFormPage.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ ProductsPage.tsx
+â”‚   â”‚   â”‚   â”‚   â””â”€â”€ ProductFormPage.tsx
+â”‚   â”‚   â”‚   â”œâ”€â”€ inventory/
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ StockPage.tsx
+â”‚   â”‚   â”‚   â”‚   â””â”€â”€ StockAdjustmentPage.tsx
+â”‚   â”‚   â”‚   â”œâ”€â”€ purchase/
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ PurchaseOrdersPage.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ PurchaseOrderFormPage.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ GRNPage.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ GRNFormPage.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ PurchaseReturnPage.tsx
+â”‚   â”‚   â”‚   â”‚   â””â”€â”€ PurchaseReturnFormPage.tsx
+â”‚   â”‚   â”‚   â”œâ”€â”€ sales/
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ QuotationsPage.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ QuotationFormPage.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ SalesOrdersPage.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ SalesOrderFormPage.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ InvoicesPage.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ InvoiceFormPage.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ InvoiceViewPage.tsx
+â”‚   â”‚   â”‚   â”‚   â””â”€â”€ SalesReturnPage.tsx
+â”‚   â”‚   â”‚   â”œâ”€â”€ payments/
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ ReceivablesPage.tsx
+â”‚   â”‚   â”‚   â”‚   â””â”€â”€ PayablesPage.tsx
+â”‚   â”‚   â”‚   â”œâ”€â”€ reports/
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ StockReportPage.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ SalesReportPage.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ PurchaseReportPage.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ OutstandingReportPage.tsx
+â”‚   â”‚   â”‚   â”‚   â”œâ”€â”€ GSTReportPage.tsx
+â”‚   â”‚   â”‚   â”‚   â””â”€â”€ PLReportPage.tsx
+â”‚   â”‚   â”‚   â””â”€â”€ admin/
+â”‚   â”‚   â”‚       â””â”€â”€ UsersPage.tsx
+â”‚   â”‚   â”œâ”€â”€ store/
+â”‚   â”‚   â”‚   â”œâ”€â”€ authStore.ts
+â”‚   â”‚   â”‚   â””â”€â”€ uiStore.ts
+â”‚   â”‚   â”œâ”€â”€ hooks/
+â”‚   â”‚   â”‚   â”œâ”€â”€ useAuth.ts
+â”‚   â”‚   â”‚   â””â”€â”€ usePermissions.ts
+â”‚   â”‚   â”œâ”€â”€ types/
+â”‚   â”‚   â”‚   â””â”€â”€ index.ts
+â”‚   â”‚   â”œâ”€â”€ utils/
+â”‚   â”‚   â”‚   â”œâ”€â”€ gst.ts
+â”‚   â”‚   â”‚   â”œâ”€â”€ formatters.ts
+â”‚   â”‚   â”‚   â””â”€â”€ validators.ts
+â”‚   â”‚   â””â”€â”€ routes/
+â”‚   â”‚       â”œâ”€â”€ index.tsx
+â”‚   â”‚       â””â”€â”€ ProtectedRoute.tsx
+â”‚   â”œâ”€â”€ index.html
+â”‚   â”œâ”€â”€ package.json
+â”‚   â”œâ”€â”€ tsconfig.json
+â”‚   â”œâ”€â”€ tailwind.config.ts
+â”‚   â””â”€â”€ vite.config.ts
+â”œâ”€â”€ docs/
+â”‚   â”œâ”€â”€ MASTER_SPEC.md          (this file)
+â”‚   â”œâ”€â”€ SETUP.md
+â”‚   â”œâ”€â”€ DATABASE_SCHEMA.md
+â”‚   â”œâ”€â”€ API_REFERENCE.md
+â”‚   â”œâ”€â”€ workflows/
+â”‚   â”‚   â”œâ”€â”€ WF_01_AUTH.md
+â”‚   â”‚   â”œâ”€â”€ WF_02_MASTERS.md
+â”‚   â”‚   â”œâ”€â”€ WF_03_PURCHASE.md
+â”‚   â”‚   â”œâ”€â”€ WF_04_SALES.md
+â”‚   â”‚   â”œâ”€â”€ WF_05_PAYMENTS.md
+â”‚   â”‚   â””â”€â”€ WF_06_REPORTS.md
+â”‚   â””â”€â”€ CODING_STANDARDS.md
+â””â”€â”€ docker-compose.yml
 ```
 
 ---
 
-## 3. Coding Standards (Mandatory — No Exceptions)
+## 3. Coding Standards (Mandatory â€” No Exceptions)
 
 ### 3.1 General Rules
 - No `any` type in TypeScript. Every variable, function parameter, and return type must be explicitly typed.
@@ -256,7 +256,7 @@ project-root/
 
 ### 3.4 UI Standards
 - Font: Inter (Google Fonts)
-- Color palette: defined in tailwind.config.ts — primary blue (#1E3A5F), accent (#2E86AB), danger (#E8534A), success (#1A7341), warning (#92570A), neutral grays
+- Color palette: defined in tailwind.config.ts â€” primary blue (#1E3A5F), accent (#2E86AB), danger (#E8534A), success (#1A7341), warning (#92570A), neutral grays
 - Role badge colors must come from design tokens in `tailwind.config.ts` under `colors.role`: `admin`, `accounting`, `sales`, `inventory`.
 - Sidebar: white background, 240px fixed width, left-aligned navigation
 - TopBar: white, 56px height, breadcrumb + user menu
@@ -299,7 +299,7 @@ VITE_API_BASE_URL=http://localhost:8001
 
 ---
 
-## 5. Database Schema — Complete
+## 5. Database Schema â€” Complete
 
 ### 5.1 Users Table
 ```sql
@@ -929,7 +929,7 @@ CREATE TABLE payment_allocations (
 | Sales returns | Full | Read | Full | None |
 | Payments (receipt) | Full | Full | None | None |
 | Payments (payment) | Full | Full | None | None |
-| Reports — all | Full | Full | Sales only | Stock only |
+| Reports â€” all | Full | Full | Sales only | Stock only |
 | Dashboard | Full | Full | Full | Full |
 
 ### 6.1 User-Level Module Access Overrides
@@ -1064,14 +1064,14 @@ def deduct_stock(db, invoice_id, items):
 
 ---
 
-## 10. API Routes — Complete Reference
+## 10. API Routes â€” Complete Reference
 
 ### Authentication
 ```
-POST   /api/v1/auth/login              Body: {email, password} → {access_token, refresh_token, user}
-POST   /api/v1/auth/refresh            Body: {refresh_token} → {access_token}
+POST   /api/v1/auth/login              Body: {email, password} â†’ {access_token, refresh_token, user}
+POST   /api/v1/auth/refresh            Body: {refresh_token} â†’ {access_token}
 POST   /api/v1/auth/logout             Header: Bearer token
-GET    /api/v1/auth/me                 → current user object with effective access
+GET    /api/v1/auth/me                 â†’ current user object with effective access
 ```
 
 `user` response shape for `/auth/login` and `/auth/me`:
@@ -1089,123 +1089,123 @@ GET    /api/v1/auth/me                 → current user object with effective ac
 
 ### Company
 ```
-GET    /api/v1/company                 → company object
-PUT    /api/v1/company                 Admin only → updated company
-POST   /api/v1/company/logo            Admin only, multipart → {logo_url}
+GET    /api/v1/company                 â†’ company object
+PUT    /api/v1/company                 Admin only â†’ updated company
+POST   /api/v1/company/logo            Admin only, multipart â†’ {logo_url}
 ```
 
 ### Users (Admin only)
 ```
-GET    /api/v1/users                   → list of users
-POST   /api/v1/users                   → created user
-GET    /api/v1/users/{id}              → user
-PUT    /api/v1/users/{id}              → updated user
-PATCH  /api/v1/users/{id}/permissions  Body: {allow: string[], deny: string[]} → updated effective access
-DELETE /api/v1/users/{id}/permissions  → clears overrides and reverts user to role-default access
+GET    /api/v1/users                   â†’ list of users
+POST   /api/v1/users                   â†’ created user
+GET    /api/v1/users/{id}              â†’ user
+PUT    /api/v1/users/{id}              â†’ updated user
+PATCH  /api/v1/users/{id}/permissions  Body: {allow: string[], deny: string[]} â†’ updated effective access
+DELETE /api/v1/users/{id}/permissions  â†’ clears overrides and reverts user to role-default access
 DELETE /api/v1/users/{id}              Soft delete
 ```
 
 ### Customers
 ```
-GET    /api/v1/customers               Query: search, is_active, page, page_size → paginated list
-POST   /api/v1/customers               → created customer
-GET    /api/v1/customers/{id}          → customer with balance summary
-PUT    /api/v1/customers/{id}          → updated customer
+GET    /api/v1/customers               Query: search, is_active, page, page_size â†’ paginated list
+POST   /api/v1/customers               â†’ created customer
+GET    /api/v1/customers/{id}          â†’ customer with balance summary
+PUT    /api/v1/customers/{id}          â†’ updated customer
 DELETE /api/v1/customers/{id}          Soft delete (block if outstanding > 0)
-GET    /api/v1/customers/{id}/ledger   → list of transactions
-GET    /api/v1/customers/{id}/balance  → {total_invoiced, total_paid, balance_due}
+GET    /api/v1/customers/{id}/ledger   â†’ list of transactions
+GET    /api/v1/customers/{id}/balance  â†’ {total_invoiced, total_paid, balance_due}
 ```
 
 ### Suppliers
 ```
-GET    /api/v1/suppliers               Query: search, is_active, page, page_size → paginated list
-POST   /api/v1/suppliers               → created supplier
-GET    /api/v1/suppliers/{id}          → supplier
-PUT    /api/v1/suppliers/{id}          → updated supplier
+GET    /api/v1/suppliers               Query: search, is_active, page, page_size â†’ paginated list
+POST   /api/v1/suppliers               â†’ created supplier
+GET    /api/v1/suppliers/{id}          â†’ supplier
+PUT    /api/v1/suppliers/{id}          â†’ updated supplier
 DELETE /api/v1/suppliers/{id}          Soft delete
-GET    /api/v1/suppliers/{id}/ledger   → list of transactions
-GET    /api/v1/suppliers/{id}/balance  → {total_purchased, total_paid, balance_due}
+GET    /api/v1/suppliers/{id}/ledger   â†’ list of transactions
+GET    /api/v1/suppliers/{id}/balance  â†’ {total_purchased, total_paid, balance_due}
 ```
 
 ### Products
 ```
-GET    /api/v1/products                Query: search, category_id, is_active, page, page_size → paginated list with current_stock
-POST   /api/v1/products                → created product
-GET    /api/v1/products/{id}           → product with current_stock
-PUT    /api/v1/products/{id}           → updated product
+GET    /api/v1/products                Query: search, category_id, is_active, page, page_size â†’ paginated list with current_stock
+POST   /api/v1/products                â†’ created product
+GET    /api/v1/products/{id}           â†’ product with current_stock
+PUT    /api/v1/products/{id}           â†’ updated product
 DELETE /api/v1/products/{id}           Soft delete (block if current_stock > 0)
-GET    /api/v1/products/categories     → list of categories
-POST   /api/v1/products/categories     → created category
-GET    /api/v1/products/uom            → list of units of measure
+GET    /api/v1/products/categories     â†’ list of categories
+POST   /api/v1/products/categories     â†’ created category
+GET    /api/v1/products/uom            â†’ list of units of measure
 ```
 
 ### Purchase Orders
 ```
 GET    /api/v1/purchase-orders         Query: supplier_id, status, from_date, to_date, page, page_size
-POST   /api/v1/purchase-orders         → created PO (status=draft)
-GET    /api/v1/purchase-orders/{id}    → PO with items
+POST   /api/v1/purchase-orders         â†’ created PO (status=draft)
+GET    /api/v1/purchase-orders/{id}    â†’ PO with items
 PUT    /api/v1/purchase-orders/{id}    Only if status=draft
-PATCH  /api/v1/purchase-orders/{id}/status   Body: {status} → updated (draft→sent, sent→cancelled)
+PATCH  /api/v1/purchase-orders/{id}/status   Body: {status} â†’ updated (draftâ†’sent, sentâ†’cancelled)
 ```
 
 ### Goods Receipt Notes
 ```
 GET    /api/v1/grn                     Query: supplier_id, po_id, status, from_date, to_date, page, page_size
-POST   /api/v1/grn                     → created GRN (status=draft), can reference PO
-GET    /api/v1/grn/{id}                → GRN with items
+POST   /api/v1/grn                     â†’ created GRN (status=draft), can reference PO
+GET    /api/v1/grn/{id}                â†’ GRN with items
 PUT    /api/v1/grn/{id}                Only if status=draft
-POST   /api/v1/grn/{id}/confirm        Confirms GRN → adds stock → refreshes materialized view → updates PO status
+POST   /api/v1/grn/{id}/confirm        Confirms GRN â†’ adds stock â†’ refreshes materialized view â†’ updates PO status
 POST   /api/v1/grn/{id}/cancel         Only if status=draft
 ```
 
 ### Purchase Returns
 ```
 GET    /api/v1/purchase-returns        Query: supplier_id, from_date, to_date, page, page_size
-POST   /api/v1/purchase-returns        Body includes grn_id and items → created return (status=draft)
-GET    /api/v1/purchase-returns/{id}   → return with items
-POST   /api/v1/purchase-returns/{id}/confirm   Confirms → deducts stock → refreshes view
+POST   /api/v1/purchase-returns        Body includes grn_id and items â†’ created return (status=draft)
+GET    /api/v1/purchase-returns/{id}   â†’ return with items
+POST   /api/v1/purchase-returns/{id}/confirm   Confirms â†’ deducts stock â†’ refreshes view
 POST   /api/v1/purchase-returns/{id}/cancel    Only if status=draft
 ```
 
 ### Quotations
 ```
 GET    /api/v1/quotations              Query: customer_id, status, from_date, to_date, page, page_size
-POST   /api/v1/quotations              → created quotation (status=draft)
-GET    /api/v1/quotations/{id}         → quotation with items
+POST   /api/v1/quotations              â†’ created quotation (status=draft)
+GET    /api/v1/quotations/{id}         â†’ quotation with items
 PUT    /api/v1/quotations/{id}         Only if status in (draft, sent)
-POST   /api/v1/quotations/{id}/convert-to-so   → creates sales order, sets quotation status=converted
+POST   /api/v1/quotations/{id}/convert-to-so   â†’ creates sales order, sets quotation status=converted
 PATCH  /api/v1/quotations/{id}/status  Body: {status}
 ```
 
 ### Sales Orders
 ```
 GET    /api/v1/sales-orders            Query: customer_id, status, from_date, to_date, page, page_size
-POST   /api/v1/sales-orders            → created SO (status=draft)
-GET    /api/v1/sales-orders/{id}       → SO with items
+POST   /api/v1/sales-orders            â†’ created SO (status=draft)
+GET    /api/v1/sales-orders/{id}       â†’ SO with items
 PUT    /api/v1/sales-orders/{id}       Only if status=draft
-POST   /api/v1/sales-orders/{id}/confirm   Validates stock → confirms SO
-POST   /api/v1/sales-orders/{id}/convert-to-invoice → creates invoice (full/partial); sets SO status=partial or fulfilled based on fulfilled quantities
+POST   /api/v1/sales-orders/{id}/confirm   Validates stock â†’ confirms SO
+POST   /api/v1/sales-orders/{id}/convert-to-invoice â†’ creates invoice (full/partial); sets SO status=partial or fulfilled based on fulfilled quantities
 POST   /api/v1/sales-orders/{id}/cancel   Only if status in (draft, confirmed)
 ```
 
 ### Sales Invoices
 ```
 GET    /api/v1/invoices                Query: customer_id, status, from_date, to_date, page, page_size
-POST   /api/v1/invoices                → created invoice (status=draft)
-GET    /api/v1/invoices/{id}           → invoice with items and payment history
+POST   /api/v1/invoices                â†’ created invoice (status=draft)
+GET    /api/v1/invoices/{id}           â†’ invoice with items and payment history
 PUT    /api/v1/invoices/{id}           Only if status=draft
-POST   /api/v1/invoices/{id}/issue     Issues invoice → deducts stock → refreshes view → generates PDF
+POST   /api/v1/invoices/{id}/issue     Issues invoice â†’ deducts stock â†’ refreshes view â†’ generates PDF
 POST   /api/v1/invoices/{id}/cancel    Only if status in (draft, issued) and no payments
 GET    /api/v1/invoices/{id}/pdf       Returns PDF file
-POST   /api/v1/invoices/{id}/send-email   Body: {to_email, cc_email} → sends invoice PDF by email
+POST   /api/v1/invoices/{id}/send-email   Body: {to_email, cc_email} â†’ sends invoice PDF by email
 ```
 
 ### Sales Returns
 ```
 GET    /api/v1/sales-returns           Query: customer_id, invoice_id, from_date, to_date, page, page_size
-POST   /api/v1/sales-returns           Body includes invoice_id and items → status=draft
-GET    /api/v1/sales-returns/{id}      → return with items
-POST   /api/v1/sales-returns/{id}/confirm   Confirms → adds stock back → refreshes view
+POST   /api/v1/sales-returns           Body includes invoice_id and items â†’ status=draft
+GET    /api/v1/sales-returns/{id}      â†’ return with items
+POST   /api/v1/sales-returns/{id}/confirm   Confirms â†’ adds stock back â†’ refreshes view
 POST   /api/v1/sales-returns/{id}/cancel    Only if status=draft
 ```
 
@@ -1213,15 +1213,15 @@ POST   /api/v1/sales-returns/{id}/cancel    Only if status=draft
 ```
 GET    /api/v1/payments                Query: party_type, customer_id, supplier_id, status, from_date, to_date, page, page_size
 POST   /api/v1/payments                Body: {payment_type, party_type, party_id, amount, payment_mode, allocations[]}
-GET    /api/v1/payments/{id}           → payment with allocations
-PATCH  /api/v1/payments/{id}/status    Body: {status} → cleared, bounced, cancelled
+GET    /api/v1/payments/{id}           â†’ payment with allocations
+PATCH  /api/v1/payments/{id}/status    Body: {status} â†’ cleared, bounced, cancelled
 ```
 
 ### Stock
 ```
-GET    /api/v1/stock                   Query: search, category_id, low_stock_only → current stock list
-GET    /api/v1/stock/{product_id}/ledger   Query: from_date, to_date → transaction history
-POST   /api/v1/stock/adjust            Body: {product_id, quantity, type(in/out), reason} → stock adjustment
+GET    /api/v1/stock                   Query: search, category_id, low_stock_only â†’ current stock list
+GET    /api/v1/stock/{product_id}/ledger   Query: from_date, to_date â†’ transaction history
+POST   /api/v1/stock/adjust            Body: {product_id, quantity, type(in/out), reason} â†’ stock adjustment
 ```
 
 ### Reports
@@ -1231,10 +1231,10 @@ GET    /api/v1/reports/sales           Query: from_date, to_date, customer_id, g
 GET    /api/v1/reports/purchase        Query: from_date, to_date, supplier_id, group_by
 GET    /api/v1/reports/outstanding-receivables   Query: as_of_date, customer_id
 GET    /api/v1/reports/outstanding-payables      Query: as_of_date, supplier_id
-GET    /api/v1/reports/gstr1           Query: from_date, to_date → GSTR-1 formatted data
-GET    /api/v1/reports/gstr3b          Query: from_date, to_date → GSTR-3B summary
-GET    /api/v1/reports/pl              Query: from_date, to_date → Profit & Loss
-GET    /api/v1/reports/dashboard       → dashboard summary object
+GET    /api/v1/reports/gstr1           Query: from_date, to_date â†’ GSTR-1 formatted data
+GET    /api/v1/reports/gstr3b          Query: from_date, to_date â†’ GSTR-3B summary
+GET    /api/v1/reports/pl              Query: from_date, to_date â†’ Profit & Loss
+GET    /api/v1/reports/dashboard       â†’ dashboard summary object
 ```
 
 ---
@@ -1269,7 +1269,7 @@ The PDF invoice must include all of the following sections in order:
 
 1. Header: Company logo (left), Company name + address + GSTIN (center/right)
 2. Invoice title: "TAX INVOICE" in large font, Invoice Number, Invoice Date, Due Date
-3. Party details (two columns): Bill To (left), Ship To (right) — each with name, address, GSTIN
+3. Party details (two columns): Bill To (left), Ship To (right) â€” each with name, address, GSTIN
 4. Items table: Sr, Description, HSN, Qty, Unit, Rate, Disc%, Taxable, GST%, GST Amt, Total
 5. Totals section: Subtotal, Total Discount, Total Taxable, CGST/SGST or IGST breakdown per rate, Grand Total
 6. Amount in words: "Rupees [amount in words] Only"
@@ -1282,55 +1282,55 @@ The PDF invoice must include all of the following sections in order:
 ## 13. Frontend Route Map
 
 ```
-/login                          → LoginPage (public)
-/                               → redirect to /dashboard
-/dashboard                      → DashboardPage
+/login                          â†’ LoginPage (public)
+/                               â†’ redirect to /dashboard
+/dashboard                      â†’ DashboardPage
 
-/masters/company                → CompanyPage (admin only)
-/masters/users                  → UsersPage (admin only)
-/masters/customers              → CustomersPage
-/masters/customers/new          → CustomerFormPage
-/masters/customers/:id/edit     → CustomerFormPage
-/masters/suppliers              → SuppliersPage
-/masters/suppliers/new          → SupplierFormPage
-/masters/suppliers/:id/edit     → SupplierFormPage
-/masters/products               → ProductsPage
-/masters/products/new           → ProductFormPage
-/masters/products/:id/edit      → ProductFormPage
+/masters/company                â†’ CompanyPage (admin only)
+/masters/users                  â†’ UsersPage (admin only)
+/masters/customers              â†’ CustomersPage
+/masters/customers/new          â†’ CustomerFormPage
+/masters/customers/:id/edit     â†’ CustomerFormPage
+/masters/suppliers              â†’ SuppliersPage
+/masters/suppliers/new          â†’ SupplierFormPage
+/masters/suppliers/:id/edit     â†’ SupplierFormPage
+/masters/products               â†’ ProductsPage
+/masters/products/new           â†’ ProductFormPage
+/masters/products/:id/edit      â†’ ProductFormPage
 
-/inventory/stock                → StockPage
-/inventory/adjust               → StockAdjustmentPage
+/inventory/stock                â†’ StockPage
+/inventory/adjust               â†’ StockAdjustmentPage
 
-/purchase/orders                → PurchaseOrdersPage
-/purchase/orders/new            → PurchaseOrderFormPage
-/purchase/orders/:id            → PurchaseOrderFormPage (view/edit)
-/purchase/grn                   → GRNPage
-/purchase/grn/new               → GRNFormPage
-/purchase/grn/:id               → GRNFormPage (view/edit)
-/purchase/returns               → PurchaseReturnPage
-/purchase/returns/new           → PurchaseReturnFormPage
+/purchase/orders                â†’ PurchaseOrdersPage
+/purchase/orders/new            â†’ PurchaseOrderFormPage
+/purchase/orders/:id            â†’ PurchaseOrderFormPage (view/edit)
+/purchase/grn                   â†’ GRNPage
+/purchase/grn/new               â†’ GRNFormPage
+/purchase/grn/:id               â†’ GRNFormPage (view/edit)
+/purchase/returns               â†’ PurchaseReturnPage
+/purchase/returns/new           â†’ PurchaseReturnFormPage
 
-/sales/quotations               → QuotationsPage
-/sales/quotations/new           → QuotationFormPage
-/sales/quotations/:id           → QuotationFormPage (view/edit)
-/sales/orders                   → SalesOrdersPage
-/sales/orders/new               → SalesOrderFormPage
-/sales/orders/:id               → SalesOrderFormPage (view/edit)
-/sales/invoices                 → InvoicesPage
-/sales/invoices/new             → InvoiceFormPage
-/sales/invoices/:id             → InvoiceViewPage
-/sales/invoices/:id/edit        → InvoiceFormPage
-/sales/returns                  → SalesReturnPage
+/sales/quotations               â†’ QuotationsPage
+/sales/quotations/new           â†’ QuotationFormPage
+/sales/quotations/:id           â†’ QuotationFormPage (view/edit)
+/sales/orders                   â†’ SalesOrdersPage
+/sales/orders/new               â†’ SalesOrderFormPage
+/sales/orders/:id               â†’ SalesOrderFormPage (view/edit)
+/sales/invoices                 â†’ InvoicesPage
+/sales/invoices/new             â†’ InvoiceFormPage
+/sales/invoices/:id             â†’ InvoiceViewPage
+/sales/invoices/:id/edit        â†’ InvoiceFormPage
+/sales/returns                  â†’ SalesReturnPage
 
-/payments/receivables           → ReceivablesPage
-/payments/payables              → PayablesPage
+/payments/receivables           â†’ ReceivablesPage
+/payments/payables              â†’ PayablesPage
 
-/reports/stock                  → StockReportPage
-/reports/sales                  → SalesReportPage
-/reports/purchase               → PurchaseReportPage
-/reports/outstanding            → OutstandingReportPage
-/reports/gst                    → GSTReportPage
-/reports/pl                     → PLReportPage
+/reports/stock                  â†’ StockReportPage
+/reports/sales                  â†’ SalesReportPage
+/reports/purchase               â†’ PurchaseReportPage
+/reports/outstanding            â†’ OutstandingReportPage
+/reports/gst                    â†’ GSTReportPage
+/reports/pl                     â†’ PLReportPage
 ```
 
 ---
@@ -1338,41 +1338,41 @@ The PDF invoice must include all of the following sections in order:
 ## 14. Sidebar Navigation by Role
 
 ```
-Dashboard          — all roles
+Dashboard          â€” all roles
 
 Masters
-  Company          — admin only
-  Users            — admin only
-  Customers        — admin, accounting, sales
-  Suppliers        — admin, accounting, inventory
-  Products         — admin, inventory
+  Company          â€” admin only
+  Users            â€” admin only
+  Customers        â€” admin, accounting, sales
+  Suppliers        â€” admin, accounting, inventory
+  Products         â€” admin, inventory
 
 Inventory
-  Current Stock    — admin, inventory, sales (read)
-  Adjust Stock     — admin, inventory
+  Current Stock    â€” admin, inventory, sales (read)
+  Adjust Stock     â€” admin, inventory
 
 Purchase
-  Purchase Orders  — admin, inventory
-  Goods Receipt    — admin, inventory
-  Purchase Returns — admin, inventory
+  Purchase Orders  â€” admin, inventory
+  Goods Receipt    â€” admin, inventory
+  Purchase Returns â€” admin, inventory
 
 Sales
-  Quotations       — admin, sales
-  Sales Orders     — admin, sales
-  Invoices         — admin, sales
-  Sales Returns    — admin, sales
+  Quotations       â€” admin, sales
+  Sales Orders     â€” admin, sales
+  Invoices         â€” admin, sales
+  Sales Returns    â€” admin, sales
 
 Payments
-  Receivables      — admin, accounting
-  Payables         — admin, accounting
+  Receivables      â€” admin, accounting
+  Payables         â€” admin, accounting
 
 Reports
-  Stock Report     — admin, inventory
-  Sales Report     — admin, accounting, sales
-  Purchase Report  — admin, accounting
-  Outstanding      — admin, accounting
-  GST Report       — admin, accounting
-  P & L            — admin, accounting
+  Stock Report     â€” admin, inventory
+  Sales Report     â€” admin, accounting, sales
+  Purchase Report  â€” admin, accounting
+  Outstanding      â€” admin, accounting
+  GST Report       â€” admin, accounting
+  P & L            â€” admin, accounting
 
 Note: Sidebar visibility must use effective permissions (role + admin overrides).
 ```
@@ -1393,12 +1393,12 @@ Note: Sidebar visibility must use effective permissions (role + admin overrides)
 ```
 
 ### Standard Error Codes
-- INSUFFICIENT_STOCK — stock quantity too low
-- INVALID_GST_RATE — GST rate not in allowed list
-- DUPLICATE_GSTIN — GSTIN already registered
-- INVOICE_ALREADY_PAID — cannot cancel paid invoice
-- INVALID_STATE_TRANSITION — e.g., trying to confirm already-cancelled order
-- OUTSTANDING_EXISTS — cannot delete customer/supplier with outstanding balance
+- INSUFFICIENT_STOCK â€” stock quantity too low
+- INVALID_GST_RATE â€” GST rate not in allowed list
+- DUPLICATE_GSTIN â€” GSTIN already registered
+- INVOICE_ALREADY_PAID â€” cannot cancel paid invoice
+- INVALID_STATE_TRANSITION â€” e.g., trying to confirm already-cancelled order
+- OUTSTANDING_EXISTS â€” cannot delete customer/supplier with outstanding balance
 
 ### Frontend Error Handling
 - 401: clear auth store, redirect to /login
@@ -1413,46 +1413,46 @@ Note: Sidebar visibility must use effective permissions (role + admin overrides)
 
 ### Sales Invoice
 ```
-draft → issued (on /issue endpoint, deducts stock)
-draft → cancelled
-issued → partial_paid (when partial payment received)
-issued → paid (when full payment received)
-partial_paid → paid (when remaining payment received)
-issued → cancelled (only if amount_paid = 0)
+draft â†’ issued (on /issue endpoint, deducts stock)
+draft â†’ cancelled
+issued â†’ partial_paid (when partial payment received)
+issued â†’ paid (when full payment received)
+partial_paid â†’ paid (when remaining payment received)
+issued â†’ cancelled (only if amount_paid = 0)
 ```
 
 ### Sales Order
 ```
-draft → confirmed (validates stock)
-confirmed → partial (first invoice created from SO)
-confirmed → fulfilled (if first invoice fully covers all items)
-partial → fulfilled (when remaining items are fully invoiced)
-draft → cancelled
-confirmed → cancelled (restores no stock, just status change)
+draft â†’ confirmed (validates stock)
+confirmed â†’ partial (first invoice created from SO)
+confirmed â†’ fulfilled (if first invoice fully covers all items)
+partial â†’ fulfilled (when remaining items are fully invoiced)
+draft â†’ cancelled
+confirmed â†’ cancelled (restores no stock, just status change)
 ```
 
 ### Quotation
 ```
-draft → sent
-sent → accepted
-sent → rejected
-accepted → converted (when SO created from it)
-draft/sent → expired (if valid_until date passes)
+draft â†’ sent
+sent â†’ accepted
+sent â†’ rejected
+accepted â†’ converted (when SO created from it)
+draft/sent â†’ expired (if valid_until date passes)
 ```
 
 ### GRN
 ```
-draft → confirmed (adds stock)
-draft → cancelled
+draft â†’ confirmed (adds stock)
+draft â†’ cancelled
 ```
 
 ### Purchase Order
 ```
-draft → sent
-sent → partial (first GRN received)
-partial → received (all items GRN'd)
-sent → cancelled
-draft → cancelled
+draft â†’ sent
+sent â†’ partial (first GRN received)
+partial â†’ received (all items GRN'd)
+sent â†’ cancelled
+draft â†’ cancelled
 ```
 
 ---
@@ -1461,7 +1461,7 @@ draft → cancelled
 
 On first run (empty database), the system must seed:
 
-1. One default admin user: email=admin@company.com, password=Admin@123 (force change on first login)
+1. One default admin user: email=IMS_ADMIN_EMAIL, password=IMS_ADMIN_PASSWORD (force change on first login)
 2. Units of measure: PCS, KG, G, LTR, ML, BOX, PACK, MTR, NOS
 3. Default product category: General
 4. One company row with placeholder data (admin fills in via Company settings)
@@ -1485,3 +1485,5 @@ On first run (empty database), the system must seed:
 13. Email delivery is fire-and-forget. A failure to send email must not fail the invoice issue operation. Log the error.
 14. The frontend must show a low-stock warning banner on the stock page for any product where current_quantity <= minimum_stock.
 15. Reports must support CSV export in addition to screen display.
+
+

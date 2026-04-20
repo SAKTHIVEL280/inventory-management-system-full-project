@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Payables Page (Supplier Payments)
  * Record payments to suppliers, allocate against GRNs.
  *
@@ -7,7 +7,7 @@
  * - PAY-002: GRN Value displayed in list
  * - PAY-003: PO Number displayed in list
  * - PAY-004: Advance Payment button when no GRN available
- * - PAY-005: Button order → Advance Payment → Record Payment → Cancel
+ * - PAY-005: Button order â†’ Advance Payment â†’ Record Payment â†’ Cancel
  * - PAY-006: Total Record Payments cannot exceed GRN Value
  * - PAY-007: Edit option after Recording payment (before Clear/Bounce)
  */
@@ -75,7 +75,7 @@ const PayablesPage = () => {
     }
   };
   const fetchSuppliers = async () => {
-    try { const res = await apiClient.get('/api/v1/suppliers', { params: { page_size: 100 } }); setSuppliers(res.data.items || []); } catch { /* */ }
+    try { const res = await apiClient.get('/api/v2/suppliers', { params: { page_size: 100 } }); setSuppliers(res.data.items || []); } catch { /* */ }
   };
 
   const fetchPOsForSupplier = async (nextSupplierId: string) => {
@@ -474,7 +474,7 @@ const PayablesPage = () => {
               <input type="date" className="bg-transparent text-sm outline-none" value={dateTo} min={dateFrom || undefined} onChange={(e) => handleDateToChange(e.target.value)} title="Payment date to" />
             </div>
           </div>
-          {/* PAY-005: Advance Payment → Record Payment → Cancel order */}
+          {/* PAY-005: Advance Payment â†’ Record Payment â†’ Cancel order */}
           <div className="flex items-center gap-2">
             <button onClick={() => { resetForm(); setIsAdvancePayment(true); setShowForm(true); }} className="rounded-lg border-2 border-amber-400 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-700 hover:bg-amber-100">Advance Payment</button>
             <button onClick={() => { resetForm(); setShowForm(true); }} className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/20 hover:bg-primary/90">+ Record Payment</button>
@@ -639,3 +639,4 @@ const PayablesPage = () => {
 };
 
 export default PayablesPage;
+
