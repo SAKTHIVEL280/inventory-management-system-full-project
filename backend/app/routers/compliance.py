@@ -27,6 +27,10 @@ def _not_found(entity: str) -> HTTPException:
     return HTTPException(status_code=404, detail=f"{entity} not found")
 
 
+def _anonymized_phone(entity_id: UUID, digits: int = 10) -> str:
+    return str(entity_id.int % (10 ** digits)).zfill(digits)
+
+
 @router.get("/export/customer/{customer_id}")
 async def export_customer_data(
     customer_id: UUID,
@@ -132,7 +136,7 @@ async def anonymize_customer_data(
     customer.company_name = f"Anonymized Customer {suffix}"
     customer.contact_person = None
     customer.email = None
-    customer.phone = f"0000{suffix[:6]}"
+    customer.phone = _anonymized_phone(customer.id, digits=10)
     customer.alternate_phone = None
     customer.gstin = None
     customer.pan = None
@@ -176,7 +180,7 @@ async def anonymize_supplier_data(
     supplier.company_name = f"Anonymized Supplier {suffix}"
     supplier.contact_person = None
     supplier.email = None
-    supplier.phone = f"0000{suffix[:6]}"
+    supplier.phone = _anonymized_phone(supplier.id, digits=10)
     supplier.alternate_phone = None
     supplier.gstin = None
     supplier.pan = None

@@ -895,8 +895,7 @@ def _amount_in_words(paise: int, currency_code: str = "INR", numbering_system: s
 
 def _resolve_company_image_src(image_url: str | None) -> str | None:
     """Convert a company image path to a base64 data URI that xhtml2pdf can render."""
-    import base64
-    import mimetypes
+    from PIL import Image, ImageFile
 
     if not image_url:
         return None
@@ -914,10 +913,19 @@ def _resolve_company_image_src(image_url: str | None) -> str | None:
     if not local_path or not local_path.exists():
         return None
 
-    mime_type = mimetypes.guess_type(str(local_path))[0] or "image/png"
-    with open(local_path, "rb") as f:
-        data = base64.b64encode(f.read()).decode("ascii")
-    return f"data:{mime_type};base64,{data}"
+    # Normalize to a PNG data URI so xhtml2pdf/reportlab handles it reliably.
+    try:
+        raw = local_path.read_bytes()
+        ImageFile.LOAD_TRUNCATED_IMAGES = True
+        with Image.open(io.BytesIO(raw)) as img:
+            normalized = img.convert("RGBA") if img.mode in {"RGBA", "LA", "P"} else img.convert("RGB")
+            out = io.BytesIO()
+            normalized.save(out, format="PNG")
+            data = base64.b64encode(out.getvalue()).decode("ascii")
+        return f"data:image/png;base64,{data}"
+    except Exception:
+        # Invalid logo should not break document generation.
+        return None
 
 
 def _resolve_logo_src(company: Company | None) -> str | None:

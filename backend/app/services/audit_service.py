@@ -29,26 +29,27 @@ def log_audit_event(
     This function must never break request flow, so failures are swallowed.
     """
     try:
-        db.execute(
-            text(
-                """
-                INSERT INTO audit_logs (
-                    user_id, action, resource_type, resource_id, status, details, ip_address
-                ) VALUES (
-                    :user_id, :action, :resource_type, :resource_id, :status, CAST(:details AS JSONB), :ip_address
-                )
-                """
-            ),
-            {
-                "user_id": str(user_id) if user_id else None,
-                "action": action,
-                "resource_type": resource_type,
-                "resource_id": str(resource_id) if resource_id else None,
-                "status": status,
-                "details": json.dumps(details or {}),
-                "ip_address": ip_address,
-            },
-        )
+        with db.begin_nested():
+            db.execute(
+                text(
+                    """
+                    INSERT INTO audit_logs (
+                        user_id, action, resource_type, resource_id, status, details, ip_address
+                    ) VALUES (
+                        :user_id, :action, :resource_type, :resource_id, :status, CAST(:details AS JSONB), :ip_address
+                    )
+                    """
+                ),
+                {
+                    "user_id": str(user_id) if user_id else None,
+                    "action": action,
+                    "resource_type": resource_type,
+                    "resource_id": str(resource_id) if resource_id else None,
+                    "status": status,
+                    "details": json.dumps(details or {}),
+                    "ip_address": ip_address,
+                },
+            )
         logger.info(
             "AUDIT action=%s status=%s resource=%s user_id=%s",
             action,
