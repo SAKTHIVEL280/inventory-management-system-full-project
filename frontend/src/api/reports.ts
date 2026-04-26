@@ -66,6 +66,199 @@ export interface StockReportResponse {
   total: number;
 }
 
+export interface GSTR1ReportRow {
+  s_no: number;
+  sales_invoice_date: string | null;
+  sales_invoice_no: string;
+  bill_to_party_name: string;
+  bill_to_party_gstin_no: string;
+  place_of_supply: string;
+  ship_to_party_name: string;
+  invoice_amount: number;
+  currency: string;
+  tax_percent: number | null;
+  cgst_amount: number;
+  sgst_amount: number;
+  igst_amount: number;
+  ugst_amount: number;
+  export_amount: number;
+  total_tax_amount: number;
+}
+
+export interface GSTR1Subtotal {
+  invoice_amount: number;
+  cgst_amount: number;
+  sgst_amount: number;
+  igst_amount: number;
+  ugst_amount: number;
+  export_amount: number;
+  total_tax_amount: number;
+}
+
+export interface GSTProblematicRecord {
+  document_type: string;
+  document_no: string;
+  document_date: string | null;
+  errors: string[];
+}
+
+export interface GSTR1ReportResponse {
+  report_title: string;
+  frequency: 'monthly' | 'quarterly' | 'annually';
+  frequency_label: string;
+  from_date: string;
+  to_date: string;
+  from_date_display: string | null;
+  to_date_display: string | null;
+  summary: {
+    total_taxable: number;
+    total_cgst: number;
+    total_sgst: number;
+    total_igst: number;
+  };
+  count: number;
+  items: GSTR1ReportRow[];
+  subtotal: GSTR1Subtotal;
+  strict_validation?: boolean;
+  validation_error_count?: number;
+  validation_errors?: string[];
+  problematic_records?: GSTProblematicRecord[];
+}
+
+export interface GSTR2ReportRow {
+  s_no: number;
+  grn_date: string | null;
+  grn_no: string;
+  supplier_name: string;
+  supplier_gstin_no: string;
+  business_place: string;
+  place_of_supply: string;
+  grn_amount: number;
+  currency: string;
+  tax_percent: number | null;
+  cgst_amount: number;
+  sgst_amount: number;
+  igst_amount: number;
+  ugst_amount: number;
+  import_amount: number;
+  total_tax_amount: number;
+}
+
+export interface GSTR2Subtotal {
+  grn_amount: number;
+  cgst_amount: number;
+  sgst_amount: number;
+  igst_amount: number;
+  ugst_amount: number;
+  import_amount: number;
+  total_tax_amount: number;
+}
+
+export interface GSTR2ReportResponse {
+  report_title: string;
+  frequency: 'monthly' | 'quarterly' | 'annually';
+  frequency_label: string;
+  from_date: string;
+  to_date: string;
+  from_date_display: string | null;
+  to_date_display: string | null;
+  summary: {
+    total_taxable: number;
+    total_cgst: number;
+    total_sgst: number;
+    total_igst: number;
+  };
+  count: number;
+  items: GSTR2ReportRow[];
+  subtotal: GSTR2Subtotal;
+  strict_validation?: boolean;
+  validation_error_count?: number;
+  validation_errors?: string[];
+  problematic_records?: GSTProblematicRecord[];
+}
+
+export interface GSTReconciliationRow {
+  s_no: number;
+  tax_type: 'Input Tax (Purchase)' | 'Output Tax (Sales)';
+  date: string | null;
+  name_of_partner: string;
+  partner_gstin_no: string;
+  business_place: string;
+  place_of_supply: string;
+  grn_or_invoice_amount: number;
+  currency: string;
+  tax_percent: number | null;
+  cgst_amount: number;
+  sgst_amount: number;
+  igst_amount: number;
+  ugst_amount: number;
+  import_export_amount: number;
+  total_tax_amount: number;
+  sub_total_input_tax: number | null;
+  sub_total_output_tax: number | null;
+  difference_amount: number | null;
+}
+
+export interface GSTReconciliationTotals {
+  transaction_amount: number;
+  cgst_amount: number;
+  sgst_amount: number;
+  igst_amount: number;
+  ugst_amount: number;
+  import_export_amount: number;
+  total_tax_amount: number;
+}
+
+export interface GSTReconciliationResponse {
+  report_title: string;
+  frequency: 'monthly' | 'quarterly' | 'annually';
+  frequency_label: string;
+  from_date: string;
+  to_date: string;
+  from_date_display: string | null;
+  to_date_display: string | null;
+  count: number;
+  items: GSTReconciliationRow[];
+  subtotal_input_tax: GSTReconciliationTotals;
+  subtotal_output_tax: GSTReconciliationTotals;
+  difference_amount: GSTReconciliationTotals;
+  strict_validation?: boolean;
+  validation_error_count?: number;
+  validation_errors?: string[];
+  problematic_records?: GSTProblematicRecord[];
+}
+
+export interface GSTAuditTrailItem {
+  id: string;
+  user_id: string | null;
+  user_name: string;
+  action: string;
+  report_type: string;
+  start_date: string | null;
+  end_date: string | null;
+  frequency: string;
+  status: string;
+  details: Record<string, unknown>;
+  timestamp: string | null;
+}
+
+export interface GSTAuditTrailResponse {
+  report_title: string;
+  frequency: 'monthly' | 'quarterly' | 'annually';
+  frequency_label: string;
+  from_date: string;
+  to_date: string;
+  from_date_display: string | null;
+  to_date_display: string | null;
+  report_type: string;
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+  count: number;
+  items: GSTAuditTrailItem[];
+}
+
 /**
  * Fetch dashboard statistics
  */
@@ -90,6 +283,114 @@ export const getStockReport = async (lowStockOnly = false): Promise<StockReportR
 export const getSalesReport = async (fromDate: string, toDate: string) => {
   const response = await apiClient.get('/api/v2/reports/sales', {
     params: { from_date: fromDate, to_date: toDate },
+  });
+  return response.data;
+};
+
+/**
+ * Fetch GSTR-1 report (Output Tax / Sales)
+ */
+export const getGSTR1Report = async (
+  fromDate: string,
+  toDate: string,
+  frequency: 'monthly' | 'quarterly' | 'annually',
+): Promise<GSTR1ReportResponse> => {
+  const response = await apiClient.get('/api/v2/reports/gstr1', {
+    params: { from_date: fromDate, to_date: toDate, frequency },
+  });
+  return response.data;
+};
+
+export const downloadGSTR1Export = async (
+  fromDate: string,
+  toDate: string,
+  frequency: 'monthly' | 'quarterly' | 'annually',
+  format: 'xlsx' | 'pdf',
+): Promise<Blob> => {
+  const response = await apiClient.get('/api/v2/reports/gstr1/export', {
+    params: { from_date: fromDate, to_date: toDate, frequency, format },
+    responseType: 'blob',
+  });
+  return response.data as Blob;
+};
+
+/**
+ * Fetch GSTR-2 report (Input Tax / Purchase)
+ */
+export const getGSTR2Report = async (
+  fromDate: string,
+  toDate: string,
+  frequency: 'monthly' | 'quarterly' | 'annually',
+): Promise<GSTR2ReportResponse> => {
+  const response = await apiClient.get('/api/v2/reports/gstr2', {
+    params: { from_date: fromDate, to_date: toDate, frequency },
+  });
+  return response.data;
+};
+
+export const downloadGSTR2Export = async (
+  fromDate: string,
+  toDate: string,
+  frequency: 'monthly' | 'quarterly' | 'annually',
+  format: 'xlsx' | 'pdf',
+): Promise<Blob> => {
+  const response = await apiClient.get('/api/v2/reports/gstr2/export', {
+    params: { from_date: fromDate, to_date: toDate, frequency, format },
+    responseType: 'blob',
+  });
+  return response.data as Blob;
+};
+
+/**
+ * Fetch GST reconciliation report (Input vs Output tax)
+ */
+export const getGSTReconciliationReport = async (
+  fromDate: string,
+  toDate: string,
+  frequency: 'monthly' | 'quarterly' | 'annually',
+): Promise<GSTReconciliationResponse> => {
+  const response = await apiClient.get('/api/v2/reports/gst-reconciliation', {
+    params: { from_date: fromDate, to_date: toDate, frequency },
+  });
+  return response.data;
+};
+
+/**
+ * Download GST reconciliation export file
+ */
+export const downloadGSTReconciliationExport = async (
+  fromDate: string,
+  toDate: string,
+  frequency: 'monthly' | 'quarterly' | 'annually',
+  format: 'xlsx' | 'pdf',
+): Promise<Blob> => {
+  const response = await apiClient.get('/api/v2/reports/gst-reconciliation/export', {
+    params: { from_date: fromDate, to_date: toDate, frequency, format },
+    responseType: 'blob',
+  });
+  return response.data as Blob;
+};
+
+/**
+ * Fetch GST audit trail records
+ */
+export const getGstAuditTrail = async (
+  fromDate: string,
+  toDate: string,
+  frequency: 'monthly' | 'quarterly' | 'annually',
+  reportType = 'all',
+  page = 1,
+  pageSize = 25,
+): Promise<GSTAuditTrailResponse> => {
+  const response = await apiClient.get('/api/v2/reports/gst-audit-trail', {
+    params: {
+      from_date: fromDate,
+      to_date: toDate,
+      frequency,
+      report_type: reportType,
+      page,
+      page_size: pageSize,
+    },
   });
   return response.data;
 };

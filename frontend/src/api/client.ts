@@ -151,11 +151,13 @@ class ApiClient {
     this.instance = axios.create({
       baseURL: API_BASE_URL,
       withCredentials: true,
+      timeout: 15000,
     });
 
     this.refreshClient = axios.create({
       baseURL: API_BASE_URL,
       withCredentials: true,
+      timeout: 15000,
     });
 
     this.instance.interceptors.request.use((config: InternalAxiosRequestConfig) => {

@@ -7,13 +7,25 @@ import { useState, useEffect } from 'react';
 import { AppLayout } from '../components/AppLayout';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { apiClient } from '../api/client';
+import { downloadGSTR1Export, downloadGSTR2Export, downloadGSTReconciliationExport, getGstAuditTrail, getGSTR1Report, getGSTR2Report, getGSTReconciliationReport, type GSTAuditTrailResponse, type GSTR1ReportResponse, type GSTR2ReportResponse, type GSTReconciliationResponse } from '../api/reports';
 import { toLocalDateInputValue } from '../utils/date';
+import { useAuthStore } from '../store/auth';
 
 interface PLData { net_sales: number; purchases: number; gross_profit: number; gross_profit_margin_percent: number; net_profit: number; }
-interface StockItem { product_code: string; product_name: string; closing_qty: number; min_stock: number; status: string; }
+interface StockItem {
+  product_code: string;
+  product_name: string;
+  hsn: string;
+  batch_no: string | null;
+  manufacture_date: string | null;
+  expiry_date: string | null;
+  closing_qty: number;
+  min_stock: number;
+  status: string;
+}
 interface SalesReportItem { invoice_number: string; invoice_date: string; total_amount: number; amount_paid: number; amount_due: number; status: string; }
-interface GSTData { summary: { total_taxable: number; total_cgst: number; total_sgst: number; total_igst: number }; count: number; }
 interface GSTR3BData { output_tax: number; itc: number; net_tax_payable: number; }
+type ReportFrequency = 'monthly' | 'quarterly' | 'annually';
 interface ApiErrorShape {
   response?: {
     status?: number;
@@ -25,6 +37,67 @@ interface ApiErrorShape {
 }
 
 const formatAmount = (p: number) => `₹${(p / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+const formatDecimalAmount = (amount: number) => `₹${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const formatTaxPercent = (value: number | null) => (value == null ? '-' : value.toFixed(2));
+const formatAuditTimestamp = (value: string | null) => {
+  if (!value) return '-';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true,
+  });
+};
+
+const toInputDate = (d: Date) => toLocalDateInputValue(d);
+
+const getFrequencyDateWindow = (frequency: ReportFrequency, baseDate: Date) => {
+  const year = baseDate.getFullYear();
+  const month = baseDate.getMonth();
+  if (frequency === 'monthly') {
+    const start = new Date(year, month, 1);
+    const end = new Date(baseDate);
+    return { from: toInputDate(start), to: toInputDate(end) };
+  }
+  if (frequency === 'quarterly') {
+    const start = new Date(baseDate);
+    start.setMonth(start.getMonth() - 3);
+    const end = new Date(baseDate);
+    return { from: toInputDate(start), to: toInputDate(end) };
+  }
+  const start = new Date(year, 0, 1);
+  const end = new Date(baseDate);
+  return { from: toInputDate(start), to: toInputDate(end) };
+};
+
+const maxDaysByFrequency: Record<ReportFrequency, number> = {
+  monthly: 31,
+  quarterly: 93,
+  annually: 366,
+};
+
+const parseLocalDate = (value: string): Date | null => {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [yearToken, monthToken, dayToken] = value.split('-');
+  const year = Number(yearToken);
+  const month = Number(monthToken);
+  const day = Number(dayToken);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+  const parsed = new Date(year, month - 1, day);
+  parsed.setHours(0, 0, 0, 0);
+  return parsed;
+};
+
+const FREQUENCY_OPTIONS: { value: ReportFrequency; label: string }[] = [
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'quarterly', label: 'Quarterly' },
+  { value: 'annually', label: 'Annually' },
+];
 
 const getErrorMessage = (reason: unknown): string => {
   const error = reason as ApiErrorShape;
@@ -59,15 +132,37 @@ const getErrorMessage = (reason: unknown): string => {
   return msg || 'request failed';
 };
 
+const withTimeout = <T,>(promise: Promise<T>, timeoutMs = 15000, label = 'Request'): Promise<T> => {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    promise
+      .then((result) => {
+        window.clearTimeout(timeoutId);
+        resolve(result);
+      })
+      .catch((error) => {
+        window.clearTimeout(timeoutId);
+        reject(error);
+      });
+  });
+};
+
 const ReportsPage = () => {
+  const user = useAuthStore((state) => state.user);
   const today = new Date();
-  const defaultFromDate = new Date(today);
-  defaultFromDate.setDate(defaultFromDate.getDate() - 90);
-  const [fromDate, setFromDate] = useState(toLocalDateInputValue(defaultFromDate));
-  const [toDate, setToDate] = useState(toLocalDateInputValue(today));
+  const defaultWindow = getFrequencyDateWindow('monthly', today);
+  const [dateRange, setDateRange] = useState<{ from: string; to: string }>({
+    from: defaultWindow.from,
+    to: defaultWindow.to,
+  });
+  const [reportFrequency, setReportFrequency] = useState<ReportFrequency>('monthly');
   const [activeTab, setActiveTab] = useState<'overview' | 'sales' | 'stock' | 'gst' | 'pl'>('overview');
   const [loading, setLoading] = useState(false);
   const [fetchWarning, setFetchWarning] = useState('');
+  const [dateInputError, setDateInputError] = useState('');
 
   // Data
   const [dashboard, setDashboard] = useState<Record<string, unknown> | null>(null);
@@ -75,41 +170,108 @@ const ReportsPage = () => {
   const [stockItems, setStockItems] = useState<StockItem[]>([]);
   const [salesItems, setSalesItems] = useState<SalesReportItem[]>([]);
   const [salesTotal, setSalesTotal] = useState(0);
-  const [gstData, setGstData] = useState<GSTData | null>(null);
+  const [gstData, setGstData] = useState<GSTR1ReportResponse | null>(null);
+  const [gstr2Data, setGstr2Data] = useState<GSTR2ReportResponse | null>(null);
+  const [gstReconciliationData, setGstReconciliationData] = useState<GSTReconciliationResponse | null>(null);
+  const [gstAuditTrail, setGstAuditTrail] = useState<GSTAuditTrailResponse | null>(null);
   const [gstr3bData, setGstr3bData] = useState<GSTR3BData | null>(null);
+  const [auditReportType, setAuditReportType] = useState<'all' | 'gstr1' | 'gstr2' | 'gstr3b' | 'reconciliation'>('all');
+  const [auditPage, setAuditPage] = useState(1);
+  const [auditPageSize, setAuditPageSize] = useState(20);
+  const isFinanceTaxUser = (user?.role || '').toLowerCase() === 'admin' || (user?.role || '').toLowerCase() === 'accounting';
+  const fromDate = dateRange.from;
+  const toDate = dateRange.to;
+  const todayInput = toLocalDateInputValue(today);
+  const fromDateMax = toDate && toDate < todayInput ? toDate : todayInput;
 
   const handleFromDateChange = (value: string) => {
-    setFromDate(value);
-    if (toDate && value && value > toDate) {
-      setToDate(value);
-    }
+    setAuditPage(1);
+    setDateRange((prev) => {
+      const nextToDate = prev.to && value && value > prev.to ? value : prev.to;
+      return { from: value, to: nextToDate };
+    });
   };
 
   const handleToDateChange = (value: string) => {
-    setToDate(value);
-    if (fromDate && value && value < fromDate) {
-      setFromDate(value);
+    setAuditPage(1);
+    setDateRange((prev) => {
+      const nextFromDate = prev.from && value && value < prev.from ? value : prev.from;
+      return { from: nextFromDate, to: value };
+    });
+  };
+
+  const handleFrequencyChange = (value: ReportFrequency) => {
+    const window = getFrequencyDateWindow(value, new Date());
+    setReportFrequency(value);
+    setAuditPage(1);
+    setDateRange({ from: window.from, to: window.to });
+    setDateInputError('');
+    setFetchWarning('');
+  };
+
+  const handleAuditReportTypeChange = (value: 'all' | 'gstr1' | 'gstr2' | 'gstr3b' | 'reconciliation') => {
+    setAuditReportType(value);
+    setAuditPage(1);
+  };
+
+  const handleAuditPageSizeChange = (value: number) => {
+    setAuditPageSize(value);
+    setAuditPage(1);
+  };
+
+  const validateFrequencyRangeOnClient = (): string | null => {
+    if (!fromDate || !toDate) {
+      return 'From date and To date are required.';
     }
+    if (fromDate > toDate) {
+      return 'Invalid date range: From date cannot be after To date.';
+    }
+    const start = parseLocalDate(fromDate);
+    const end = parseLocalDate(toDate);
+    if (!start || !end) {
+      return 'Please select valid dates.';
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (start > today || end > today) {
+      return 'Future dates are not allowed. End date must be today or earlier.';
+    }
+    const days = Math.floor((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+    const allowed = maxDaysByFrequency[reportFrequency];
+    if (days > allowed) {
+      const label = reportFrequency === 'monthly' ? 'Monthly' : reportFrequency === 'quarterly' ? 'Quarterly' : 'Annually';
+      return `Selected date range (${days} days) exceeds ${label} limit (${allowed} days). Adjust dates or change frequency.`;
+    }
+    return null;
   };
 
   const fetchAll = async () => {
-    if (fromDate && toDate && fromDate > toDate) {
-      setFetchWarning('Invalid date range: From date cannot be after To date.');
-      return;
-    }
-
     setLoading(true);
     setFetchWarning('');
 
     const failedSections: string[] = [];
+    const shouldLoadGst = isFinanceTaxUser && activeTab === 'gst';
     try {
-      const [dashRes, plRes, stockRes, salesRes, gstRes, gstr3bRes] = await Promise.allSettled([
-        apiClient.get('/api/v2/reports/dashboard'),
-        apiClient.get('/api/v2/reports/pl', { params: { from_date: fromDate, to_date: toDate } }),
-        apiClient.get('/api/v2/reports/stock'),
-        apiClient.get('/api/v2/reports/sales', { params: { from_date: fromDate, to_date: toDate } }),
-        apiClient.get('/api/v2/reports/gstr1', { params: { from_date: fromDate, to_date: toDate } }),
-        apiClient.get('/api/v2/reports/gstr3b', { params: { from_date: fromDate, to_date: toDate } }),
+      const gstPromise = shouldLoadGst ? withTimeout(getGSTR1Report(fromDate, toDate, reportFrequency), 20000, 'GSTR-1') : Promise.resolve(null);
+      const gstr2Promise = shouldLoadGst ? withTimeout(getGSTR2Report(fromDate, toDate, reportFrequency), 20000, 'GSTR-2') : Promise.resolve(null);
+      const reconciliationPromise = shouldLoadGst ? withTimeout(getGSTReconciliationReport(fromDate, toDate, reportFrequency), 20000, 'GST Reconciliation') : Promise.resolve(null);
+      const auditTrailPromise = shouldLoadGst
+        ? getGstAuditTrail(fromDate, toDate, reportFrequency, auditReportType, auditPage, auditPageSize)
+        : Promise.resolve(null);
+      const gstr3bPromise = shouldLoadGst
+        ? apiClient.get('/api/v2/reports/gstr3b', { params: { from_date: fromDate, to_date: toDate } })
+        : Promise.resolve(null);
+
+      const [dashRes, plRes, stockRes, salesRes, gstRes, gstr2Res, reconciliationRes, auditTrailRes, gstr3bRes] = await Promise.allSettled([
+        withTimeout(apiClient.get('/api/v2/reports/dashboard'), 15000, 'Dashboard'),
+        withTimeout(apiClient.get('/api/v2/reports/pl', { params: { from_date: fromDate, to_date: toDate } }), 15000, 'P&L'),
+        withTimeout(apiClient.get('/api/v2/reports/stock'), 15000, 'Stock'),
+        withTimeout(apiClient.get('/api/v2/reports/sales', { params: { from_date: fromDate, to_date: toDate } }), 15000, 'Sales'),
+        gstPromise,
+        gstr2Promise,
+        reconciliationPromise,
+        shouldLoadGst ? withTimeout(auditTrailPromise, 20000, 'GST Audit Trail') : auditTrailPromise,
+        shouldLoadGst ? withTimeout(gstr3bPromise, 20000, 'GSTR-3B') : gstr3bPromise,
       ]);
 
       if (dashRes.status === 'fulfilled') {
@@ -142,15 +304,46 @@ const ReportsPage = () => {
         failedSections.push(`Sales (${getErrorMessage(salesRes.reason)})`);
       }
 
-      if (gstRes.status === 'fulfilled') {
-        setGstData((gstRes.value.data as GSTData) || null);
+      if (!shouldLoadGst) {
+        setGstData(null);
+      } else if (gstRes.status === 'fulfilled') {
+        setGstData((gstRes.value as GSTR1ReportResponse) || null);
       } else {
         setGstData(null);
         failedSections.push(`GSTR-1 (${getErrorMessage(gstRes.reason)})`);
       }
 
-      if (gstr3bRes.status === 'fulfilled') {
-        setGstr3bData((gstr3bRes.value.data as GSTR3BData) || null);
+      if (!shouldLoadGst) {
+        setGstr2Data(null);
+      } else if (gstr2Res.status === 'fulfilled') {
+        setGstr2Data((gstr2Res.value as GSTR2ReportResponse) || null);
+      } else {
+        setGstr2Data(null);
+        failedSections.push(`GSTR-2 (${getErrorMessage(gstr2Res.reason)})`);
+      }
+
+      if (!shouldLoadGst) {
+        setGstReconciliationData(null);
+      } else if (reconciliationRes.status === 'fulfilled') {
+        setGstReconciliationData((reconciliationRes.value as GSTReconciliationResponse) || null);
+      } else {
+        setGstReconciliationData(null);
+        failedSections.push(`GST Reconciliation (${getErrorMessage(reconciliationRes.reason)})`);
+      }
+
+      if (!shouldLoadGst) {
+        setGstAuditTrail(null);
+      } else if (auditTrailRes.status === 'fulfilled') {
+        setGstAuditTrail((auditTrailRes.value as GSTAuditTrailResponse) || null);
+      } else {
+        setGstAuditTrail(null);
+        failedSections.push(`GST Audit Trail (${getErrorMessage(auditTrailRes.reason)})`);
+      }
+
+      if (!shouldLoadGst) {
+        setGstr3bData(null);
+      } else if (gstr3bRes.status === 'fulfilled') {
+        setGstr3bData(((gstr3bRes.value as { data?: GSTR3BData }).data as GSTR3BData) || null);
       } else {
         setGstr3bData(null);
         failedSections.push(`GSTR-3B (${getErrorMessage(gstr3bRes.reason)})`);
@@ -165,8 +358,69 @@ const ReportsPage = () => {
     setLoading(false);
   };
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchAll should run when date range changes
-  useEffect(() => { fetchAll(); }, [fromDate, toDate]);
+  const handleReconciliationExport = async (format: 'xlsx' | 'pdf') => {
+    try {
+      const blob = await downloadGSTReconciliationExport(fromDate, toDate, reportFrequency, format);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `gst_reconciliation_${fromDate}_${toDate}.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch {
+      setFetchWarning('Failed to export GST reconciliation report. Please retry.');
+    }
+  };
+
+  const handleGstr1Export = async (format: 'xlsx' | 'pdf') => {
+    try {
+      const blob = await downloadGSTR1Export(fromDate, toDate, reportFrequency, format);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `gstr1_${fromDate}_${toDate}.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch {
+      setFetchWarning('Failed to export GSTR-1 report. Please retry.');
+    }
+  };
+
+  const handleGstr2Export = async (format: 'xlsx' | 'pdf') => {
+    try {
+      const blob = await downloadGSTR2Export(fromDate, toDate, reportFrequency, format);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `gstr2_${fromDate}_${toDate}.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch {
+      setFetchWarning('Failed to export GSTR-2 report. Please retry.');
+    }
+  };
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- debounce filter updates to avoid flicker and intermediate validation
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const frequencyValidationError = validateFrequencyRangeOnClient();
+      if (frequencyValidationError) {
+        setDateInputError(frequencyValidationError);
+        setLoading(false);
+        return;
+      }
+      setDateInputError('');
+      fetchAll();
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [fromDate, toDate, reportFrequency, auditReportType, auditPage, auditPageSize, activeTab]);
 
   const salesTrend = (dashboard as Record<string, unknown>)?.sales_trend as { date: string; amount: number }[] || [];
   const topProducts = (dashboard as Record<string, unknown>)?.top_products as { product_name: string; quantity_sold: number; amount: number }[] || [];
@@ -199,11 +453,20 @@ const ReportsPage = () => {
             ))}
           </div>
           <div className="flex items-center gap-2">
+            <select
+              className="rounded-lg border border-neutral-200 px-3 py-2 text-sm"
+              value={reportFrequency}
+              onChange={e => handleFrequencyChange(e.target.value as ReportFrequency)}
+            >
+              {FREQUENCY_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
             <input
               type="date"
               className="rounded-lg border border-neutral-200 px-3 py-2 text-sm"
               value={fromDate}
-              max={toDate || undefined}
+              max={fromDateMax}
               onChange={e => handleFromDateChange(e.target.value)}
             />
             <span className="text-sm text-neutral-500">to</span>
@@ -211,10 +474,16 @@ const ReportsPage = () => {
               type="date"
               className="rounded-lg border border-neutral-200 px-3 py-2 text-sm"
               value={toDate}
+              max={todayInput}
               min={fromDate || undefined}
               onChange={e => handleToDateChange(e.target.value)}
             />
           </div>
+          {dateInputError && (
+            <div className="w-full text-right text-sm text-rose-700">
+              {dateInputError}
+            </div>
+          )}
         </div>
 
         {fetchWarning && (
@@ -326,39 +595,403 @@ const ReportsPage = () => {
         {/* Stock Report Tab */}
         {!loading && activeTab === 'stock' && (
           <div className="hms-card overflow-hidden">
-            <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-neutral-50"><th className="px-4 py-3 text-left font-semibold">Code</th><th className="px-4 py-3 text-left font-semibold">Product</th><th className="px-4 py-3 text-right font-semibold">Qty</th><th className="px-4 py-3 text-right font-semibold">Min</th><th className="px-4 py-3 text-center font-semibold">Status</th></tr></thead>
+            <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-neutral-50"><th className="px-4 py-3 text-left font-semibold">Code</th><th className="px-4 py-3 text-left font-semibold">Product</th><th className="px-4 py-3 text-left font-semibold">Batch No</th><th className="px-4 py-3 text-left font-semibold">MFG Date</th><th className="px-4 py-3 text-left font-semibold">EXP Date</th><th className="px-4 py-3 text-right font-semibold">Qty</th><th className="px-4 py-3 text-right font-semibold">Min</th><th className="px-4 py-3 text-center font-semibold">Status</th></tr></thead>
               <tbody>{stockItems.map((i, idx) => {
                 const sc: Record<string, string> = {
-                  'Normal': 'bg-green-100 text-green-700',
+                  'In Stock': 'bg-green-100 text-green-700',
                   'Below Safety Stock': 'bg-sky-100 text-sky-700',
                   'Low Stock': 'bg-amber-100 text-amber-700',
                   'Out of Stock': 'bg-red-100 text-red-700'
                 };
-                return (<tr key={idx} className="border-b border-neutral-100"><td className="px-4 py-3">{i.product_code}</td><td className="px-4 py-3">{i.product_name}</td><td className="px-4 py-3 text-right">{i.closing_qty}</td><td className="px-4 py-3 text-right text-neutral-500">{i.min_stock}</td><td className="px-4 py-3 text-center"><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${sc[i.status]}`}>{i.status}</span></td></tr>);
+                return (<tr key={idx} className="border-b border-neutral-100"><td className="px-4 py-3">{i.product_code}</td><td className="px-4 py-3">{i.product_name}</td><td className="px-4 py-3">{i.batch_no || '-'}</td><td className="px-4 py-3">{i.manufacture_date || '-'}</td><td className="px-4 py-3">{i.expiry_date || '-'}</td><td className="px-4 py-3 text-right">{i.closing_qty}</td><td className="px-4 py-3 text-right text-neutral-500">{i.min_stock}</td><td className="px-4 py-3 text-center"><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${sc[i.status]}`}>{i.status}</span></td></tr>);
               })}</tbody>
             </table></div>
-            <p className="border-t px-4 py-3 text-xs text-neutral-500">{stockItems.length} products</p>
+            <p className="border-t px-4 py-3 text-xs text-neutral-500">{stockItems.length} batch rows</p>
           </div>
         )}
 
         {/* GST Report Tab */}
         {!loading && activeTab === 'gst' && (
           <div className="space-y-6">
-            {!gstData && !gstr3bData && (
+            {!isFinanceTaxUser && (
+              <div className="hms-card px-5 py-4 text-sm text-neutral-600">
+                GST reports are restricted to Finance/Tax users (Admin or Accounting role).
+              </div>
+            )}
+            {isFinanceTaxUser && !gstData && !gstr2Data && !gstReconciliationData && !gstr3bData && (
               <div className="hms-card px-5 py-4 text-sm text-neutral-600">
                 GST report data is unavailable for the selected range. If data exists in invoices/GRNs, expand the date range or check access permissions.
               </div>
             )}
             {gstData && (
-              <div className="hms-card p-6">
-                <h3 className="mb-4 text-sm font-bold text-neutral-700">GSTR-1 Summary (Output Tax)</h3>
-                <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-                  <div><p className="text-xs text-neutral-500">Taxable Value</p><p className="text-lg font-bold">{formatAmount(gstData.summary.total_taxable)}</p></div>
-                  <div><p className="text-xs text-neutral-500">CGST</p><p className="text-lg font-bold">{formatAmount(gstData.summary.total_cgst)}</p></div>
-                  <div><p className="text-xs text-neutral-500">SGST</p><p className="text-lg font-bold">{formatAmount(gstData.summary.total_sgst)}</p></div>
-                  <div><p className="text-xs text-neutral-500">IGST</p><p className="text-lg font-bold">{formatAmount(gstData.summary.total_igst)}</p></div>
+              <div className="hms-card overflow-hidden">
+                <div className="border-b border-neutral-200 bg-neutral-50 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-sm font-bold text-neutral-800">{gstData.report_title}</h3>
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={() => handleGstr1Export('xlsx')} className="rounded border border-neutral-300 bg-white px-3 py-1 text-xs font-semibold text-neutral-700 hover:bg-neutral-100">Export XLSX</button>
+                      <button type="button" onClick={() => handleGstr1Export('pdf')} className="rounded border border-neutral-300 bg-white px-3 py-1 text-xs font-semibold text-neutral-700 hover:bg-neutral-100">Export PDF</button>
+                    </div>
+                  </div>
+                  <p className="mt-1 text-xs text-neutral-600">
+                    Period: {gstData.from_date_display || fromDate} to {gstData.to_date_display || toDate} | Frequency: {gstData.frequency_label} | Rows: {gstData.count}
+                  </p>
+                  {!!gstData.validation_error_count && gstData.validation_error_count > 0 && (
+                    <div className="mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-2 text-xs text-amber-800">
+                      <p>Validation warnings: {gstData.validation_error_count}. All records are included in totals; review highlighted issues.</p>
+                      {gstData.problematic_records && gstData.problematic_records.length > 0 && (
+                        <ul className="mt-1 list-disc pl-4">
+                          {gstData.problematic_records.slice(0, 5).map((record) => (
+                            <li key={`gstr1-${record.document_no}-${record.document_date || 'na'}`}>
+                              {record.document_type.toUpperCase()} {record.document_no || '(missing number)'}: {(record.errors || []).slice(0, 2).join(' | ')}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <p className="mt-2 text-xs text-neutral-500">{gstData.count} invoice(s)</p>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-neutral-100 text-xs uppercase tracking-wide text-neutral-600">
+                        <th className="px-3 py-2 text-left">S.No</th>
+                        <th className="px-3 py-2 text-left">Sales Invoice Date</th>
+                        <th className="px-3 py-2 text-left">Sales Invoice No</th>
+                        <th className="px-3 py-2 text-left">Name of the Bill to Party</th>
+                        <th className="px-3 py-2 text-left">Bill to Party GSTIN No</th>
+                        <th className="px-3 py-2 text-left">Place of Supply</th>
+                        <th className="px-3 py-2 text-left">Name of the Ship to Party</th>
+                        <th className="px-3 py-2 text-right">Invoice Amount</th>
+                        <th className="px-3 py-2 text-center">Currency</th>
+                        <th className="px-3 py-2 text-right">Tax %</th>
+                        <th className="px-3 py-2 text-right">CGST Amount</th>
+                        <th className="px-3 py-2 text-right">SGST Amount</th>
+                        <th className="px-3 py-2 text-right">IGST Amount</th>
+                        <th className="px-3 py-2 text-right">UGST Amount</th>
+                        <th className="px-3 py-2 text-right">Export</th>
+                        <th className="px-3 py-2 text-right">Total Tax Amount</th>
+                        <th className="px-3 py-2 text-center">Sub Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {gstData.items.length === 0 ? (
+                        <tr>
+                          <td colSpan={17} className="px-4 py-6 text-center text-neutral-500">
+                            No sales transactions found for selected filters.
+                          </td>
+                        </tr>
+                      ) : (
+                        gstData.items.map((row) => (
+                          <tr key={`${row.sales_invoice_no}-${row.s_no}`} className="border-b border-neutral-100">
+                            <td className="px-3 py-2 text-left">{row.s_no}</td>
+                            <td className="px-3 py-2 text-left">{row.sales_invoice_date || '-'}</td>
+                            <td className="px-3 py-2 text-left">{row.sales_invoice_no}</td>
+                            <td className="px-3 py-2 text-left">{row.bill_to_party_name}</td>
+                            <td className="px-3 py-2 text-left font-mono text-xs">{row.bill_to_party_gstin_no}</td>
+                            <td className="px-3 py-2 text-left">{row.place_of_supply}</td>
+                            <td className="px-3 py-2 text-left">{row.ship_to_party_name}</td>
+                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.invoice_amount)}</td>
+                            <td className="px-3 py-2 text-center">{row.currency}</td>
+                            <td className="px-3 py-2 text-right">{formatTaxPercent(row.tax_percent)}</td>
+                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.cgst_amount)}</td>
+                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.sgst_amount)}</td>
+                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.igst_amount)}</td>
+                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.ugst_amount)}</td>
+                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.export_amount)}</td>
+                            <td className="px-3 py-2 text-right font-semibold">{formatDecimalAmount(row.total_tax_amount)}</td>
+                            <td className="px-3 py-2 text-center text-neutral-400">-</td>
+                          </tr>
+                        ))
+                      )}
+
+                      {gstData.items.length > 0 && (
+                        <tr className="bg-neutral-100 font-semibold text-neutral-800">
+                          <td colSpan={7} className="px-3 py-3 text-right">Sub Total</td>
+                          <td className="px-3 py-3 text-right">{formatDecimalAmount(gstData.subtotal.invoice_amount)}</td>
+                          <td className="px-3 py-3 text-center">-</td>
+                          <td className="px-3 py-3 text-right">-</td>
+                          <td className="px-3 py-3 text-right">{formatDecimalAmount(gstData.subtotal.cgst_amount)}</td>
+                          <td className="px-3 py-3 text-right">{formatDecimalAmount(gstData.subtotal.sgst_amount)}</td>
+                          <td className="px-3 py-3 text-right">{formatDecimalAmount(gstData.subtotal.igst_amount)}</td>
+                          <td className="px-3 py-3 text-right">{formatDecimalAmount(gstData.subtotal.ugst_amount)}</td>
+                          <td className="px-3 py-3 text-right">{formatDecimalAmount(gstData.subtotal.export_amount)}</td>
+                          <td className="px-3 py-3 text-right">{formatDecimalAmount(gstData.subtotal.total_tax_amount)}</td>
+                          <td className="px-3 py-3 text-center">Sub Total</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 border-t border-neutral-200 bg-white p-4 md:grid-cols-4">
+                  <div>
+                    <p className="text-xs text-neutral-500">Taxable Value</p>
+                    <p className="text-sm font-bold text-neutral-800">{formatAmount(gstData.summary.total_taxable)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-neutral-500">CGST</p>
+                    <p className="text-sm font-bold text-neutral-800">{formatAmount(gstData.summary.total_cgst)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-neutral-500">SGST</p>
+                    <p className="text-sm font-bold text-neutral-800">{formatAmount(gstData.summary.total_sgst)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-neutral-500">IGST</p>
+                    <p className="text-sm font-bold text-neutral-800">{formatAmount(gstData.summary.total_igst)}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+            {gstr2Data && (
+              <div className="hms-card overflow-hidden">
+                <div className="border-b border-neutral-200 bg-neutral-50 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-sm font-bold text-neutral-800">{gstr2Data.report_title}</h3>
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={() => handleGstr2Export('xlsx')} className="rounded border border-neutral-300 bg-white px-3 py-1 text-xs font-semibold text-neutral-700 hover:bg-neutral-100">Export XLSX</button>
+                      <button type="button" onClick={() => handleGstr2Export('pdf')} className="rounded border border-neutral-300 bg-white px-3 py-1 text-xs font-semibold text-neutral-700 hover:bg-neutral-100">Export PDF</button>
+                    </div>
+                  </div>
+                  <p className="mt-1 text-xs text-neutral-600">
+                    Period: {gstr2Data.from_date_display || fromDate} to {gstr2Data.to_date_display || toDate} | Frequency: {gstr2Data.frequency_label} | Rows: {gstr2Data.count}
+                  </p>
+                  {!!gstr2Data.validation_error_count && gstr2Data.validation_error_count > 0 && (
+                    <div className="mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-2 text-xs text-amber-800">
+                      <p>Validation warnings: {gstr2Data.validation_error_count}. All records are included in totals; review highlighted issues.</p>
+                      {gstr2Data.problematic_records && gstr2Data.problematic_records.length > 0 && (
+                        <ul className="mt-1 list-disc pl-4">
+                          {gstr2Data.problematic_records.slice(0, 5).map((record) => (
+                            <li key={`gstr2-${record.document_no}-${record.document_date || 'na'}`}>
+                              {record.document_type.toUpperCase()} {record.document_no || '(missing number)'}: {(record.errors || []).slice(0, 2).join(' | ')}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-neutral-100 text-xs uppercase tracking-wide text-neutral-600">
+                        <th className="px-3 py-2 text-left">S.No</th>
+                        <th className="px-3 py-2 text-left">GRN Date</th>
+                        <th className="px-3 py-2 text-left">GRN No</th>
+                        <th className="px-3 py-2 text-left">Name of the Supplier</th>
+                        <th className="px-3 py-2 text-left">Supplier GSTIN No</th>
+                        <th className="px-3 py-2 text-left">Business Place</th>
+                        <th className="px-3 py-2 text-left">Place of Supply</th>
+                        <th className="px-3 py-2 text-right">GRN Amount</th>
+                        <th className="px-3 py-2 text-center">Currency</th>
+                        <th className="px-3 py-2 text-right">Tax %</th>
+                        <th className="px-3 py-2 text-right">CGST Amount</th>
+                        <th className="px-3 py-2 text-right">SGST Amount</th>
+                        <th className="px-3 py-2 text-right">IGST Amount</th>
+                        <th className="px-3 py-2 text-right">UGST Amount</th>
+                        <th className="px-3 py-2 text-right">Import</th>
+                        <th className="px-3 py-2 text-right">Total Tax Amount</th>
+                        <th className="px-3 py-2 text-center">Sub Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {gstr2Data.items.length === 0 ? (
+                        <tr>
+                          <td colSpan={17} className="px-4 py-6 text-center text-neutral-500">
+                            No purchase transactions found for selected filters.
+                          </td>
+                        </tr>
+                      ) : (
+                        gstr2Data.items.map((row) => (
+                          <tr key={`${row.grn_no}-${row.s_no}`} className="border-b border-neutral-100">
+                            <td className="px-3 py-2 text-left">{row.s_no}</td>
+                            <td className="px-3 py-2 text-left">{row.grn_date || '-'}</td>
+                            <td className="px-3 py-2 text-left">{row.grn_no}</td>
+                            <td className="px-3 py-2 text-left">{row.supplier_name}</td>
+                            <td className="px-3 py-2 text-left font-mono text-xs">{row.supplier_gstin_no}</td>
+                            <td className="px-3 py-2 text-left">{row.business_place}</td>
+                            <td className="px-3 py-2 text-left">{row.place_of_supply}</td>
+                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.grn_amount)}</td>
+                            <td className="px-3 py-2 text-center">{row.currency}</td>
+                            <td className="px-3 py-2 text-right">{formatTaxPercent(row.tax_percent)}</td>
+                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.cgst_amount)}</td>
+                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.sgst_amount)}</td>
+                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.igst_amount)}</td>
+                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.ugst_amount)}</td>
+                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.import_amount)}</td>
+                            <td className="px-3 py-2 text-right font-semibold">{formatDecimalAmount(row.total_tax_amount)}</td>
+                            <td className="px-3 py-2 text-center text-neutral-400">-</td>
+                          </tr>
+                        ))
+                      )}
+
+                      {gstr2Data.items.length > 0 && (
+                        <tr className="bg-neutral-100 font-semibold text-neutral-800">
+                          <td colSpan={7} className="px-3 py-3 text-right">Sub Total</td>
+                          <td className="px-3 py-3 text-right">{formatDecimalAmount(gstr2Data.subtotal.grn_amount)}</td>
+                          <td className="px-3 py-3 text-center">-</td>
+                          <td className="px-3 py-3 text-right">-</td>
+                          <td className="px-3 py-3 text-right">{formatDecimalAmount(gstr2Data.subtotal.cgst_amount)}</td>
+                          <td className="px-3 py-3 text-right">{formatDecimalAmount(gstr2Data.subtotal.sgst_amount)}</td>
+                          <td className="px-3 py-3 text-right">{formatDecimalAmount(gstr2Data.subtotal.igst_amount)}</td>
+                          <td className="px-3 py-3 text-right">{formatDecimalAmount(gstr2Data.subtotal.ugst_amount)}</td>
+                          <td className="px-3 py-3 text-right">{formatDecimalAmount(gstr2Data.subtotal.import_amount)}</td>
+                          <td className="px-3 py-3 text-right">{formatDecimalAmount(gstr2Data.subtotal.total_tax_amount)}</td>
+                          <td className="px-3 py-3 text-center">Sub Total</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 border-t border-neutral-200 bg-white p-4 md:grid-cols-4">
+                  <div>
+                    <p className="text-xs text-neutral-500">Taxable Value</p>
+                    <p className="text-sm font-bold text-neutral-800">{formatAmount(gstr2Data.summary.total_taxable)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-neutral-500">CGST</p>
+                    <p className="text-sm font-bold text-neutral-800">{formatAmount(gstr2Data.summary.total_cgst)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-neutral-500">SGST</p>
+                    <p className="text-sm font-bold text-neutral-800">{formatAmount(gstr2Data.summary.total_sgst)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-neutral-500">IGST</p>
+                    <p className="text-sm font-bold text-neutral-800">{formatAmount(gstr2Data.summary.total_igst)}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+            {gstReconciliationData && (
+              <div className="hms-card overflow-hidden">
+                <div className="border-b border-neutral-200 bg-neutral-50 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-sm font-bold text-neutral-800">{gstReconciliationData.report_title}</h3>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleReconciliationExport('xlsx')}
+                        className="rounded border border-neutral-300 bg-white px-3 py-1 text-xs font-semibold text-neutral-700 hover:bg-neutral-100"
+                      >
+                        Export XLSX
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleReconciliationExport('pdf')}
+                        className="rounded border border-neutral-300 bg-white px-3 py-1 text-xs font-semibold text-neutral-700 hover:bg-neutral-100"
+                      >
+                        Export PDF
+                      </button>
+                    </div>
+                  </div>
+                  <p className="mt-1 text-xs text-neutral-600">
+                    Period: {gstReconciliationData.from_date_display || fromDate} to {gstReconciliationData.to_date_display || toDate} | Frequency: {gstReconciliationData.frequency_label} | Rows: {gstReconciliationData.count}
+                  </p>
+                  {!!gstReconciliationData.validation_error_count && gstReconciliationData.validation_error_count > 0 && (
+                    <div className="mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-2 text-xs text-amber-800">
+                      <p>Validation warnings: {gstReconciliationData.validation_error_count}. Reconciliation includes all source rows; review highlighted issues.</p>
+                      {gstReconciliationData.problematic_records && gstReconciliationData.problematic_records.length > 0 && (
+                        <ul className="mt-1 list-disc pl-4">
+                          {gstReconciliationData.problematic_records.slice(0, 5).map((record) => (
+                            <li key={`recon-${record.document_no}-${record.document_date || 'na'}`}>
+                              {record.document_type.toUpperCase()} {record.document_no || '(missing number)'}: {(record.errors || []).slice(0, 2).join(' | ')}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-neutral-100 text-xs uppercase tracking-wide text-neutral-600">
+                        <th className="px-3 py-2 text-left">S.No</th>
+                        <th className="px-3 py-2 text-left">Tax Type</th>
+                        <th className="px-3 py-2 text-left">Date</th>
+                        <th className="px-3 py-2 text-left">Partner</th>
+                        <th className="px-3 py-2 text-left">GSTIN</th>
+                        <th className="px-3 py-2 text-left">Business Place</th>
+                        <th className="px-3 py-2 text-left">Place of Supply</th>
+                        <th className="px-3 py-2 text-right">Amount</th>
+                        <th className="px-3 py-2 text-center">Currency</th>
+                        <th className="px-3 py-2 text-right">Tax %</th>
+                        <th className="px-3 py-2 text-right">CGST</th>
+                        <th className="px-3 py-2 text-right">SGST</th>
+                        <th className="px-3 py-2 text-right">IGST</th>
+                        <th className="px-3 py-2 text-right">UGST</th>
+                        <th className="px-3 py-2 text-right">Import/Export</th>
+                        <th className="px-3 py-2 text-right">Total Tax</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {gstReconciliationData.items.length === 0 ? (
+                        <tr>
+                          <td colSpan={16} className="px-4 py-6 text-center text-neutral-500">
+                            No GST transactions found for selected filters.
+                          </td>
+                        </tr>
+                      ) : (
+                        gstReconciliationData.items.map((row) => (
+                          <tr key={`${row.tax_type}-${row.s_no}`} className="border-b border-neutral-100">
+                            <td className="px-3 py-2 text-left">{row.s_no}</td>
+                            <td className="px-3 py-2 text-left">{row.tax_type}</td>
+                            <td className="px-3 py-2 text-left">{row.date || '-'}</td>
+                            <td className="px-3 py-2 text-left">{row.name_of_partner}</td>
+                            <td className="px-3 py-2 text-left font-mono text-xs">{row.partner_gstin_no}</td>
+                            <td className="px-3 py-2 text-left">{row.business_place}</td>
+                            <td className="px-3 py-2 text-left">{row.place_of_supply}</td>
+                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.grn_or_invoice_amount)}</td>
+                            <td className="px-3 py-2 text-center">{row.currency}</td>
+                            <td className="px-3 py-2 text-right">{formatTaxPercent(row.tax_percent)}</td>
+                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.cgst_amount)}</td>
+                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.sgst_amount)}</td>
+                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.igst_amount)}</td>
+                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.ugst_amount)}</td>
+                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.import_export_amount)}</td>
+                            <td className="px-3 py-2 text-right font-semibold">{formatDecimalAmount(row.total_tax_amount)}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 border-t border-neutral-200 bg-white p-4 md:grid-cols-3">
+                  <div className="rounded border border-green-200 bg-green-50 p-3">
+                    <p className="text-xs font-semibold text-green-700">Sub Total (Input Tax)</p>
+                    <p className="mt-1 text-xs text-green-800">CGST: {formatDecimalAmount(gstReconciliationData.subtotal_input_tax.cgst_amount)}</p>
+                    <p className="text-xs text-green-800">SGST: {formatDecimalAmount(gstReconciliationData.subtotal_input_tax.sgst_amount)}</p>
+                    <p className="text-xs text-green-800">IGST: {formatDecimalAmount(gstReconciliationData.subtotal_input_tax.igst_amount)}</p>
+                    <p className="text-xs text-green-800">UGST: {formatDecimalAmount(gstReconciliationData.subtotal_input_tax.ugst_amount)}</p>
+                    <p className="text-xs text-green-800">Import/Export: {formatDecimalAmount(gstReconciliationData.subtotal_input_tax.import_export_amount)}</p>
+                    <p className="mt-1 text-sm font-bold text-green-900">Total Tax: {formatDecimalAmount(gstReconciliationData.subtotal_input_tax.total_tax_amount)}</p>
+                  </div>
+                  <div className="rounded border border-blue-200 bg-blue-50 p-3">
+                    <p className="text-xs font-semibold text-blue-700">Sub Total (Output Tax)</p>
+                    <p className="mt-1 text-xs text-blue-800">CGST: {formatDecimalAmount(gstReconciliationData.subtotal_output_tax.cgst_amount)}</p>
+                    <p className="text-xs text-blue-800">SGST: {formatDecimalAmount(gstReconciliationData.subtotal_output_tax.sgst_amount)}</p>
+                    <p className="text-xs text-blue-800">IGST: {formatDecimalAmount(gstReconciliationData.subtotal_output_tax.igst_amount)}</p>
+                    <p className="text-xs text-blue-800">UGST: {formatDecimalAmount(gstReconciliationData.subtotal_output_tax.ugst_amount)}</p>
+                    <p className="text-xs text-blue-800">Import/Export: {formatDecimalAmount(gstReconciliationData.subtotal_output_tax.import_export_amount)}</p>
+                    <p className="mt-1 text-sm font-bold text-blue-900">Total Tax: {formatDecimalAmount(gstReconciliationData.subtotal_output_tax.total_tax_amount)}</p>
+                  </div>
+                  <div className="rounded border border-amber-200 bg-amber-50 p-3">
+                    <p className="text-xs font-semibold text-amber-700">Difference (Output - Input)</p>
+                    <p className="mt-1 text-xs text-amber-800">CGST: {formatDecimalAmount(gstReconciliationData.difference_amount.cgst_amount)}</p>
+                    <p className="text-xs text-amber-800">SGST: {formatDecimalAmount(gstReconciliationData.difference_amount.sgst_amount)}</p>
+                    <p className="text-xs text-amber-800">IGST: {formatDecimalAmount(gstReconciliationData.difference_amount.igst_amount)}</p>
+                    <p className="text-xs text-amber-800">UGST: {formatDecimalAmount(gstReconciliationData.difference_amount.ugst_amount)}</p>
+                    <p className="text-xs text-amber-800">Import/Export: {formatDecimalAmount(gstReconciliationData.difference_amount.import_export_amount)}</p>
+                    <p className="mt-1 text-sm font-bold text-amber-900">Net Tax: {formatDecimalAmount(gstReconciliationData.difference_amount.total_tax_amount)}</p>
+                  </div>
+                </div>
               </div>
             )}
             {gstr3bData && (
@@ -369,6 +1002,103 @@ const ReportsPage = () => {
                   <div className="rounded-lg bg-green-50 p-4"><p className="text-xs text-green-600">Input Tax Credit (ITC)</p><p className="text-xl font-bold text-green-800">{formatAmount(gstr3bData.itc)}</p></div>
                   <div className="rounded-lg bg-amber-50 p-4"><p className="text-xs text-amber-600">Net Tax Payable</p><p className="text-xl font-bold text-amber-800">{formatAmount(gstr3bData.net_tax_payable)}</p></div>
                 </div>
+              </div>
+            )}
+            {gstAuditTrail && (
+              <div className="hms-card overflow-hidden">
+                <div className="border-b border-neutral-200 bg-neutral-50 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-sm font-bold text-neutral-800">{gstAuditTrail.report_title}</h3>
+                    <div className="flex items-center gap-2">
+                      <label htmlFor="gst-audit-report-type" className="text-xs font-medium text-neutral-600">Report</label>
+                      <select
+                        id="gst-audit-report-type"
+                        value={auditReportType}
+                        onChange={(e) => handleAuditReportTypeChange(e.target.value as 'all' | 'gstr1' | 'gstr2' | 'gstr3b' | 'reconciliation')}
+                        className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-700"
+                      >
+                        <option value="all">All</option>
+                        <option value="gstr1">GSTR-1</option>
+                        <option value="gstr2">GSTR-2</option>
+                        <option value="gstr3b">GSTR-3B</option>
+                        <option value="reconciliation">Reconciliation</option>
+                      </select>
+                      <label htmlFor="gst-audit-page-size" className="text-xs font-medium text-neutral-600">Rows</label>
+                      <select
+                        id="gst-audit-page-size"
+                        value={auditPageSize}
+                        onChange={(e) => handleAuditPageSizeChange(Number(e.target.value))}
+                        className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-700"
+                      >
+                        <option value={10}>10</option>
+                        <option value={20}>20</option>
+                        <option value={50}>50</option>
+                      </select>
+                    </div>
+                  </div>
+                  <p className="mt-1 text-xs text-neutral-600">
+                    Period: {gstAuditTrail.from_date_display || fromDate} to {gstAuditTrail.to_date_display || toDate} | Total Events: {gstAuditTrail.total}
+                  </p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-neutral-100 text-xs uppercase tracking-wide text-neutral-600">
+                        <th className="px-3 py-2 text-left">Timestamp</th>
+                        <th className="px-3 py-2 text-left">Action</th>
+                        <th className="px-3 py-2 text-left">Report Type</th>
+                        <th className="px-3 py-2 text-left">Status</th>
+                        <th className="px-3 py-2 text-left">Range</th>
+                        <th className="px-3 py-2 text-left">Frequency</th>
+                        <th className="px-3 py-2 text-left">User</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {gstAuditTrail.items.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="px-4 py-6 text-center text-neutral-500">
+                            No audit records found for selected filters.
+                          </td>
+                        </tr>
+                      ) : (
+                        gstAuditTrail.items.map((item) => (
+                          <tr key={item.id} className="border-b border-neutral-100">
+                            <td className="px-3 py-2 text-left">{formatAuditTimestamp(item.timestamp)}</td>
+                            <td className="px-3 py-2 text-left">{item.action}</td>
+                            <td className="px-3 py-2 text-left">{item.report_type}</td>
+                            <td className="px-3 py-2 text-left">{item.status}</td>
+                            <td className="px-3 py-2 text-left">{item.start_date && item.end_date ? `${item.start_date} to ${item.end_date}` : '-'}</td>
+                            <td className="px-3 py-2 text-left">{item.frequency || '-'}</td>
+                            <td className="px-3 py-2 text-left">{item.user_name || item.user_id || '-'}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {gstAuditTrail.total_pages > 1 && (
+                  <div className="flex items-center justify-between border-t border-neutral-200 bg-white px-4 py-3 text-xs text-neutral-600">
+                    <span>Page {gstAuditTrail.page} of {gstAuditTrail.total_pages}</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={gstAuditTrail.page <= 1}
+                        onClick={() => setAuditPage((prev) => Math.max(1, prev - 1))}
+                        className="rounded border border-neutral-300 bg-white px-3 py-1 font-semibold text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Previous
+                      </button>
+                      <button
+                        type="button"
+                        disabled={gstAuditTrail.page >= gstAuditTrail.total_pages}
+                        onClick={() => setAuditPage((prev) => prev + 1)}
+                        className="rounded border border-neutral-300 bg-white px-3 py-1 font-semibold text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

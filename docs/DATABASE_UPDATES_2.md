@@ -2,6 +2,9 @@
 
 ---
 
+## DB-45: GST Report Audit Logs Table and Migration Coverage
+**Update**: Added dedicated `gst_report_audit_logs` table with indexed timestamp/report/user dimensions to persist GST report generation/export/view audit events, and propagated the same DDL to base schema and compatibility migration packs for both new and existing databases.
+
 ## DB-44: Inventory Count Difference Acceptance Audit Table
 **Update**: Added `inventory_count_difference_audits` to persist accepted count-difference adjustments with old/new/difference quantities, reason code, accepting user, and timestamp for complete traceability.
 

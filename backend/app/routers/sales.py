@@ -12,6 +12,7 @@ Production-ready with fixes for:
 from datetime import date, datetime, timedelta
 from email.message import EmailMessage
 from pathlib import Path
+import re
 import smtplib
 import ssl
 from typing import Any
@@ -64,6 +65,7 @@ from app.config import settings
 from app.utils.input_validation import validate_optional_token
 
 router = APIRouter(tags=["sales"])
+GSTIN_REGEX = re.compile(r"^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$")
 
 
 def _scope_to_owner(query, model, current_user: User):
@@ -106,6 +108,43 @@ def _calculate_invoice_due_date(invoice_date: date, customer: Customer) -> date:
     if payment_terms_days < 0:
         payment_terms_days = 0
     return invoice_date + timedelta(days=payment_terms_days)
+
+
+def _enforce_bill_to_gstin_for_gst_invoice(
+    db: Session,
+    payload: SalesInvoiceCreateRequest,
+    current_user: User,
+    *,
+    primary_customer: Customer,
+    gst_applicable: bool,
+) -> None:
+    if not gst_applicable:
+        return
+
+    bill_to_customer_id = payload.bill_to_customer_id or payload.customer_id
+    bill_to_customer = primary_customer if bill_to_customer_id == primary_customer.id else None
+    if bill_to_customer is None:
+        bill_to_customer = (
+            db.query(Customer)
+            .filter(Customer.id == bill_to_customer_id, Customer.is_deleted == False)
+            .first()
+        )
+    if not bill_to_customer:
+        raise HTTPException(status_code=400, detail="Invalid bill-to customer")
+
+    _enforce_owner(bill_to_customer, current_user)
+
+    gstin = ((bill_to_customer.gstin or "") or "").strip().upper()
+    if not gstin:
+        raise HTTPException(
+            status_code=400,
+            detail="Billing GSTIN is required for GST-reportable invoices",
+        )
+    if not GSTIN_REGEX.match(gstin):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Billing GSTIN is invalid: {gstin}",
+        )
 
 
 def _sales_order_module_removed() -> None:
@@ -1241,6 +1280,14 @@ async def convert_so_to_invoice(
         is_igst = False
         gst_applicable = False
 
+    _enforce_bill_to_gstin_for_gst_invoice(
+        db,
+        payload,
+        current_user,
+        primary_customer=customer,
+        gst_applicable=gst_applicable,
+    )
+
     invoice = SalesInvoice(
         invoice_number=generate_invoice_number(db),
         sales_order_id=so.id,
@@ -1424,6 +1471,14 @@ async def create_invoice(
     if not tax_mode["gst_applicable"]:
         is_igst = False
         gst_applicable = False
+
+    _enforce_bill_to_gstin_for_gst_invoice(
+        db,
+        payload,
+        current_user,
+        primary_customer=customer,
+        gst_applicable=gst_applicable,
+    )
 
     invoice = SalesInvoice(
         invoice_number=generate_invoice_number(db),

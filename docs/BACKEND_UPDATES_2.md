@@ -2,6 +2,51 @@
 
 ---
 
+## BE-108: GST Non-Exclusion Mode + FX Fallback + Reconciliation Null-Safety
+**Update**: Updated GST report generation to keep all documents in non-strict mode (no row exclusion on validation warnings), added fallback INR conversion behavior when exchange metadata is missing, corrected zero-tax validation to avoid false intra/inter-state failures, and fixed reconciliation tax-percent mapping to handle nullable values safely.
+
+## BE-107: One-Row GSTR-2 Aggregation + Reconciliation De-Duplication
+**Update**: Reworked GSTR-2 to aggregate GRN item taxes at the document level instead of grouping by GST slab, kept mixed-slab `Tax %` blank instead of splitting rows, and updated GST reconciliation to consume the corrected one-row-per-GRN input so duplicate slab rows no longer inflate totals.
+
+## BE-106: GST Audit Trail IP Removal + Single-Row GSTR-1 Aggregation
+**Update**: Removed IP address capture from GST audit trail persistence and response payloads, and refactored GSTR-1 so each invoice is reported once with line-item tax totals summed across all GST slabs instead of splitting rows by slab.
+
+## BE-105: GST Reporting Scalability - Multi-Slab Rows + INR Conversion Layer + Invoice GSTIN Enforcement
+**Update**: Refactored GSTR-1/GSTR-2 generation to emit one report row per `(invoice/grn + GST slab)` using grouped line-item tax aggregates, added INR conversion during reporting via stored document exchange rate or configurable `GST_REPORT_FX_RATES` fallback, and enforced bill-to GSTIN presence/format at invoice create/update for GST-applicable invoices.
+
+## BE-104: Reports Analytics Enhancement - GST Export Standardization + GSTR1/2 Export APIs
+**Update**: Added standardized `GET /api/v1/reports/gstr1/export` and `GET /api/v1/reports/gstr2/export` supporting `format=xlsx|pdf` with BRD-aligned column order, report headers, subtotal rows, and currency/decimal formatting; export events are now audit-logged in both generic and GST-specific audit trails.
+
+## BE-103: GST Audit Trail Persistence Hardening (Dedicated Table + Filtered API)
+**Update**: Added dedicated `gst_report_audit_logs` persistence with idempotent auto-ensure + compatibility migration coverage, wired GST generation/export/view actions to write structured audit records (`action`, `report_type`, date range, frequency, status), and upgraded `GET /api/v1/reports/gst-audit-trail` to support clean empty-state behavior with report-type filtering and pagination.
+
+## BE-102: GST Frequency Date Window Future-Date Guard
+**Update**: Added strict backend guard to reject GST report requests where `to_date` is in the future and return structured validation metadata, ensuring Monthly/Quarterly/Annual report windows stay within available transactional data.
+
+## BE-101: GST Date-Range Validation + Invalid-Row Exclusion Hardening
+**Update**: Improved frequency-based date-window validation errors with structured details (`code`, selected/allowed days, hint), and updated GSTR-1/GSTR-2 processing to isolate problematic records and exclude invalid rows from totals/subtotals to prevent incorrect GST calculations; reconciliation now propagates consolidated problematic-record details.
+
+## BE-100: GST Audit Trail Report Endpoint (Module 6)
+**Update**: Added `GET /api/v1/reports/gst-audit-trail` to retrieve GST report generation/export audit events by date-range + frequency for Finance/Tax users, with resilient fallback (`available=false`) when `audit_logs` table is not present in legacy databases.
+
+## BE-99: GST Security Hardening (Finance/Tax Role Enforcement)
+**Update**: Standardized role-based access enforcement across all GST endpoints by introducing shared Finance/Tax role validation and applying it to GSTR-1, GSTR-2, GSTR-3B, and GST Reconciliation APIs, ensuring only Admin/Accounting users can generate GST reports.
+
+## BE-98: GST Reconciliation Export Module (XLSX/PDF)
+**Update**: Added `GET /api/v1/reports/gst-reconciliation/export` with `format=xlsx|pdf` to export reconciliation data (including Input/Output subtotals and Difference Amount). Implemented XLSX generation via `openpyxl`, PDF generation via `reportlab`, and export audit events for both formats.
+
+## BE-97: BRD-Compliant GST Reconciliation Report Module (Module 3)
+**Update**: Added `GET /api/v1/reports/gst-reconciliation` to consolidate GSTR-2 Input Tax and GSTR-1 Output Tax rows into a unified reconciliation report with tax-type grouping, component-wise subtotals (`Input`, `Output`) and `Difference Amount = Output - Input`, frequency-aware filters, and warning-aware audit logging.
+
+## BE-96: GST Reports Non-Blocking Validation Mode with Strict Toggle
+**Update**: Updated `GET /api/v1/reports/gstr1` and `GET /api/v1/reports/gstr2` to support `strict_validation` query flag (default `false`). In non-strict mode, reports are generated with `validation_error_count` and `validation_errors` payload fields instead of failing with HTTP 422, while strict mode preserves fail-fast validation behavior for compliance checks.
+
+## BE-95: BRD-Compliant GSTR-2 Purchase/Input Tax Report Module (Module 2)
+**Update**: Added `GET /api/v2/reports/gstr2` to generate detailed GSTR-2 purchase rows with frequency-aware period validation (monthly/quarterly/annually), mandatory-field and GSTIN checks, GST slab and duplicate GRN validations, intra/inter-state + UT + import tax-logic validation, subtotal aggregation, and audit logging for both success and validation-failure outcomes.
+
+## BE-94: BRD-Compliant GSTR-1 Detailed Report Module (Module 1)
+**Update**: Upgraded `GET /api/v1/reports/gstr1` to generate detailed GSTR-1 rows with BRD column structure, frequency-aware period validation (monthly/quarterly/annually), GST business-rule checks (intra/inter/UT/export), GSTIN and tax-slab validation, duplicate invoice checks, subtotal aggregation, and explicit report-generation audit logging (user/date-range/frequency/timestamp).
+
 ## BE-93: Recount Uses Same Inventory Count Number and Record
 **Update**: Refactored Inventory Count recount flow to preserve the same `inventory_counts` record (`id` and `count_number`) by switching status to `draft` and clearing existing active line items, then reusing that draft in next-number preview and confirm save instead of creating a new incremented count number.
 

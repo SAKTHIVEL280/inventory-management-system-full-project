@@ -31,6 +31,24 @@ import { Toaster } from 'sonner';
 import { authApi } from './api/auth';
 import { ConfirmDialogHost } from './components/ConfirmDialogHost';
 
+const withTimeout = <T,>(promise: Promise<T>, timeoutMs = 15000): Promise<T> => {
+  return new Promise<T>((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => {
+      reject(new Error(`Request timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    promise
+      .then((value) => {
+        window.clearTimeout(timeoutId);
+        resolve(value);
+      })
+      .catch((error) => {
+        window.clearTimeout(timeoutId);
+        reject(error);
+      });
+  });
+};
+
 function App() {
   const { isAuthenticated, setUser, setAuthenticated, logout } = useAuthStore();
   const [isInitialized, setIsInitialized] = useState(false);
@@ -40,7 +58,7 @@ function App() {
 
     const bootstrapSession = async () => {
       try {
-        const user = await authApi.getMe();
+        const user = await withTimeout(authApi.getMe(), 12000);
         if (!active) {
           return;
         }

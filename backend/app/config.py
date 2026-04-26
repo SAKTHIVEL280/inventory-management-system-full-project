@@ -76,6 +76,10 @@ class Settings(BaseSettings):
     # Company
     company_name: str = "Your Company Name"
 
+    # Bootstrap admin credentials (used by setup/seed utilities)
+    ims_admin_email: str | None = None
+    ims_admin_password: str | None = None
+
     # Rate limiting
     rate_limit_login: str = "5/minute"
     rate_limit_auth: str = "100/minute"

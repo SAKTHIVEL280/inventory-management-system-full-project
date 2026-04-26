@@ -1,5 +1,56 @@
 # Frontend Updates Log
 
+## FE-111: GST Warnings Copy Aligned to Non-Exclusion Behavior
+**Update**: Updated GST warning banners in Reports so messaging clearly states that all source records are included in totals/reconciliation and warnings are informational for data review.
+
+## FE-110: Nullable Tax Percent Display for Mixed-Slab GST Reports
+**Update**: Updated the Reports UI and typed GST report contracts to treat `Tax %` as optional for mixed-slab documents, rendering a blank/dash instead of forcing `0.00` so one-row GSTR-2, GSTR-1, and reconciliation tables stay visually accurate.
+
+## FE-109: GST Audit Trail IP Column Removal
+**Update**: Removed the IP Address column from the GST Audit Trail UI and aligned the frontend audit trail type with the backend response so the report shows only the fields required by the BRD.
+
+## FE-108: Reports Loading Resilience - Timeout Guard + Lazy GST Fetching
+**Update**: Fixed prolonged `Loading reports...` state by adding per-request timeout wrappers in Reports page data fetch flow and deferring GST-heavy API calls to load only when GST tab is active, so Dashboard/Sales/Stock sections render even if a GST endpoint is slow or stuck.
+
+## FE-107: Reports Analytics Enhancement - Audit Pagination Size + Stock Batch Columns + GST Export Actions
+**Update**: Added GST Audit Trail page-size selector (`10/20/50`) with filter-aware pagination refresh, upgraded Stock Report table to show batch-wise rows (`Batch No`, `MFG Date`, `EXP Date`), and added GSTR-1/GSTR-2 export actions (XLSX/PDF) with standardized report download flows.
+
+## FE-106: GST Audit Trail UX Upgrade (Report Filter + Pagination + Empty State)
+**Update**: Refactored GST Audit Trail contracts and Reports UI to remove unavailable-table fallback, add report-type filtering (`all/gstr1/gstr2/gstr3b/reconciliation`), show richer event metadata (type/range/frequency), and support page-based navigation for high-volume audit logs.
+
+## FE-105: GST Date Validation UX Stabilization (No False Future + No Blink)
+**Update**: Refactored GST report date handling to use local date-only parsing (YYYY-MM-DD), debounced validation/fetch timing, and unified date-range state updates to remove false future-date errors and reduce frequency-switch flicker/blinking while preserving manual override behavior.
+
+## FE-104: Quarterly Auto-Range Switched to Rolling 3 Months
+**Update**: Updated GST frequency auto-range behavior for Quarterly to use a rolling 3-month window ending today (e.g., Apr 15 -> Jan 15 to Apr 15), while preserving manual override and no-future date validation.
+
+## FE-103: Quarterly Date Range Correction (Current Period, No Future)
+**Update**: Corrected GST frequency auto-date behavior to avoid future windows (Monthly/Quarterly/Annually now end at current date), and added no-future client validation for manual date overrides with clear user-facing messages.
+
+## FE-102: GST Frequency-Date Auto Window + Validation Messaging + Record Highlighting
+**Update**: Added frequency-aware auto date windows (Monthly=current month, Quarterly=current quarter, Annually=current year), client-side frequency range validation with clear messages before API calls, and detailed problematic-record highlighting in GSTR-1/GSTR-2/Reconciliation warning panels.
+
+## FE-101: GST Audit Trail UI Integration (Module 6)
+**Update**: Added GST Audit Trail section in Reports GST tab with typed API integration, recent event listing (timestamp/action/status/user/ip), and graceful unavailable messaging when backend audit-log storage is not available.
+
+## FE-100: GST Role-Gated Fetch and Access Messaging
+**Update**: Added frontend role gating for GST report loading so non-Finance users do not trigger unauthorized GST API calls; GST tab now shows a clear restricted-access message for non Admin/Accounting roles while preserving existing report behavior for Finance/Tax users.
+
+## FE-99: GST Reconciliation Export Controls (XLSX/PDF)
+**Update**: Added GST Reconciliation export actions in Reports GST tab with `Export XLSX` and `Export PDF` buttons, wired to blob-download API integration for date-range + frequency aware file generation.
+
+## FE-98: GST Reconciliation UI + API Integration (Module 3)
+**Update**: Integrated GST Reconciliation report in Reports GST tab with typed API/contracts, consolidated transaction table (Input + Output rows), and dedicated subtotal/difference cards for `Input Tax`, `Output Tax`, and `Difference (Output - Input)` while preserving non-blocking validation warning display.
+
+## FE-97: GST Report Validation Warning Banner (Non-Blocking Load)
+**Update**: Enhanced GST report rendering to show validation warning counts for GSTR-1 and GSTR-2 when backend returns non-blocking validation issues, so tables continue to load while users are prompted to correct master/transaction data.
+
+## FE-96: GSTR-2 Detailed Purchase/Input Tax UI Integration (Module 2)
+**Update**: Extended Reports GST tab with a BRD-style GSTR-2 detailed table (all required columns + subtotal row), added typed GSTR-2 API contracts/fetcher, and integrated date-range + frequency driven GSTR-2 loading alongside existing GSTR-1 and GSTR-3B sections.
+
+## FE-95: GSTR-1 Detailed Report UI with Frequency Filter (Module 1)
+**Update**: Enhanced Reports GST tab to render BRD-style GSTR-1 detailed table (all required columns + subtotal row), added report frequency filter (Monthly/Quarterly/Annually), and integrated typed GSTR-1 API contract for date-range + frequency driven report generation.
+
 ## FE-94: Password Visibility Toggle in User Management and Login
 **Update**: Added eye-icon show/hide password toggles for Create User and Edit User password field in User Management, and for Login + first-login Change Password fields to improve input usability while keeping default masked behavior.
 
