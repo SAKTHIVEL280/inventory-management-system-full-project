@@ -4,7 +4,9 @@ from __future__ import annotations
 import json
 import logging
 import os
-from logging.handlers import RotatingFileHandler
+import gzip
+import shutil
+from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
 
@@ -48,10 +50,31 @@ def configure_logging() -> None:
     root_logger.setLevel(level)
     root_logger.addHandler(stream_handler)
 
-    log_file = (os.getenv("LOG_FILE") or "").strip()
+    log_file = (os.getenv("LOG_FILE") or "backend/logs/app.log").strip()
     if log_file:
         path = Path(log_file)
         path.parent.mkdir(parents=True, exist_ok=True)
-        file_handler = RotatingFileHandler(path, maxBytes=10 * 1024 * 1024, backupCount=5)
+
+        retention_days = int((os.getenv("LOG_RETENTION_DAYS") or "180").strip() or "180")
+        file_handler = TimedRotatingFileHandler(
+            filename=str(path),
+            when="midnight",
+            interval=1,
+            backupCount=max(1, retention_days),
+            utc=False,
+            encoding="utf-8",
+        )
+        file_handler.suffix = "%Y-%m-%d"
+
+        def _gzip_namer(default_name: str) -> str:
+            return f"{default_name}.gz"
+
+        def _gzip_rotator(source: str, dest: str) -> None:
+            with open(source, "rb") as src, gzip.open(dest, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+            os.remove(source)
+
+        file_handler.namer = _gzip_namer
+        file_handler.rotator = _gzip_rotator
         file_handler.setFormatter(formatter)
         root_logger.addHandler(file_handler)

@@ -2,6 +2,18 @@
 
 ---
 
+## BE-113: Action Logs with secure viewer and retention
+**Update**: Added structured action log storage fields, sensitive-data masking, role-restricted filtered viewer API, and periodic retention cleanup support.
+
+## BE-112: Session timeout fixed to 8h
+**Update**: Access+refresh sessions now expire in 8 hours.
+
+## BE-111: Foreign GSTIN missing shown as N/A
+**Update**: GST rows show N/A when foreign GSTIN is missing.
+
+## BE-110: Remove GSTR subtotal export column
+**Update**: Removed separate Sub Total col in GSTR1/2 exports.
+
 ## BE-109: Export GSTIN country rule
 **Update**: GSTIN req only for India; export can be blank.
 

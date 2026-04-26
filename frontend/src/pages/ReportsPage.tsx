@@ -6,8 +6,8 @@
 import { useState, useEffect } from 'react';
 import { AppLayout } from '../components/AppLayout';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import { apiClient } from '../api/client';
-import { downloadGSTR1Export, downloadGSTR2Export, downloadGSTReconciliationExport, getGstAuditTrail, getGSTR1Report, getGSTR2Report, getGSTReconciliationReport, type GSTAuditTrailResponse, type GSTR1ReportResponse, type GSTR2ReportResponse, type GSTReconciliationResponse } from '../api/reports';
+import { apiClient, type ApiRequestConfig } from '../api/client';
+import { downloadGSTR1Export, downloadGSTR2Export, downloadGSTReconciliationExport, getActionLogs, getGstAuditTrail, getGSTR1Report, getGSTR2Report, getGSTReconciliationReport, type ActionLogsResponse, type GSTAuditTrailResponse, type GSTR1ReportResponse, type GSTR2ReportResponse, type GSTReconciliationResponse } from '../api/reports';
 import { toLocalDateInputValue } from '../utils/date';
 import { useAuthStore } from '../store/auth';
 
@@ -174,10 +174,17 @@ const ReportsPage = () => {
   const [gstr2Data, setGstr2Data] = useState<GSTR2ReportResponse | null>(null);
   const [gstReconciliationData, setGstReconciliationData] = useState<GSTReconciliationResponse | null>(null);
   const [gstAuditTrail, setGstAuditTrail] = useState<GSTAuditTrailResponse | null>(null);
+  const [actionLogsData, setActionLogsData] = useState<ActionLogsResponse | null>(null);
   const [gstr3bData, setGstr3bData] = useState<GSTR3BData | null>(null);
   const [auditReportType, setAuditReportType] = useState<'all' | 'gstr1' | 'gstr2' | 'gstr3b' | 'reconciliation'>('all');
   const [auditPage, setAuditPage] = useState(1);
   const [auditPageSize, setAuditPageSize] = useState(20);
+  const [actionLogModule, setActionLogModule] = useState('all');
+  const [actionLogType, setActionLogType] = useState('all');
+  const [actionLogUserQuery, setActionLogUserQuery] = useState('');
+  const [actionLogReference, setActionLogReference] = useState('');
+  const [actionLogPage, setActionLogPage] = useState(1);
+  const [actionLogPageSize, setActionLogPageSize] = useState(20);
   const isFinanceTaxUser = (user?.role || '').toLowerCase() === 'admin' || (user?.role || '').toLowerCase() === 'accounting';
   const fromDate = dateRange.from;
   const toDate = dateRange.to;
@@ -186,6 +193,7 @@ const ReportsPage = () => {
 
   const handleFromDateChange = (value: string) => {
     setAuditPage(1);
+    setActionLogPage(1);
     setDateRange((prev) => {
       const nextToDate = prev.to && value && value > prev.to ? value : prev.to;
       return { from: value, to: nextToDate };
@@ -194,6 +202,7 @@ const ReportsPage = () => {
 
   const handleToDateChange = (value: string) => {
     setAuditPage(1);
+    setActionLogPage(1);
     setDateRange((prev) => {
       const nextFromDate = prev.from && value && value < prev.from ? value : prev.from;
       return { from: nextFromDate, to: value };
@@ -204,6 +213,7 @@ const ReportsPage = () => {
     const window = getFrequencyDateWindow(value, new Date());
     setReportFrequency(value);
     setAuditPage(1);
+    setActionLogPage(1);
     setDateRange({ from: window.from, to: window.to });
     setDateInputError('');
     setFetchWarning('');
@@ -217,6 +227,11 @@ const ReportsPage = () => {
   const handleAuditPageSizeChange = (value: number) => {
     setAuditPageSize(value);
     setAuditPage(1);
+  };
+
+  const handleActionLogPageSizeChange = (value: number) => {
+    setActionLogPageSize(value);
+    setActionLogPage(1);
   };
 
   const validateFrequencyRangeOnClient = (): string | null => {
@@ -252,17 +267,33 @@ const ReportsPage = () => {
     const failedSections: string[] = [];
     const shouldLoadGst = isFinanceTaxUser && activeTab === 'gst';
     try {
+      // Fast pre-check so backend downtime does not keep the page in long loading cycles.
+      const healthConfig: ApiRequestConfig = { timeout: 4000, skipErrorToast: true };
+      await withTimeout(apiClient.get('/health', healthConfig), 4500, 'Backend health');
+
       const gstPromise = shouldLoadGst ? withTimeout(getGSTR1Report(fromDate, toDate, reportFrequency), 20000, 'GSTR-1') : Promise.resolve(null);
       const gstr2Promise = shouldLoadGst ? withTimeout(getGSTR2Report(fromDate, toDate, reportFrequency), 20000, 'GSTR-2') : Promise.resolve(null);
       const reconciliationPromise = shouldLoadGst ? withTimeout(getGSTReconciliationReport(fromDate, toDate, reportFrequency), 20000, 'GST Reconciliation') : Promise.resolve(null);
       const auditTrailPromise = shouldLoadGst
         ? getGstAuditTrail(fromDate, toDate, reportFrequency, auditReportType, auditPage, auditPageSize)
         : Promise.resolve(null);
+      const actionLogsPromise = shouldLoadGst
+        ? getActionLogs(
+          fromDate,
+          toDate,
+          actionLogModule,
+          actionLogType,
+          actionLogUserQuery,
+          actionLogReference,
+          actionLogPage,
+          actionLogPageSize,
+        )
+        : Promise.resolve(null);
       const gstr3bPromise = shouldLoadGst
         ? apiClient.get('/api/v2/reports/gstr3b', { params: { from_date: fromDate, to_date: toDate } })
         : Promise.resolve(null);
 
-      const [dashRes, plRes, stockRes, salesRes, gstRes, gstr2Res, reconciliationRes, auditTrailRes, gstr3bRes] = await Promise.allSettled([
+      const [dashRes, plRes, stockRes, salesRes, gstRes, gstr2Res, reconciliationRes, auditTrailRes, actionLogsRes, gstr3bRes] = await Promise.allSettled([
         withTimeout(apiClient.get('/api/v2/reports/dashboard'), 15000, 'Dashboard'),
         withTimeout(apiClient.get('/api/v2/reports/pl', { params: { from_date: fromDate, to_date: toDate } }), 15000, 'P&L'),
         withTimeout(apiClient.get('/api/v2/reports/stock'), 15000, 'Stock'),
@@ -271,6 +302,7 @@ const ReportsPage = () => {
         gstr2Promise,
         reconciliationPromise,
         shouldLoadGst ? withTimeout(auditTrailPromise, 20000, 'GST Audit Trail') : auditTrailPromise,
+        shouldLoadGst ? withTimeout(actionLogsPromise, 20000, 'Action Logs') : actionLogsPromise,
         shouldLoadGst ? withTimeout(gstr3bPromise, 20000, 'GSTR-3B') : gstr3bPromise,
       ]);
 
@@ -341,6 +373,15 @@ const ReportsPage = () => {
       }
 
       if (!shouldLoadGst) {
+        setActionLogsData(null);
+      } else if (actionLogsRes.status === 'fulfilled') {
+        setActionLogsData((actionLogsRes.value as ActionLogsResponse) || null);
+      } else {
+        setActionLogsData(null);
+        failedSections.push(`Action Logs (${getErrorMessage(actionLogsRes.reason)})`);
+      }
+
+      if (!shouldLoadGst) {
         setGstr3bData(null);
       } else if (gstr3bRes.status === 'fulfilled') {
         setGstr3bData(((gstr3bRes.value as { data?: GSTR3BData }).data as GSTR3BData) || null);
@@ -352,10 +393,20 @@ const ReportsPage = () => {
       if (failedSections.length > 0) {
         setFetchWarning(`Some sections failed to load: ${failedSections.join(', ')}`);
       }
-    } catch {
-      setFetchWarning('Failed to load reports data.');
+    } catch (error) {
+      const message = getErrorMessage(error);
+      if (
+        message.toLowerCase().includes('cannot reach server')
+        || message.toLowerCase().includes('network')
+        || message.toLowerCase().includes('timed out')
+      ) {
+        setFetchWarning('Backend is unreachable. Start backend server and retry.');
+      } else {
+        setFetchWarning(`Failed to load reports data: ${message}`);
+      }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleReconciliationExport = async (format: 'xlsx' | 'pdf') => {
@@ -420,7 +471,21 @@ const ReportsPage = () => {
     }, 250);
 
     return () => window.clearTimeout(timer);
-  }, [fromDate, toDate, reportFrequency, auditReportType, auditPage, auditPageSize, activeTab]);
+  }, [
+    fromDate,
+    toDate,
+    reportFrequency,
+    auditReportType,
+    auditPage,
+    auditPageSize,
+    actionLogModule,
+    actionLogType,
+    actionLogUserQuery,
+    actionLogReference,
+    actionLogPage,
+    actionLogPageSize,
+    activeTab,
+  ]);
 
   const salesTrend = (dashboard as Record<string, unknown>)?.sales_trend as { date: string; amount: number }[] || [];
   const topProducts = (dashboard as Record<string, unknown>)?.top_products as { product_name: string; quantity_sold: number; amount: number }[] || [];
@@ -672,13 +737,12 @@ const ReportsPage = () => {
                         <th className="px-3 py-2 text-right">UGST Amount</th>
                         <th className="px-3 py-2 text-right">Export</th>
                         <th className="px-3 py-2 text-right">Total Tax Amount</th>
-                        <th className="px-3 py-2 text-center">Sub Total</th>
                       </tr>
                     </thead>
                     <tbody>
                       {gstData.items.length === 0 ? (
                         <tr>
-                          <td colSpan={17} className="px-4 py-6 text-center text-neutral-500">
+                          <td colSpan={16} className="px-4 py-6 text-center text-neutral-500">
                             No sales transactions found for selected filters.
                           </td>
                         </tr>
@@ -701,7 +765,6 @@ const ReportsPage = () => {
                             <td className="px-3 py-2 text-right">{formatDecimalAmount(row.ugst_amount)}</td>
                             <td className="px-3 py-2 text-right">{formatDecimalAmount(row.export_amount)}</td>
                             <td className="px-3 py-2 text-right font-semibold">{formatDecimalAmount(row.total_tax_amount)}</td>
-                            <td className="px-3 py-2 text-center text-neutral-400">-</td>
                           </tr>
                         ))
                       )}
@@ -718,7 +781,6 @@ const ReportsPage = () => {
                           <td className="px-3 py-3 text-right">{formatDecimalAmount(gstData.subtotal.ugst_amount)}</td>
                           <td className="px-3 py-3 text-right">{formatDecimalAmount(gstData.subtotal.export_amount)}</td>
                           <td className="px-3 py-3 text-right">{formatDecimalAmount(gstData.subtotal.total_tax_amount)}</td>
-                          <td className="px-3 py-3 text-center">Sub Total</td>
                         </tr>
                       )}
                     </tbody>
@@ -794,13 +856,12 @@ const ReportsPage = () => {
                         <th className="px-3 py-2 text-right">UGST Amount</th>
                         <th className="px-3 py-2 text-right">Import</th>
                         <th className="px-3 py-2 text-right">Total Tax Amount</th>
-                        <th className="px-3 py-2 text-center">Sub Total</th>
                       </tr>
                     </thead>
                     <tbody>
                       {gstr2Data.items.length === 0 ? (
                         <tr>
-                          <td colSpan={17} className="px-4 py-6 text-center text-neutral-500">
+                          <td colSpan={16} className="px-4 py-6 text-center text-neutral-500">
                             No purchase transactions found for selected filters.
                           </td>
                         </tr>
@@ -823,7 +884,6 @@ const ReportsPage = () => {
                             <td className="px-3 py-2 text-right">{formatDecimalAmount(row.ugst_amount)}</td>
                             <td className="px-3 py-2 text-right">{formatDecimalAmount(row.import_amount)}</td>
                             <td className="px-3 py-2 text-right font-semibold">{formatDecimalAmount(row.total_tax_amount)}</td>
-                            <td className="px-3 py-2 text-center text-neutral-400">-</td>
                           </tr>
                         ))
                       )}
@@ -840,7 +900,6 @@ const ReportsPage = () => {
                           <td className="px-3 py-3 text-right">{formatDecimalAmount(gstr2Data.subtotal.ugst_amount)}</td>
                           <td className="px-3 py-3 text-right">{formatDecimalAmount(gstr2Data.subtotal.import_amount)}</td>
                           <td className="px-3 py-3 text-right">{formatDecimalAmount(gstr2Data.subtotal.total_tax_amount)}</td>
-                          <td className="px-3 py-3 text-center">Sub Total</td>
                         </tr>
                       )}
                     </tbody>
@@ -1092,6 +1151,161 @@ const ReportsPage = () => {
                         type="button"
                         disabled={gstAuditTrail.page >= gstAuditTrail.total_pages}
                         onClick={() => setAuditPage((prev) => prev + 1)}
+                        className="rounded border border-neutral-300 bg-white px-3 py-1 font-semibold text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            {actionLogsData && (
+              <div className="hms-card overflow-hidden">
+                <div className="border-b border-neutral-200 bg-neutral-50 p-4">
+                  <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                    <h3 className="text-sm font-bold text-neutral-800">{actionLogsData.report_title}</h3>
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-6">
+                      <select
+                        value={actionLogModule}
+                        onChange={(e) => {
+                          setActionLogModule(e.target.value);
+                          setActionLogPage(1);
+                        }}
+                        className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-700"
+                      >
+                        <option value="all">All Modules</option>
+                        <option value="auth">Auth</option>
+                        <option value="reports">Reports</option>
+                        <option value="sales">Sales</option>
+                        <option value="purchase">Purchase</option>
+                        <option value="products">Products</option>
+                        <option value="customers">Customers</option>
+                        <option value="suppliers">Suppliers</option>
+                        <option value="stock">Stock</option>
+                        <option value="payments">Payments</option>
+                        <option value="users">Users</option>
+                        <option value="audit">Audit</option>
+                        <option value="system">System</option>
+                      </select>
+                      <select
+                        value={actionLogType}
+                        onChange={(e) => {
+                          setActionLogType(e.target.value);
+                          setActionLogPage(1);
+                        }}
+                        className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-700"
+                      >
+                        <option value="all">All Actions</option>
+                        <option value="GET">GET</option>
+                        <option value="POST">POST</option>
+                        <option value="PUT">PUT</option>
+                        <option value="PATCH">PATCH</option>
+                        <option value="DELETE">DELETE</option>
+                        <option value="LOGIN">LOGIN</option>
+                        <option value="LOGOUT">LOGOUT</option>
+                        <option value="VIEW_ACTION_LOGS">VIEW_ACTION_LOGS</option>
+                      </select>
+                      <input
+                        type="text"
+                        value={actionLogUserQuery}
+                        onChange={(e) => {
+                          setActionLogUserQuery(e.target.value);
+                          setActionLogPage(1);
+                        }}
+                        placeholder="User / Email / ID"
+                        className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-700"
+                      />
+                      <input
+                        type="text"
+                        value={actionLogReference}
+                        onChange={(e) => {
+                          setActionLogReference(e.target.value);
+                          setActionLogPage(1);
+                        }}
+                        placeholder="Reference"
+                        className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-700"
+                      />
+                      <select
+                        value={actionLogPageSize}
+                        onChange={(e) => handleActionLogPageSizeChange(Number(e.target.value))}
+                        className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-700"
+                      >
+                        <option value={10}>10 rows</option>
+                        <option value={20}>20 rows</option>
+                        <option value={50}>50 rows</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActionLogModule('all');
+                          setActionLogType('all');
+                          setActionLogUserQuery('');
+                          setActionLogReference('');
+                          setActionLogPage(1);
+                        }}
+                        className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs font-semibold text-neutral-700 hover:bg-neutral-100"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-neutral-600">
+                    Period: {actionLogsData.from_date_display || fromDate} to {actionLogsData.to_date_display || toDate} | Total Events: {actionLogsData.total}
+                  </p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-neutral-100 text-xs uppercase tracking-wide text-neutral-600">
+                        <th className="px-3 py-2 text-left">Timestamp</th>
+                        <th className="px-3 py-2 text-left">User</th>
+                        <th className="px-3 py-2 text-left">Module</th>
+                        <th className="px-3 py-2 text-left">Action Type</th>
+                        <th className="px-3 py-2 text-left">Reference</th>
+                        <th className="px-3 py-2 text-left">Description</th>
+                        <th className="px-3 py-2 text-left">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {actionLogsData.items.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="px-4 py-6 text-center text-neutral-500">
+                            No action logs found for selected filters.
+                          </td>
+                        </tr>
+                      ) : (
+                        actionLogsData.items.map((item) => (
+                          <tr key={item.id} className="border-b border-neutral-100 align-top">
+                            <td className="px-3 py-2 text-left">{formatAuditTimestamp(item.timestamp)}</td>
+                            <td className="px-3 py-2 text-left">{item.user_name || item.user_id || 'System'}</td>
+                            <td className="px-3 py-2 text-left">{item.module_name || '-'}</td>
+                            <td className="px-3 py-2 text-left">{item.action_type || '-'}</td>
+                            <td className="px-3 py-2 text-left">{item.record_reference || '-'}</td>
+                            <td className="px-3 py-2 text-left">{item.description || item.action || '-'}</td>
+                            <td className="px-3 py-2 text-left">{item.status || '-'}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {actionLogsData.total_pages > 1 && (
+                  <div className="flex items-center justify-between border-t border-neutral-200 bg-white px-4 py-3 text-xs text-neutral-600">
+                    <span>Page {actionLogsData.page} of {actionLogsData.total_pages}</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={actionLogsData.page <= 1}
+                        onClick={() => setActionLogPage((prev) => Math.max(1, prev - 1))}
+                        className="rounded border border-neutral-300 bg-white px-3 py-1 font-semibold text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Previous
+                      </button>
+                      <button
+                        type="button"
+                        disabled={actionLogsData.page >= actionLogsData.total_pages}
+                        onClick={() => setActionLogPage((prev) => prev + 1)}
                         className="rounded border border-neutral-300 bg-white px-3 py-1 font-semibold text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         Next

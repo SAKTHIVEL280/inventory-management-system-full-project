@@ -36,7 +36,7 @@ def _set_csrf_cookie(response: Response) -> None:
     response.set_cookie(
         key=settings.csrf_cookie_name,
         value=csrf_token,
-        max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
+        max_age=settings.refresh_token_expire_minutes * 60,
         secure=True,
         httponly=False,
         samesite="strict",
@@ -57,7 +57,7 @@ async def login(
     
     Returns:
         - access_token: JWT token for authenticated requests (8 hours)
-        - refresh_token: JWT token for refreshing access token (7 days)
+        - refresh_token: JWT token for refreshing access token (8 hours)
         - user: User object with effective_access calculated
     
     Raises:
@@ -116,7 +116,7 @@ async def login(
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
-        max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
+        max_age=settings.refresh_token_expire_minutes * 60,
         secure=True,
         httponly=True,
         samesite="strict",

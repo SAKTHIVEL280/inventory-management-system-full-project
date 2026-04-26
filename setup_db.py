@@ -58,7 +58,7 @@ def _write_default_env_if_missing() -> None:
         f"SECRET_KEY={generated_secret}\n"
         "ALGORITHM=HS256\n"
         "ACCESS_TOKEN_EXPIRE_MINUTES=480\n"
-        "REFRESH_TOKEN_EXPIRE_DAYS=7\n"
+        "REFRESH_TOKEN_EXPIRE_MINUTES=480\n"
         f"IMS_ADMIN_EMAIL={generated_admin_email}\n"
         f"IMS_ADMIN_PASSWORD={generated_admin_password}\n"
         "MAIL_USERNAME=your@gmail.com\n"

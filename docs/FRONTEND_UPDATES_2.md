@@ -1,5 +1,14 @@
 # Frontend Updates Log
 
+## FE-114: Action Logs viewer with filters and pagination
+**Update**: Added GST-tab Action Logs card with module/action/user/reference filters, paginated table view, and typed API integration.
+
+## FE-113: Reports fast-fail on backend down
+**Update**: Health check added; loading exits fast.
+
+## FE-112: Remove GSTR subtotal UI column
+**Update**: Removed separate Sub Total col in GSTR1/2 tables.
+
 ## FE-111: GST Warnings Copy Aligned to Non-Exclusion Behavior
 **Update**: Updated GST warning banners in Reports so messaging clearly states that all source records are included in totals/reconciliation and warnings are informational for data review.
 

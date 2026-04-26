@@ -22,7 +22,7 @@ from app.models.customer import Customer
 from app.models.supplier import Supplier
 from app.models.company import Company
 from app.models.payment import Payment, PaymentAllocation
-from app.services.audit_service import log_audit_event
+from app.services.audit_service import ensure_audit_logs_storage, log_audit_event
 from app.services.gst_service import (
     INVOICE_TYPE_EXPORT,
     INVOICE_TYPE_OTHER_STATES,
@@ -293,6 +293,14 @@ def _ensure_finance_tax_user(current_user: User) -> None:
         raise HTTPException(
             status_code=403,
             detail="Only Finance/Tax users are allowed to generate GST reports",
+        )
+
+
+def _ensure_action_log_view_user(current_user: User) -> None:
+    if current_user.role not in {"admin", "accounting", "auditor"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Only Admin/Auditor users can view action logs",
         )
 
 
@@ -1210,7 +1218,7 @@ async def gstr1_report(
         bill_to_country = _customer_country_for_gstr(bill_to_customer)
         bill_to_is_india = is_india_country(bill_to_country)
         is_export_transaction = invoice_type == INVOICE_TYPE_EXPORT or (not bill_to_is_india)
-        display_bill_to_gstin = bill_to_gstin if bill_to_is_india else ""
+        display_bill_to_gstin = bill_to_gstin if bill_to_is_india else (bill_to_gstin or "N/A")
         invoice_rates = sorted(invoice_rate_map.get(invoice_key, set()))
 
         conversion_rate, conversion_source, conversion_error = _resolve_report_fx_rate(
@@ -1508,7 +1516,6 @@ async def gstr1_export(
             "UGST Amount",
             "Export",
             "Total Tax Amount",
-            "Sub Total",
         ]
         ws.append(headers)
 
@@ -1530,7 +1537,6 @@ async def gstr1_export(
                 row.get("ugst_amount"),
                 row.get("export_amount"),
                 row.get("total_tax_amount"),
-                "",
             ])
 
         ws.append([
@@ -1550,7 +1556,6 @@ async def gstr1_export(
             subtotal.get("ugst_amount", 0.0),
             subtotal.get("export_amount", 0.0),
             subtotal.get("total_tax_amount", 0.0),
-            "Sub Total",
         ])
 
         stream = BytesIO()
@@ -1610,7 +1615,7 @@ async def gstr1_export(
 
     table_data = [[
         "S.No", "Sales Invoice Date", "Sales Invoice No", "Bill To", "Bill GSTIN", "Place", "Ship To",
-        "Invoice Amount", "Currency", "Tax %", "CGST", "SGST", "IGST", "UGST", "Export", "Total Tax", "Sub Total",
+        "Invoice Amount", "Currency", "Tax %", "CGST", "SGST", "IGST", "UGST", "Export", "Total Tax",
     ]]
 
     for row in report_items:
@@ -1631,7 +1636,6 @@ async def gstr1_export(
             f"{float(row.get('ugst_amount', 0.0)):.2f}",
             f"{float(row.get('export_amount', 0.0)):.2f}",
             f"{float(row.get('total_tax_amount', 0.0)):.2f}",
-            "",
         ])
 
     table_data.append([
@@ -1645,7 +1649,6 @@ async def gstr1_export(
         f"{float(subtotal.get('ugst_amount', 0.0)):.2f}",
         f"{float(subtotal.get('export_amount', 0.0)):.2f}",
         f"{float(subtotal.get('total_tax_amount', 0.0)):.2f}",
-        "Sub Total",
     ])
 
     table = Table(table_data, repeatRows=1)
@@ -1897,6 +1900,10 @@ async def gstr2_report(
         supplier_name = (supplier.company_name if supplier else "").strip()
         supplier_gstin = ((supplier.gstin if supplier else "") or "").strip().upper()
         place_of_supply = ((supplier.place_of_supply if supplier else "") or (supplier.state if supplier else "") or "").strip()
+        supplier_business_type = ((supplier.business_type if supplier else "domestic") or "domestic").strip().lower()
+        supplier_country = ((supplier.billing_country if supplier else "") or "").strip()
+        supplier_is_india = is_india_country(supplier_country) or (not supplier_country and supplier_business_type == "domestic")
+        display_supplier_gstin = supplier_gstin if supplier_is_india else (supplier_gstin or "N/A")
         po_currency = purchase_order_currency_map.get(str(grn.purchase_order_id or ""), {})
         currency = (
             (po_currency.get("currency_code") if po_currency else None)
@@ -1925,8 +1932,7 @@ async def gstr2_report(
         source_total_gst = _round_2(source_cgst + source_sgst + source_igst)
 
         supplier_state_token = _normalized_state_token(supplier.state_code if supplier else None, supplier.state if supplier else None)
-        supplier_country = ((supplier.billing_country if supplier else "") or "").strip().upper()
-        is_import = (supplier.business_type if supplier else "domestic") != "domestic" or (supplier_country and supplier_country != "INDIA")
+        is_import = supplier_business_type != "domestic" or (supplier_country and not supplier_is_india)
         is_ut = _is_union_territory(supplier.state_code if supplier else None, supplier.state if supplier else None)
         is_inter_state = bool(company_state_token and supplier_state_token and company_state_token != supplier_state_token)
 
@@ -1945,12 +1951,13 @@ async def gstr2_report(
             validation_errors.append("VAL-010 Mandatory Fields Check failed: GRN number is required")
         if not supplier_name:
             validation_errors.append(f"VAL-010 Mandatory Fields Check failed for GRN {grn_number}: supplier name is required")
-        if not supplier_gstin:
-            validation_errors.append(f"VAL-010 Mandatory Fields Check failed for GRN {grn_number}: supplier GSTIN is required")
-        elif not GSTIN_REGEX.match(supplier_gstin):
-            validation_errors.append(
-                f"VAL-002 GSTIN Format Check failed for GRN {grn_number}: GSTIN {supplier_gstin} is invalid"
-            )
+        if supplier_is_india:
+            if not supplier_gstin:
+                validation_errors.append(f"VAL-010 Mandatory Fields Check failed for GRN {grn_number}: supplier GSTIN is required")
+            elif not GSTIN_REGEX.match(supplier_gstin):
+                validation_errors.append(
+                    f"VAL-002 GSTIN Format Check failed for GRN {grn_number}: GSTIN {supplier_gstin} is invalid"
+                )
         if not place_of_supply:
             validation_errors.append(f"VAL-010 Mandatory Fields Check failed for GRN {grn_number}: place of supply is required")
         if source_grn_amount <= 0:
@@ -2040,7 +2047,7 @@ async def gstr2_report(
                 "grn_date": _format_ddmmyyyy(grn.receipt_date),
                 "grn_no": grn_number,
                 "supplier_name": supplier_name,
-                "supplier_gstin_no": supplier_gstin,
+                "supplier_gstin_no": display_supplier_gstin,
                 "business_place": business_place,
                 "place_of_supply": place_of_supply,
                 "grn_amount": grn_amount,
@@ -2218,7 +2225,6 @@ async def gstr2_export(
             "UGST Amount",
             "Import",
             "Total Tax Amount",
-            "Sub Total",
         ]
         ws.append(headers)
 
@@ -2240,7 +2246,6 @@ async def gstr2_export(
                 row.get("ugst_amount"),
                 row.get("import_amount"),
                 row.get("total_tax_amount"),
-                "",
             ])
 
         ws.append([
@@ -2260,7 +2265,6 @@ async def gstr2_export(
             subtotal.get("ugst_amount", 0.0),
             subtotal.get("import_amount", 0.0),
             subtotal.get("total_tax_amount", 0.0),
-            "Sub Total",
         ])
 
         stream = BytesIO()
@@ -2320,7 +2324,7 @@ async def gstr2_export(
 
     table_data = [[
         "S.No", "GRN Date", "GRN No", "Supplier", "Supplier GSTIN", "Business Place", "Place of Supply",
-        "GRN Amount", "Currency", "Tax %", "CGST", "SGST", "IGST", "UGST", "Import", "Total Tax", "Sub Total",
+        "GRN Amount", "Currency", "Tax %", "CGST", "SGST", "IGST", "UGST", "Import", "Total Tax",
     ]]
 
     for row in report_items:
@@ -2341,7 +2345,6 @@ async def gstr2_export(
             f"{float(row.get('ugst_amount', 0.0)):.2f}",
             f"{float(row.get('import_amount', 0.0)):.2f}",
             f"{float(row.get('total_tax_amount', 0.0)):.2f}",
-            "",
         ])
 
     table_data.append([
@@ -2355,7 +2358,6 @@ async def gstr2_export(
         f"{float(subtotal.get('ugst_amount', 0.0)):.2f}",
         f"{float(subtotal.get('import_amount', 0.0)):.2f}",
         f"{float(subtotal.get('total_tax_amount', 0.0)):.2f}",
-        "Sub Total",
     ])
 
     table = Table(table_data, repeatRows=1)
@@ -2990,6 +2992,185 @@ async def gst_audit_trail_report(
         "from_date_display": _format_ddmmyyyy(from_date),
         "to_date_display": _format_ddmmyyyy(to_date),
         "report_type": selected_report_type or "all",
+        "page": page,
+        "page_size": page_size,
+        "total": total_count,
+        "total_pages": total_pages,
+        "count": len(items),
+        "items": items,
+    }
+
+
+@router.get("/action-logs")
+async def action_logs_report(
+    from_date: date,
+    to_date: date,
+    module: str = Query(default="all"),
+    action_type: str = Query(default="all"),
+    user_query: str = Query(default=""),
+    reference: str = Query(default=""),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("reports_read")),
+):
+    """Return system-wide action logs with role-restricted filtered access."""
+    _ensure_action_log_view_user(current_user)
+    _ensure_valid_date_range(from_date, to_date)
+    ensure_audit_logs_storage(db)
+
+    module_token = (module or "all").strip().lower()
+    selected_module = None if module_token in {"", "all"} else module_token
+
+    action_type_token = (action_type or "all").strip().upper()
+    selected_action_type = None if action_type_token in {"", "ALL"} else action_type_token
+
+    user_token = (user_query or "").strip()
+    user_filter = f"%{user_token}%" if user_token else None
+
+    reference_token = (reference or "").strip()
+    reference_filter = f"%{reference_token}%" if reference_token else None
+
+    count_row = db.execute(
+        text(
+            """
+            SELECT COUNT(*)
+            FROM audit_logs a
+            LEFT JOIN users u ON u.id = a.user_id
+            WHERE a.created_at::date >= :from_date
+              AND a.created_at::date <= :to_date
+              AND (:module_name IS NULL OR LOWER(COALESCE(a.module_name, '')) = :module_name)
+              AND (:action_type IS NULL OR UPPER(COALESCE(a.action_type, '')) = :action_type)
+              AND (
+                    :user_filter IS NULL
+                    OR CAST(a.user_id AS TEXT) ILIKE :user_filter
+                    OR COALESCE(a.username, '') ILIKE :user_filter
+                    OR COALESCE(u.full_name, '') ILIKE :user_filter
+                    OR COALESCE(u.email, '') ILIKE :user_filter
+                  )
+              AND (:reference_filter IS NULL OR COALESCE(a.record_reference, '') ILIKE :reference_filter)
+            """
+        ),
+        {
+            "from_date": from_date,
+            "to_date": to_date,
+            "module_name": selected_module,
+            "action_type": selected_action_type,
+            "user_filter": user_filter,
+            "reference_filter": reference_filter,
+        },
+    ).scalar()
+    total_count = int(count_row or 0)
+    offset = (page - 1) * page_size
+
+    rows = db.execute(
+        text(
+            """
+            SELECT
+                a.id,
+                a.user_id,
+                COALESCE(NULLIF(TRIM(a.username), ''), NULLIF(TRIM(u.full_name), ''), u.email, 'System') AS user_name,
+                COALESCE(a.action_type, '') AS action_type,
+                COALESCE(a.module_name, '') AS module_name,
+                a.action,
+                a.record_reference,
+                a.description,
+                a.status,
+                a.created_at,
+                a.details
+            FROM audit_logs a
+            LEFT JOIN users u ON u.id = a.user_id
+            WHERE a.created_at::date >= :from_date
+              AND a.created_at::date <= :to_date
+              AND (:module_name IS NULL OR LOWER(COALESCE(a.module_name, '')) = :module_name)
+              AND (:action_type IS NULL OR UPPER(COALESCE(a.action_type, '')) = :action_type)
+              AND (
+                    :user_filter IS NULL
+                    OR CAST(a.user_id AS TEXT) ILIKE :user_filter
+                    OR COALESCE(a.username, '') ILIKE :user_filter
+                    OR COALESCE(u.full_name, '') ILIKE :user_filter
+                    OR COALESCE(u.email, '') ILIKE :user_filter
+                  )
+              AND (:reference_filter IS NULL OR COALESCE(a.record_reference, '') ILIKE :reference_filter)
+            ORDER BY a.created_at DESC
+            LIMIT :page_size OFFSET :offset
+            """
+        ),
+        {
+            "from_date": from_date,
+            "to_date": to_date,
+            "module_name": selected_module,
+            "action_type": selected_action_type,
+            "user_filter": user_filter,
+            "reference_filter": reference_filter,
+            "page_size": page_size,
+            "offset": offset,
+        },
+    ).mappings().all()
+
+    items = []
+    for row in rows:
+        details_value = row.get("details")
+        details: dict[str, Any]
+        if isinstance(details_value, dict):
+            details = details_value
+        elif isinstance(details_value, str):
+            try:
+                parsed = json.loads(details_value)
+                details = parsed if isinstance(parsed, dict) else {}
+            except Exception:
+                details = {}
+        else:
+            details = {}
+
+        items.append(
+            {
+                "id": str(row.get("id")),
+                "user_id": str(row.get("user_id")) if row.get("user_id") else None,
+                "user_name": row.get("user_name") or "System",
+                "action": row.get("action") or "",
+                "action_type": row.get("action_type") or "",
+                "module_name": row.get("module_name") or "",
+                "record_reference": row.get("record_reference") or "",
+                "description": row.get("description") or "",
+                "status": row.get("status") or "",
+                "timestamp": row.get("created_at").isoformat() if row.get("created_at") else None,
+                "details": details,
+            }
+        )
+
+    total_pages = (total_count + page_size - 1) // page_size if total_count else 0
+
+    log_audit_event(
+        db,
+        action="VIEW_ACTION_LOGS",
+        resource_type="audit",
+        status="success",
+        user_id=current_user.id,
+        details={
+            "module": selected_module or "all",
+            "action_type": selected_action_type or "all",
+            "user_query": user_token,
+            "reference": reference_token,
+            "from_date": from_date.isoformat(),
+            "to_date": to_date.isoformat(),
+            "page": page,
+            "page_size": page_size,
+            "result_count": len(items),
+        },
+    )
+    db.commit()
+
+    return {
+        "report_title": "Action Logs",
+        "from_date": from_date.isoformat(),
+        "to_date": to_date.isoformat(),
+        "from_date_display": _format_ddmmyyyy(from_date),
+        "to_date_display": _format_ddmmyyyy(to_date),
+        "module": selected_module or "all",
+        "action_type": selected_action_type or "all",
+        "user_query": user_token,
+        "reference": reference_token,
         "page": page,
         "page_size": page_size,
         "total": total_count,

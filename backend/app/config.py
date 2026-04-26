@@ -51,7 +51,7 @@ class Settings(BaseSettings):
 
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 480  # 8 hours
-    refresh_token_expire_days: int = 7
+    refresh_token_expire_minutes: int = 480  # 8 hours
     
     # Email
     mail_username: str = "your@gmail.com"
@@ -104,6 +104,11 @@ class Settings(BaseSettings):
     db_pool_size: int = 20
     db_pool_max_overflow: int = 40
     db_pool_recycle_seconds: int = 3600
+
+    # Audit and logging retention
+    audit_log_retention_days: int = 365
+    log_file: str = "backend/logs/app.log"
+    log_retention_days: int = 180
 
     model_config = {
         "env_file": ".env",

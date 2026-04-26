@@ -2,6 +2,9 @@
 
 ---
 
+## DB-46: Action Logs schema + compatibility migration pack
+**Update**: Added query-friendly `audit_logs` table columns/indexes for action tracking and propagated idempotent DDL to base schema, consolidated migration pack, and runtime compatibility migration.
+
 ## DB-45: GST Report Audit Logs Table and Migration Coverage
 **Update**: Added dedicated `gst_report_audit_logs` table with indexed timestamp/report/user dimensions to persist GST report generation/export/view audit events, and propagated the same DDL to base schema and compatibility migration packs for both new and existing databases.
 

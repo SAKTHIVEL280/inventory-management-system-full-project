@@ -259,6 +259,38 @@ export interface GSTAuditTrailResponse {
   items: GSTAuditTrailItem[];
 }
 
+export interface ActionLogItem {
+  id: string;
+  user_id: string | null;
+  user_name: string;
+  action: string;
+  action_type: string;
+  module_name: string;
+  record_reference: string;
+  description: string;
+  status: string;
+  timestamp: string | null;
+  details: Record<string, unknown>;
+}
+
+export interface ActionLogsResponse {
+  report_title: string;
+  from_date: string;
+  to_date: string;
+  from_date_display: string | null;
+  to_date_display: string | null;
+  module: string;
+  action_type: string;
+  user_query: string;
+  reference: string;
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+  count: number;
+  items: ActionLogItem[];
+}
+
 /**
  * Fetch dashboard statistics
  */
@@ -388,6 +420,34 @@ export const getGstAuditTrail = async (
       to_date: toDate,
       frequency,
       report_type: reportType,
+      page,
+      page_size: pageSize,
+    },
+  });
+  return response.data;
+};
+
+/**
+ * Fetch system action logs
+ */
+export const getActionLogs = async (
+  fromDate: string,
+  toDate: string,
+  module = 'all',
+  actionType = 'all',
+  userQuery = '',
+  reference = '',
+  page = 1,
+  pageSize = 25,
+): Promise<ActionLogsResponse> => {
+  const response = await apiClient.get('/api/v2/reports/action-logs', {
+    params: {
+      from_date: fromDate,
+      to_date: toDate,
+      module,
+      action_type: actionType,
+      user_query: userQuery,
+      reference,
       page,
       page_size: pageSize,
     },
