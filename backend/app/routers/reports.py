@@ -28,6 +28,7 @@ from app.services.gst_service import (
     INVOICE_TYPE_OTHER_STATES,
     INVOICE_TYPE_UNION_TERRITORY,
     INVOICE_TYPE_WITHIN_STATE,
+    is_india_country,
 )
 
 router = APIRouter(prefix="/api/v1/reports", tags=["reports"])
@@ -271,6 +272,20 @@ def _is_union_territory(state_code: str | None, state_name: str | None) -> bool:
     token_code = (state_code or "").strip().upper()
     token_name = (state_name or "").strip().upper()
     return token_code in UNION_TERRITORY_CODES or token_name in UNION_TERRITORY_NAMES
+
+
+def _customer_country_for_gstr(customer: Customer | None) -> str | None:
+    if not customer:
+        return None
+    shipping_country = (customer.shipping_country or "").strip()
+    if shipping_country:
+        return shipping_country
+    billing_country = (customer.billing_country or "").strip()
+    if billing_country:
+        return billing_country
+    if (customer.business_type or "").strip().lower() == "domestic":
+        return "India"
+    return None
 
 
 def _ensure_finance_tax_user(current_user: User) -> None:
@@ -1192,6 +1207,10 @@ async def gstr1_report(
         source_total_gst = _round_2(source_cgst + source_sgst + source_igst)
 
         invoice_type = _normalize_invoice_type(invoice.invoice_type, bool(invoice.is_igst))
+        bill_to_country = _customer_country_for_gstr(bill_to_customer)
+        bill_to_is_india = is_india_country(bill_to_country)
+        is_export_transaction = invoice_type == INVOICE_TYPE_EXPORT or (not bill_to_is_india)
+        display_bill_to_gstin = bill_to_gstin if bill_to_is_india else ""
         invoice_rates = sorted(invoice_rate_map.get(invoice_key, set()))
 
         conversion_rate, conversion_source, conversion_error = _resolve_report_fx_rate(
@@ -1207,12 +1226,13 @@ async def gstr1_report(
             validation_errors.append(f"VAL-010 Mandatory Fields Check failed for invoice {invoice_number}: bill-to party name is required")
         if not ship_to_name:
             validation_errors.append(f"VAL-010 Mandatory Fields Check failed for invoice {invoice_number}: ship-to party name is required")
-        if not bill_to_gstin:
-            validation_errors.append(f"VAL-010 Mandatory Fields Check failed for invoice {invoice_number}: billing GSTIN is required")
-        elif not GSTIN_REGEX.match(bill_to_gstin):
-            validation_errors.append(
-                f"VAL-002 GSTIN Format Check failed for invoice {invoice_number}: GSTIN {bill_to_gstin} is invalid"
-            )
+        if not is_export_transaction:
+            if not bill_to_gstin:
+                validation_errors.append(f"VAL-010 Mandatory Fields Check failed for invoice {invoice_number}: billing GSTIN is required")
+            elif not GSTIN_REGEX.match(bill_to_gstin):
+                validation_errors.append(
+                    f"VAL-002 GSTIN Format Check failed for invoice {invoice_number}: GSTIN {bill_to_gstin} is invalid"
+                )
         if not place_of_supply:
             validation_errors.append(f"VAL-010 Mandatory Fields Check failed for invoice {invoice_number}: place of supply is required")
         if source_invoice_amount <= 0:
@@ -1310,7 +1330,7 @@ async def gstr1_report(
                 "sales_invoice_date": _format_ddmmyyyy(invoice.invoice_date),
                 "sales_invoice_no": invoice_number,
                 "bill_to_party_name": bill_to_name,
-                "bill_to_party_gstin_no": bill_to_gstin,
+                "bill_to_party_gstin_no": display_bill_to_gstin,
                 "place_of_supply": place_of_supply,
                 "ship_to_party_name": ship_to_name,
                 "invoice_amount": taxable_amount,

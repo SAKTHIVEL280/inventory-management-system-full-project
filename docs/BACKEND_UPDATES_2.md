@@ -2,6 +2,9 @@
 
 ---
 
+## BE-109: Export GSTIN country rule
+**Update**: GSTIN req only for India; export can be blank.
+
 ## BE-108: GST Non-Exclusion Mode + FX Fallback + Reconciliation Null-Safety
 **Update**: Updated GST report generation to keep all documents in non-strict mode (no row exclusion on validation warnings), added fallback INR conversion behavior when exchange metadata is missing, corrected zero-tax validation to avoid false intra/inter-state failures, and fixed reconciliation tax-percent mapping to handle nullable values safely.
 

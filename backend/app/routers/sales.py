@@ -134,6 +134,10 @@ def _enforce_bill_to_gstin_for_gst_invoice(
 
     _enforce_owner(bill_to_customer, current_user)
 
+    # GSTIN is mandatory only for India customers.
+    if not is_india_country(_customer_country_for_invoice(bill_to_customer)):
+        return
+
     gstin = ((bill_to_customer.gstin or "") or "").strip().upper()
     if not gstin:
         raise HTTPException(
@@ -159,7 +163,11 @@ def _customer_country_for_invoice(customer: Customer) -> str | None:
     if shipping_country:
         return shipping_country
     billing_country = (customer.billing_country or "").strip()
-    return billing_country or None
+    if billing_country:
+        return billing_country
+    if (customer.business_type or "").strip().lower() == "domestic":
+        return "India"
+    return None
 
 
 def _validate_invoice_type_for_country(invoice_type: str, customer: Customer) -> None:
