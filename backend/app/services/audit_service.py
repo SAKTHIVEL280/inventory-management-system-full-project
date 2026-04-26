@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import time
 from typing import Any
 from uuid import UUID
@@ -26,6 +27,26 @@ _SENSITIVE_TOKENS = {
 }
 _RETENTION_CHECK_INTERVAL_SECONDS = 3600
 _last_retention_check_at = 0.0
+_HTTP_ACTIONS = {"POST", "PUT", "PATCH", "DELETE", "GET", "VIEW", "REPORT"}
+
+_ENTITY_LABELS = {
+    "users": "User",
+    "user": "User",
+    "customers": "Customer",
+    "customer": "Customer",
+    "suppliers": "Supplier",
+    "supplier": "Supplier",
+    "products": "Product",
+    "product": "Product",
+    "purchase": "Purchase Order",
+    "purchases": "Purchase Order",
+    "sales": "Invoice",
+    "payments": "Payment",
+    "stock": "Stock Record",
+    "reports": "Report",
+    "audit": "Action Log",
+    "auth": "Session",
+}
 
 
 def _ensure_audit_logs_table(db: Session) -> None:
@@ -91,7 +112,127 @@ def _derive_action_type(action: str) -> str:
     return token.split(":", 1)[0].strip().upper()
 
 
-def _derive_record_reference(resource_id: UUID | str | None, details: dict[str, Any]) -> str | None:
+def _looks_like_uuid(value: str) -> bool:
+    token = (value or "").strip()
+    return bool(re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}", token))
+
+
+def _extract_reference_from_action_path(action: str) -> str | None:
+    if ":" not in (action or ""):
+        return None
+    action_type, raw_path = action.split(":", 1)
+    if action_type.strip().upper() not in _HTTP_ACTIONS:
+        return None
+
+    path = (raw_path or "").strip()
+    if not path.startswith("/api/"):
+        return None
+
+    segments = [segment for segment in path.strip("/").split("/") if segment]
+    if len(segments) < 4 or segments[0] != "api" or segments[1] not in {"v1", "v2"}:
+        return None
+
+    resource_segment = segments[2]
+    candidate = segments[-1]
+    if candidate == resource_segment:
+        return None
+    if candidate in {"export", "bulk", "items", "status", "action-logs", "gst-audit-trail", "gstr1", "gstr2", "gstr3b", "gst-reconciliation"}:
+        return None
+    if _looks_like_uuid(candidate) or any(ch.isdigit() for ch in candidate):
+        return candidate
+    return None
+
+
+def _entity_label(module_name: str, action_type: str, details: dict[str, Any]) -> str:
+    token = (module_name or "system").strip().lower() or "system"
+    report_type = str(details.get("report_type") or "").strip().lower()
+    if "REPORT" in action_type or action_type in {"VIEW_ACTION_LOGS", "GENERATE_REPORT"} or token == "reports":
+        if report_type == "gstr1":
+            return "GSTR-1 Report"
+        if report_type == "gstr2":
+            return "GSTR-2 Report"
+        if report_type == "gstr3b":
+            return "GSTR-3B Report"
+        if report_type == "reconciliation":
+            return "GST Reconciliation Report"
+        if action_type == "VIEW_ACTION_LOGS":
+            return "Action Logs"
+        return "GST Report"
+    return _ENTITY_LABELS.get(token, token.replace("_", " ").title())
+
+
+def _action_phrase(action_type: str) -> str:
+    token = (action_type or "UNKNOWN").strip().upper()
+    if token == "POST":
+        return "Created"
+    if token in {"PUT", "PATCH"}:
+        return "Updated"
+    if token == "DELETE":
+        return "Deleted"
+    if token in {"GET", "VIEW", "VIEW_ACTION_LOGS"} or token.startswith("VIEW"):
+        return "Viewed"
+    if token in {"REPORT", "GENERATE_REPORT"} or "REPORT" in token:
+        return "Generated"
+    if token == "LOGIN":
+        return "Logged in"
+    if token == "LOGOUT":
+        return "Logged out"
+    if token == "TOKEN_REFRESH":
+        return "Refreshed"
+    if token == "CHANGE_PASSWORD":
+        return "Changed"
+    return "Updated"
+
+
+def _reference_display(record_reference: str | None, details: dict[str, Any]) -> str:
+    name_keys = [
+        "product_name",
+        "customer_name",
+        "supplier_name",
+        "full_name",
+        "name",
+    ]
+    for key in name_keys:
+        raw = details.get(key)
+        if raw is not None and str(raw).strip():
+            return f'"{str(raw).strip()}"'
+    return (record_reference or "").strip()
+
+
+def _build_human_readable_description(
+    *,
+    action_type: str,
+    module_name: str,
+    record_reference: str | None,
+    details: dict[str, Any],
+) -> str:
+    phrase = _action_phrase(action_type)
+    entity = _entity_label(module_name, action_type, details)
+    reference = _reference_display(record_reference, details)
+
+    token = (action_type or "").strip().upper()
+    if token == "LOGIN":
+        return "Logged in"
+    if token == "LOGOUT":
+        return "Logged out"
+    if token == "TOKEN_REFRESH":
+        return "Refreshed session"
+    if token == "CHANGE_PASSWORD":
+        return "Changed password"
+
+    if token == "POST":
+        base = f"Created a new {entity}"
+    elif token in {"REPORT", "GENERATE_REPORT"} or "REPORT" in token:
+        base = f"Generated {entity}"
+    else:
+        base = f"{phrase} {entity}"
+
+    if reference:
+        return f"{base} {reference}".strip()
+    return base
+
+
+def _derive_record_reference(resource_id: UUID | str | None, details: dict[str, Any], action: str) -> str | None:
     preferred_keys = [
         "record_reference",
         "reference",
@@ -113,6 +254,9 @@ def _derive_record_reference(resource_id: UUID | str | None, details: dict[str, 
         value = details.get(key)
         if value is not None and str(value).strip():
             return str(value).strip()
+    path_reference = _extract_reference_from_action_path(action)
+    if path_reference:
+        return path_reference
     if resource_id:
         return str(resource_id)
     return None
@@ -166,12 +310,14 @@ def log_audit_event(
         safe_details = _sanitize_details(details or {})
         action_type = _derive_action_type(action)
         module_name = (resource_type or "system").strip().lower() or "system"
-        record_reference = _derive_record_reference(resource_id, safe_details if isinstance(safe_details, dict) else {})
-        description = ""
-        if isinstance(safe_details, dict):
-            description = str(safe_details.get("description") or safe_details.get("message") or "").strip()
-        if not description:
-            description = f"{action_type} on {module_name}"
+        safe_detail_dict = safe_details if isinstance(safe_details, dict) else {}
+        record_reference = _derive_record_reference(resource_id, safe_detail_dict, action)
+        description = _build_human_readable_description(
+            action_type=action_type,
+            module_name=module_name,
+            record_reference=record_reference,
+            details=safe_detail_dict,
+        )
         username = ""
         if isinstance(safe_details, dict):
             username = str(

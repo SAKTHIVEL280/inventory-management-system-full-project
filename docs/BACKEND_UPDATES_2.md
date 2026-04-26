@@ -2,6 +2,9 @@
 
 ---
 
+## BE-114: Human-readable Action Log descriptions
+**Update**: Standardized action-to-sentence mapping for audit descriptions (Created/Updated/Deleted/Viewed/Generated/Logged in/out), with entity and reference context extraction for clear client/auditor readability.
+
 ## BE-113: Action Logs with secure viewer and retention
 **Update**: Added structured action log storage fields, sensitive-data masking, role-restricted filtered viewer API, and periodic retention cleanup support.
 
