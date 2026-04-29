@@ -44,6 +44,13 @@ def main() -> int:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMPTZ NULL",
         "UPDATE users SET email = regexp_replace(email, '@local\\.invalid$', '@example.com') WHERE email ~* '@local\\.invalid$'",
 
+        # Legacy Role Purge Migration
+        "UPDATE users SET role = 'accounts' WHERE role IN ('accounting', 'inventory')",
+        "UPDATE users SET role = 'billing' WHERE role = 'sales'",
+        "ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check",
+        "ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check1",
+        "ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('admin', 'accounts', 'doctor', 'billing'))",
+
         # Tenant scoping fields for IDOR protection
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id UUID",
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS company_id UUID",
