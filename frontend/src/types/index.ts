@@ -13,7 +13,7 @@ export interface User {
   id: string;
   full_name: string;
   email: string;
-  role: 'admin' | 'sales' | 'inventory' | 'doctor' | 'accounts' | 'billing';
+  role: 'admin' | 'doctor' | 'accounts' | 'billing';
   permission_overrides?: Record<string, unknown> | null;
   effective_access: string[];
   force_password_change: boolean;
@@ -272,8 +272,6 @@ export interface PaginatedResponse<T> {
 export const ROLES = {
   ADMIN: 'admin',
   ACCOUNTS: 'accounts',
-  SALES: 'sales',
-  INVENTORY: 'inventory',
 } as const;
 
 export const PERMISSION_SCOPES = {

@@ -12,7 +12,7 @@ const schema = z.object({
   full_name: z.string().min(1, 'Name is required'),
   email: z.string().email('Valid email required'),
   password: z.string().optional(),
-  role: z.enum(['admin', 'sales', 'inventory', 'doctor', 'accounts', 'billing']),
+  role: z.enum(['admin', 'doctor', 'accounts', 'billing']),
 });
 
 type UserForm = z.infer<typeof schema>;
@@ -20,10 +20,8 @@ type UserForm = z.infer<typeof schema>;
 const roleClassMap: Record<string, string> = {
   admin: 'bg-role-admin',
   accounts: 'bg-role-accounts',
-  inventory: 'bg-role-inventory',
-  sales: 'bg-role-sales',
   doctor: 'bg-role-admin',
-  billing: 'bg-role-sales',
+  billing: 'bg-role-billing',
 };
 
 const UsersPage = () => {
@@ -203,8 +201,6 @@ const UsersPage = () => {
                 <option value="doctor">Doctor</option>
                 <option value="accounts">Accounts</option>
                 <option value="billing">Billing</option>
-                <option value="sales">Sales</option>
-                <option value="inventory">Inventory</option>
               </select>
             </div>
             {formError && <p className="text-sm text-danger" role="alert" aria-live="assertive">{formError}</p>}

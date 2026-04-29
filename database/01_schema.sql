@@ -15,7 +15,7 @@ CREATE TABLE users (
   full_name VARCHAR(150) NOT NULL,
   email VARCHAR(255) UNIQUE NOT NULL,
   hashed_password VARCHAR(255) NOT NULL,
-  role VARCHAR(20) NOT NULL CHECK (role IN ('admin','accounts','sales','inventory')),
+  role VARCHAR(20) NOT NULL CHECK (role IN ('admin','accounts','doctor','billing')),
   permission_overrides JSON,
   force_password_change BOOLEAN DEFAULT FALSE,
   failed_login_attempts INTEGER NOT NULL DEFAULT 0,
