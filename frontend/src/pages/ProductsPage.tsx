@@ -14,7 +14,7 @@ const productSchema = z.object({
   name: z.string().min(1, 'Product name required'),
   description: z.string().optional(),
   sku: z.string().trim().min(1, 'Base Unit is required'),
-  hsn_code: z.string().min(6, 'HSN must be 6-8 digits').max(8, 'HSN must be 6-8 digits'),
+  hsn_code: z.string().regex(/^\d{4,8}$/, 'HSN must be 4-8 digits'),
   gst_rate: z.enum(['0', '5', '12', '18', '28']),
   unit_price: z.coerce.number().positive('Price must be greater than 0'),
   base_unit_qty: z.coerce.number().positive('Base Unit Qty must be greater than 0'),
@@ -540,7 +540,7 @@ const ProductsPage = () => {
                 </div>
                 <div>
                   <label htmlFor="hsn_code" className="hms-label">HSN code *</label>
-                  <input id="hsn_code" className="hms-input" placeholder="e.g. 84713010" {...productForm.register('hsn_code')} />
+                  <input id="hsn_code" maxLength={8} className="hms-input" placeholder="e.g. 84713010" {...productForm.register('hsn_code')} />
                   {getFieldError('hsn_code') && <p className="mt-1 text-xs text-danger">{getFieldError('hsn_code')}</p>}
                 </div>
                 <div className="xl:col-span-2">
@@ -556,9 +556,9 @@ const ProductsPage = () => {
                   {getFieldError('category_id') && <p className="mt-1 text-xs text-danger">{getFieldError('category_id')}</p>}
                 </div>
                 <div>
-                  <label htmlFor="alt_uom_id" className="hms-label">Order Unit / Packing (optional)</label>
+                  <label htmlFor="alt_uom_id" className="hms-label">Order Unit / Packing</label>
                   <select id="alt_uom_id" className="hms-input" {...productForm.register('alt_uom_id')}>
-                    <option value="">Select Order Unit / Packing (optional)</option>
+                    <option value="">Select Order Unit / Packing</option>
                     {uoms.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.abbreviation})</option>)}
                   </select>
                   {getFieldError('alt_uom_id') && <p className="mt-1 text-xs text-danger">{getFieldError('alt_uom_id')}</p>}
@@ -685,7 +685,7 @@ const ProductsPage = () => {
                       ) : item.status === 'inactive' ? (
                         <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-bold text-neutral-500">Inactive</span>
                       ) : item.low_stock ? (
-                        <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-bold text-red-700">Low Stock</span>
+                        <span className="rounded-full bg-red-100 px-2.5 py-1 text-xs font-bold text-red-700 animate-pulse border border-red-300">Low Stock</span>
                       ) : (
                         <span className="rounded-full bg-green-100 px-2.5 py-1 text-xs font-bold text-green-700">In Stock</span>
                       )}

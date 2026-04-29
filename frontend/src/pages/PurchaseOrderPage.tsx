@@ -22,6 +22,7 @@ const poSchema = z.object({
   exchange_rate: z.coerce.number().min(0.000001).default(1.0),
   under_delivery_tolerance: z.coerce.number().min(0, 'Under delivery tolerance must be 0 or more').default(0),
   over_delivery_tolerance: z.coerce.number().min(0, 'Over delivery tolerance must be 0 or more').default(0),
+  email: z.string().email('Invalid email').optional().or(z.literal('')),
   notes: z.string().optional(),
 }).superRefine((value, ctx) => {
   if (value.under_delivery_tolerance > value.over_delivery_tolerance) {
@@ -129,6 +130,7 @@ const PurchaseOrderPage = () => {
       exchange_rate: 1.0,
       under_delivery_tolerance: 0,
       over_delivery_tolerance: 0,
+      email: '',
       notes: '',
     },
   });
@@ -463,7 +465,13 @@ const PurchaseOrderPage = () => {
                   <label htmlFor="supplier_id" className="hms-label">
                     Supplier
                   </label>
-                  <select id="supplier_id" className="hms-input" {...form.register('supplier_id')}>
+                  <select id="supplier_id" className="hms-input" {...form.register('supplier_id')} onChange={(e) => {
+                    form.setValue('supplier_id', e.target.value, { shouldDirty: true });
+                    const selectedSupplier = suppliers.find(s => s.id === e.target.value);
+                    if (selectedSupplier?.email) {
+                      form.setValue('email', selectedSupplier.email, { shouldDirty: true });
+                    }
+                  }}>
                     <option value="">Select supplier</option>
                     {suppliers.map((s) => (
                       <option key={s.id} value={s.id}>
@@ -543,7 +551,13 @@ const PurchaseOrderPage = () => {
                   </div>
                 </div>
 
-                <div className="md:col-span-2 xl:col-span-6">
+                <div className="md:col-span-2 xl:col-span-3">
+                  <label htmlFor="po_email" className="hms-label">
+                    Email (editable)
+                  </label>
+                  <input id="po_email" type="email" className="hms-input" placeholder="supplier@example.com" {...form.register('email')} />
+                </div>
+                <div className="md:col-span-2 xl:col-span-3">
                   <label htmlFor="notes" className="hms-label">
                     Notes
                   </label>

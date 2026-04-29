@@ -95,7 +95,7 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
     },
   });
 
-  const isAdmin = user?.role?.toLowerCase() === 'admin';
+  const isAdmin = ['admin', 'doctor', 'accounts'].includes(user?.role?.toLowerCase() ?? '');
 
   const navGroups: NavGroup[] = useMemo(() => [
     {

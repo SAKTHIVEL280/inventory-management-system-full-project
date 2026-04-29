@@ -2,6 +2,7 @@ import { type FocusEvent, useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
+import { companyApi } from '../api/company';
 import { customersApi } from '../api/customers';
 import { Customer } from '../types';
 import { AppLayout } from '../components/AppLayout';
@@ -532,9 +533,22 @@ const CustomersPage = () => {
     setNewFormSessionKey((prev) => prev + 1);
   };
 
-  const openNewCustomerForm = () => {
+  const openNewCustomerForm = async (): Promise<void> => {
     resetToNewCustomerDefaults();
     setIsFormOpen(true);
+    try {
+      const company = await companyApi.get();
+      setValue('billing_address_line1', company.address_line1 ?? '');
+      setValue('billing_address_line2', company.address_line2 ?? '');
+      setValue('billing_city', company.city ?? '');
+      setValue('billing_state', company.state ?? '');
+      setValue('billing_state_code', company.state_code ?? '');
+      setValue('billing_country', company.country ?? 'India');
+      setValue('billing_pincode', company.pincode ?? '');
+      setValue('same_as_billing', true);
+    } catch {
+      // Leave the form on the default blank state if company details cannot be loaded.
+    }
   };
 
   const resetForm = () => {
@@ -819,11 +833,9 @@ const CustomersPage = () => {
       setValue('billing_state', resolvedFromCode, { shouldDirty: false });
     }
 
-    if (!billingStateCode) {
-      const resolvedFromState = canonicalStateCode(billingStateValue);
-      if (resolvedFromState && resolvedFromState !== (billingStateCode || '')) {
-        setValue('billing_state_code', resolvedFromState, { shouldDirty: false });
-      }
+    const resolvedFromState = canonicalStateCode(billingStateValue);
+    if (resolvedFromState && resolvedFromState !== (billingStateCode || '')) {
+      setValue('billing_state_code', resolvedFromState, { shouldDirty: false });
     }
   }, [billingStateCode, billingStateValue, setValue]);
 
@@ -835,11 +847,9 @@ const CustomersPage = () => {
       setValue('shipping_state', resolvedFromCode, { shouldDirty: false });
     }
 
-    if (!shippingStateCode) {
-      const resolvedFromState = canonicalStateCode(shippingStateValue);
-      if (resolvedFromState && resolvedFromState !== (shippingStateCode || '')) {
-        setValue('shipping_state_code', resolvedFromState, { shouldDirty: false });
-      }
+    const resolvedFromState = canonicalStateCode(shippingStateValue);
+    if (resolvedFromState && resolvedFromState !== (shippingStateCode || '')) {
+      setValue('shipping_state_code', resolvedFromState, { shouldDirty: false });
     }
   }, [sameAsBilling, setValue, shippingStateCode, shippingStateValue]);
 
@@ -935,7 +945,7 @@ const CustomersPage = () => {
                         <input
                           id="customer_opening_balance"
                           className="hms-input bg-neutral-100"
-                          value={`${editingItem.opening_balance ?? 0} ${(editingItem.opening_balance_type ?? 'dr').toUpperCase()}`}
+                          value={`${editingItem.opening_balance ?? 0} ${(editingItem.currency_code ?? 'INR').toUpperCase()}`}
                           readOnly
                         />
                       </div>

@@ -36,7 +36,7 @@ def _scope_to_owner(query, model_cls, current_user: User):
             raise HTTPException(status_code=403, detail="User is not assigned to a company")
         query = query.filter(company_col == current_user.company_id)
 
-    if current_user.role in {"admin", "accounting"}:
+    if current_user.role in {"admin", "accounts"}:
         return query
     owner_col = getattr(model_cls, "created_by", None)
     if owner_col is None:

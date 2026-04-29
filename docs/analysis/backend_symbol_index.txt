@@ -1,0 +1,412 @@
+D:\IMS\3\inventory-management-system-full-project\backend\app\middleware\api_version.py:9: class ApiVersionCompatibilityMiddleware(BaseHTTPMiddleware):
+D:\IMS\3\inventory-management-system-full-project\backend\app\middleware\audit_trail.py:19: class AuditTrailMiddleware(BaseHTTPMiddleware):
+D:\IMS\3\inventory-management-system-full-project\backend\app\middleware\audit_trail.py:26: def _extract_user_id(self, request: Request) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\middleware\audit_trail.py:43: def _resource_from_path(self, path: str) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\middleware\audit_trail.py:52: def _should_log(self, request: Request) -> bool:
+D:\IMS\3\inventory-management-system-full-project\backend\app\middleware\audit_trail.py:63: def _log_event(self, request: Request, response: Response, *, error: str | None = None) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\middleware\csrf.py:15: class CSRFMiddleware(BaseHTTPMiddleware):
+D:\IMS\3\inventory-management-system-full-project\backend\app\middleware\csrf.py:18: def __init__(
+D:\IMS\3\inventory-management-system-full-project\backend\app\middleware\csrf.py:31: def _is_exempt_path(self, path: str) -> bool:
+D:\IMS\3\inventory-management-system-full-project\backend\app\middleware\https_redirect.py:9: class HTTPSRedirectMiddleware(BaseHTTPMiddleware):
+D:\IMS\3\inventory-management-system-full-project\backend\app\middleware\request_context.py:16: class RequestContextMiddleware(BaseHTTPMiddleware):
+D:\IMS\3\inventory-management-system-full-project\backend\app\middleware\security.py:7: class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\company.py:8: class Company(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\customer.py:9: class Customer(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\customization_option.py:8: class CustomizationOption(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\inventory_count.py:9: class InventoryCount(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\inventory_count.py:24: class InventoryCountItem(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\inventory_count.py:41: class InventoryCountDifferenceAudit(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\payment.py:9: class Payment(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\payment.py:35: class PaymentAllocation(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\product.py:8: class ProductCategory(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\product.py:24: class UnitOfMeasure(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\product.py:38: class Product(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\product.py:70: class StockLedger(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\purchase.py:8: class PurchaseOrder(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\purchase.py:37: class PurchaseOrderItem(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\purchase.py:60: class GoodsReceiptNote(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\purchase.py:90: class GRNItem(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\purchase.py:116: class PurchaseReturn(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\purchase.py:136: class PurchaseReturnItem(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\sales.py:8: class Quotation(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\sales.py:37: class QuotationItem(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\sales.py:59: class SalesOrder(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\sales.py:91: class SalesOrderItem(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\sales.py:114: class SalesInvoice(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\sales.py:153: class SalesInvoiceItem(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\sales.py:181: class SalesReturn(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\sales.py:201: class SalesReturnItem(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\supplier.py:9: class Supplier(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\user.py:9: class User(Base):
+D:\IMS\3\inventory-management-system-full-project\backend\app\models\user.py:35: def __repr__(self) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\archive.py:32: class ArchivePolicy:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\archive.py:55: class PurgeConfirmRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\archive.py:59: def _require_admin(user: User) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\archive.py:64: def _to_date(value: datetime | None) -> date | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\archive.py:72: def _compute_stats(db: Session, policy: ArchivePolicy, today: date) -> dict[str, Any]:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\archive.py:108: def _all_stats(db: Session) -> list[dict[str, Any]]:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\auth.py:34: def _set_csrf_cookie(response: Response) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\company.py:26: def _resolve_logo_file_path(logo_url: str) -> Path | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\company.py:39: def _validate_upload_image(content_type: str, file_bytes: bytes, *, label: str) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\company.py:53: def _media_suffix(content_type: str) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\company.py:57: def _remove_if_exists(path: Path) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\company.py:62: def _delete_previous_image(image_url: str | None) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\company.py:70: def _save_company_static_image(*, base_name: str, content_type: str, file_bytes: bytes) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\company.py:81: def _build_logo_data_url(file_path: Path) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\compliance.py:26: def _not_found(entity: str) -> HTTPException:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\compliance.py:30: def _anonymized_phone(entity_id: UUID, digits: int = 10) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\customers.py:34: def _scope_to_owner(query, model_cls, current_user: User):
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\customers.py:138: def _state_code_from_payload(payload: CustomerCreateRequest | CustomerUpdateRequest) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\customers.py:155: def _is_international(payload: CustomerCreateRequest | CustomerUpdateRequest) -> bool:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\customers.py:162: def _generate_customer_code(db: Session, payload: CustomerCreateRequest | CustomerUpdateRequest) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\customers.py:181: def _apply_gstin_policy(payload: CustomerCreateRequest | CustomerUpdateRequest) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\customers.py:186: def _apply_gstin_state_code(payload: CustomerCreateRequest | CustomerUpdateRequest) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\customers.py:193: def _normalize_shipping(payload: CustomerCreateRequest | CustomerUpdateRequest) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\customers.py:204: def _validate_and_autofill_customer_states(payload: CustomerCreateRequest | CustomerUpdateRequest) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\customers.py:220: def _normalize_customer_currency(payload: CustomerCreateRequest | CustomerUpdateRequest) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\customers.py:225: def _normalize_country(value: str | None) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\customers.py:230: def _normalize_state(value: str | None) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\customers.py:235: def _has_text(value: str | None) -> bool:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\customers.py:239: def _apply_company_billing_defaults(db: Session, payload: CustomerCreateRequest | CustomerUpdateRequest) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\customers.py:259: def _upsert_customer_customization_option(
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\customers.py:297: def _persist_customer_customization_values(
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\customers.py:354: def _customer_balance(db: Session, customer_id: UUID) -> CustomerBalanceResponse:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\customers.py:389: def _to_customer_response(customer: Customer, current_user: User) -> CustomerResponse:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\payments.py:35: def _scope_to_owner(query, model, current_user: User):
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\payments.py:44: def _enforce_owner(record, current_user: User) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\payments.py:48: def _to_minor_units(value) -> int:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\payments.py:59: def _extract_po_id_from_notes(notes: str | None) -> UUID | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\payments.py:71: def _attach_po_meta_to_notes(notes: str | None, po_id: UUID | None) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\payments.py:81: def _is_cleared_like_status(status: str | None) -> bool:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\payments.py:90: def _payment_has_grn_allocations(payment: Payment) -> bool:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\payments.py:94: def _payment_status_display(status: str | None) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\payments.py:108: def _derive_payment_status_token(db: Session, payment: Payment) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\payments.py:147: def _build_supplier_payable_snapshot(
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\payments.py:238: def _apply_invoice_allocation(db: Session, invoice_id: UUID, amount: int) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\payments.py:257: def _reverse_invoice_allocation(db: Session, invoice_id: UUID, amount: int) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\payments.py:271: def _get_customer_open_invoices(db: Session, customer_id: UUID) -> list[SalesInvoice]:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\payments.py:285: def _apply_grn_allocation(db: Session, grn_id: UUID, amount: int) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\payments.py:298: def _reverse_grn_allocation(db: Session, grn_id: UUID, amount: int) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\products.py:32: def _scope_to_owner(query, model_cls, current_user: User):
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\products.py:47: def _to_integrity_http_error(exc: IntegrityError) -> HTTPException:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\products.py:54: def _generate_product_code(db: Session) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\products.py:59: def _current_stock(db: Session, product_id: UUID) -> Decimal:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\products.py:68: def _current_stock_map(db: Session, product_ids: list[UUID]) -> dict[UUID, Decimal]:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\products.py:88: def _to_product_with_stock(product: Product, stock: Decimal) -> ProductWithStockResponse:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\purchase.py:52: def _scope_to_owner(query, model, current_user: User):
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\purchase.py:61: def _enforce_owner(record, current_user: User) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\purchase.py:65: def _derive_grn_status_display(raw_status: str | None, is_partial_qty: bool) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\purchase.py:76: def _get_partial_qty_grn_ids(db: Session, grn_ids: list[UUID]) -> set[str]:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\purchase.py:95: def _validate_under_delivery_tolerance(under_delivery_tolerance: float, order_quantity: float) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\purchase.py:103: def _validate_payload_under_delivery_tolerance(under_delivery_tolerance: float, items: list) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\reports.py:58: def _load_report_fx_rates() -> dict[str, float]:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\reports.py:85: def _derive_invoice_status(raw_status: str | None, amount_paid: int, total_amount: int) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\reports.py:98: def _ensure_valid_date_range(from_date: date, to_date: date) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\reports.py:107: def _normalize_frequency(frequency: str) -> tuple[str, str]:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\reports.py:118: def _validate_frequency_date_window(from_date: date, to_date: date, frequency: str) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\reports.py:169: def _round_2(value: float | int) -> float:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\reports.py:173: def _format_tax_percent(value: float | int | None) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\reports.py:182: def _coerce_tax_percent(value: Any) -> float | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\reports.py:191: def _paise_to_amount(value: int | None) -> float:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\reports.py:195: def _amount_to_paise(value: float | int | None) -> int:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\reports.py:199: def _convert_with_rate(amount: float | int | None, rate: float) -> float:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\reports.py:203: def _resolve_report_fx_rate(
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\reports.py:224: def _format_ddmmyyyy(value: date | None) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\reports.py:228: def _normalize_invoice_type(invoice_type: str | None, fallback_is_igst: bool) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\reports.py:240: def _raise_gstr1_validation_error(errors: list[str]) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\reports.py:252: def _raise_gstr2_validation_error(errors: list[str]) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\reports.py:264: def _normalized_state_token(state_code: str | None, state_name: str | None) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\reports.py:271: def _is_union_territory(state_code: str | None, state_name: str | None) -> bool:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\reports.py:277: def _customer_country_for_gstr(customer: Customer | None) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\reports.py:291: def _ensure_finance_tax_user(current_user: User) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\reports.py:299: def _ensure_action_log_view_user(current_user: User) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\reports.py:307: def _ensure_gst_report_audit_table(db: Session) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\reports.py:331: def _log_gst_report_event(
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\reports.py:485: def _build_cash_in_flow_metrics(start_date: date):
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\reports.py:677: def _normalize_batch(batch_no: str | None) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\reports.py:700: def _accumulate(
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\sales.py:71: def _scope_to_owner(query, model, current_user: User):
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\sales.py:80: def _enforce_owner(record, current_user: User) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\sales.py:84: def _compute_invoice_status(amount_paid: int, total_amount: int) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\sales.py:92: def _derive_invoice_status(raw_status: str | None, amount_paid: int, total_amount: int) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\sales.py:99: def _auto_expire_quotation(q: Quotation) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\sales.py:105: def _calculate_invoice_due_date(invoice_date: date, customer: Customer) -> date:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\sales.py:113: def _enforce_bill_to_gstin_for_gst_invoice(
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\sales.py:154: def _sales_order_module_removed() -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\sales.py:161: def _customer_country_for_invoice(customer: Customer) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\sales.py:173: def _validate_invoice_type_for_country(invoice_type: str, customer: Customer) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\sales.py:188: def _validate_invoice_type_for_location(db: Session, invoice_type: str, customer: Customer) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\sales.py:201: def _has_text(value: Any) -> bool:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\sales.py:205: def _validate_shipping_address_for_invoice(customer: Customer) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\sales.py:226: def _build_product_batch_snapshot(db: Session, product_id: UUID) -> dict[str, dict[str, Any]]:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\sales.py:231: def _accumulate(batch_no, manufacture_date, expiry_date, qty_delta):
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\sales.py:396: def _collect_batch_and_date_errors(
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\sales.py:429: def _validate_invoice_line_items_for_save(
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\sales.py:470: def _mail_config_looks_configured() -> bool:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\sales.py:484: def _write_email_outbox_copy(
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\sales.py:518: def _send_pdf_email(
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\stock.py:42: def _scope_to_owner(query, model, current_user: User):
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\stock.py:51: def _enforce_owner(record, current_user: User) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\stock.py:67: def _generate_inventory_count_number(db: Session, count_date: date) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\stock.py:92: def _find_recount_draft_inventory_count(
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\stock.py:124: def _build_product_batch_snapshot(db: Session, product_id: UUID) -> dict[str, dict[str, Any]]:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\stock.py:129: def _accumulate(batch_no, manufacture_date, expiry_date, qty_delta):
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\stock.py:294: def _collect_inventory_count_date_errors(
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\stock.py:314: def _is_zero_difference(value: float) -> bool:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\stock.py:318: def _soft_delete_inventory_count(db: Session, inventory_count: InventoryCount, deleted_at: datetime) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\stock.py:335: def _compute_inventory_count_difference_rows(
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\suppliers.py:34: def _scope_to_owner(query, model_cls, current_user: User):
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\suppliers.py:132: def _state_code_from_payload(payload: SupplierCreateRequest | SupplierUpdateRequest) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\suppliers.py:152: def _state_prefix_from_payload(payload: SupplierCreateRequest | SupplierUpdateRequest) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\suppliers.py:161: def _is_international(payload: SupplierCreateRequest | SupplierUpdateRequest) -> bool:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\suppliers.py:168: def _generate_supplier_code(db: Session, payload: SupplierCreateRequest | SupplierUpdateRequest) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\suppliers.py:187: def _apply_gstin_policy(payload: SupplierCreateRequest | SupplierUpdateRequest) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\suppliers.py:192: def _normalize_supplier_currency(payload: SupplierCreateRequest | SupplierUpdateRequest) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\suppliers.py:197: def _normalize_country(value: str | None) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\suppliers.py:202: def _normalize_state(value: str | None) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\suppliers.py:207: def _validate_and_autofill_supplier_state(payload: SupplierCreateRequest | SupplierUpdateRequest) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\suppliers.py:218: def _upsert_supplier_customization_option(
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\suppliers.py:256: def _persist_supplier_customization_values(
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\suppliers.py:289: def _supplier_balance(db: Session, supplier_id: UUID) -> SupplierBalanceResponse:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\suppliers.py:319: def _to_supplier_response(supplier: Supplier, current_user: User) -> SupplierResponse:
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\users.py:25: def _scope_to_company(query, current_user: User):
+D:\IMS\3\inventory-management-system-full-project\backend\app\routers\users.py:31: def _to_user_response(user: User) -> UserManagementResponse:
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\auth.py:7: class UserLogin(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\auth.py:13: class UserResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\auth.py:26: class TokenResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\auth.py:34: class RefreshTokenRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\auth.py:39: class ChangePasswordRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\auth.py:47: def validate_password(cls, v):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\auth.py:58: def passwords_match(cls, v, info):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\company.py:10: class CompanyBase(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\company.py:53: def validate_gstin(cls, value: Optional[str]) -> Optional[str]:
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\company.py:64: def validate_state_code_consistency(self):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\company.py:77: class CompanyUpdate(CompanyBase):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\company.py:81: class CompanyResponse(CompanyBase):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\company.py:87: class CompanyLogoResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\company.py:91: class CompanyAmbassadorLogoResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\company.py:95: class CompanyBrandingResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\customer.py:12: class CustomerBase(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\customer.py:60: def validate_non_negative_credit_limit(cls, value: int) -> int:
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\customer.py:67: def validate_non_negative_payment_terms(cls, value: Optional[int]) -> Optional[int]:
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\customer.py:76: def validate_phone(cls, value: Optional[str]) -> Optional[str]:
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\customer.py:94: def validate_email(cls, value: Optional[str]) -> Optional[str]:
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\customer.py:107: def validate_gstin(cls, value: Optional[str]) -> Optional[str]:
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\customer.py:122: def validate_gstin_status(cls, value: str) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\customer.py:130: def validate_business_type(cls, value: str) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\customer.py:138: def validate_pan(cls, value: Optional[str]) -> Optional[str]:
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\customer.py:152: def validate_customer_type(cls, value: str) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\customer.py:162: def validate_opening_balance_type(cls, value: str) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\customer.py:170: def validate_gstin_toggle(self):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\customer.py:176: class CustomerCreateRequest(CustomerBase):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\customer.py:180: class CustomerUpdateRequest(CustomerBase):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\customer.py:184: class CustomerResponse(CustomerBase):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\customer.py:192: class CustomerBalanceResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\customer.py:198: class CustomersListResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\customer.py:206: class CustomerCustomizationOptionsResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\payment.py:8: class PaymentAllocationRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\payment.py:14: class PaymentCreateRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\payment.py:30: class PaymentStatusRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\product.py:8: class ProductCategoryCreateRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\product.py:13: class ProductCategoryResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\product.py:22: class UnitOfMeasureResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\product.py:31: class ProductBase(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\product.py:53: def validate_status(cls, value: str) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\product.py:61: def validate_gst_rate(cls, value: int) -> int:
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\product.py:68: def validate_hsn_code(cls, value: str) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\product.py:73: class ProductCreateRequest(ProductBase):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\product.py:75: def validate_price_hierarchy(self):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\product.py:86: class ProductUpdateRequest(ProductBase):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\product.py:88: def validate_price_hierarchy(self):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\product.py:99: class ProductResponse(ProductBase):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\product.py:105: class ProductWithStockResponse(ProductResponse):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\product.py:112: class ProductsListResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\product.py:120: class ProductListQueryParams(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\product.py:129: class StockAdjustmentRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\product.py:135: class StockLedgerResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\purchase.py:8: class PurchaseLineItemRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\purchase.py:22: class PurchaseOrderCreateRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\purchase.py:35: def validate_tolerance_range(self):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\purchase.py:43: class PurchaseOrderStatusRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\purchase.py:47: class GRNCreateRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\purchase.py:59: def validate_tolerance_range(self):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\purchase.py:67: class PurchaseReturnLineItemRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\purchase.py:75: class PurchaseReturnCreateRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\purchase.py:83: class PurchaseReturnStatusRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\sales.py:16: class SalesLineItemRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\sales.py:30: class QuotationCreateRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\sales.py:43: class QuotationStatusRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\sales.py:47: class QuotationResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\sales.py:69: class QuotationsListResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\sales.py:77: class SalesOrderCreateRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\sales.py:93: class SalesOrderStatusRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\sales.py:97: class SalesOrderResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\sales.py:111: class SalesOrdersListResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\sales.py:119: class SalesInvoiceCreateRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\sales.py:138: class SalesInvoiceResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\sales.py:155: class SalesInvoicesListResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\sales.py:163: class SalesReturnLineItemRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\sales.py:171: class SalesReturnCreateRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\stock.py:8: class InventoryCountItemCreateRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\stock.py:19: def validate_serial_number(cls, value: int) -> int:
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\stock.py:26: def validate_quantity(cls, value: float) -> float:
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\stock.py:32: class InventoryCountCreateRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\stock.py:39: def validate_count_performed_by(cls, value: str) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\stock.py:46: class InventoryCountItemResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\stock.py:56: class InventoryCountResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\stock.py:67: class InventoryCountNumberSearchResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\stock.py:71: class InventoryCountBatchOptionResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\stock.py:78: class InventoryCountBatchOptionsResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\stock.py:83: class InventoryCountDifferenceItemResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\stock.py:97: class InventoryCountDifferenceResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\stock.py:105: class InventoryCountDifferenceReasonCodeResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\stock.py:110: class InventoryCountDifferenceAcceptRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\stock.py:115: def validate_reason_code(cls, value: str) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\stock.py:122: class InventoryCountDifferenceActionItemResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\stock.py:133: class InventoryCountDifferenceActionResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\supplier.py:11: class SupplierBase(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\supplier.py:46: def validate_gstin(cls, value: Optional[str]) -> Optional[str]:
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\supplier.py:58: def validate_gstin_status(cls, value: str) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\supplier.py:66: def validate_business_type(cls, value: str) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\supplier.py:74: def validate_opening_balance_type(cls, value: str) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\supplier.py:80: def validate_gstin_toggle(self):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\supplier.py:96: class SupplierCreateRequest(SupplierBase):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\supplier.py:100: class SupplierUpdateRequest(SupplierBase):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\supplier.py:104: class SupplierResponse(SupplierBase):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\supplier.py:112: class SupplierBalanceResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\supplier.py:118: class SuppliersListResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\supplier.py:126: class SupplierCustomizationOptionsResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\user.py:7: class UserCreateRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\user.py:17: def validate_password(cls, value: str) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\user.py:23: class UserUpdateRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\user.py:33: def validate_password(cls, value: Optional[str]) -> Optional[str]:
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\user.py:39: class UserPermissionsUpdateRequest(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\user.py:44: class UserManagementResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\schemas\user.py:57: class UsersListResponse(BaseModel):
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\audit_service.py:52: def _ensure_audit_logs_table(db: Session) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\audit_service.py:88: def _is_sensitive_key(key: str) -> bool:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\audit_service.py:93: def _sanitize_details(value: Any) -> Any:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\audit_service.py:108: def _derive_action_type(action: str) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\audit_service.py:115: def _looks_like_uuid(value: str) -> bool:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\audit_service.py:120: def _extract_reference_from_action_path(action: str) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\audit_service.py:146: def _entity_label(module_name: str, action_type: str, details: dict[str, Any]) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\audit_service.py:164: def _action_phrase(action_type: str) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\audit_service.py:187: def _reference_display(record_reference: str | None, details: dict[str, Any]) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\audit_service.py:202: def _build_human_readable_description(
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\audit_service.py:235: def _derive_record_reference(resource_id: UUID | str | None, details: dict[str, Any], action: str) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\audit_service.py:265: def _maybe_cleanup_old_audit_logs(db: Session) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\audit_service.py:287: def ensure_audit_logs_storage(db: Session) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\audit_service.py:292: def log_audit_event(
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\auth_service.py:76: def hash_password(password: str) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\auth_service.py:81: def verify_password(plain_password: str, hashed_password: str) -> bool:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\auth_service.py:89: def calculate_effective_access(
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\auth_service.py:117: def get_user_response(user: User) -> UserResponse:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\auth_service.py:131: def authenticate_user(
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\auth_service.py:143: def _to_utc(dt: datetime) -> datetime:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\data_masking.py:5: class DataMasker:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\data_masking.py:7: def mask_email(email: str | None) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\data_masking.py:23: def mask_phone(phone: str | None) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\data_masking.py:39: def mask_pan(pan: str | None) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\data_masking.py:48: def mask_gstin(gstin: str | None) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\data_masking.py:62: def mask_bank_account(account: str | None) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\data_masking.py:71: def should_mask_sensitive_fields(role: str | None) -> bool:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\encryption.py:14: def _build_fernet() -> Fernet:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\encryption.py:25: class EncryptedString(TypeDecorator):
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\encryption.py:34: def process_bind_param(self, value, dialect):
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\encryption.py:47: def process_result_value(self, value, dialect):
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\gst_service.py:69: class TaxMode(TypedDict):
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\gst_service.py:111: def _normalize_state_code(raw: str | None) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\gst_service.py:118: def _normalize_text(raw: str | None) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\gst_service.py:125: def _is_india_country(country: str | None) -> bool:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\gst_service.py:130: def is_india_country(country: str | None) -> bool:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\gst_service.py:135: def _state_token(state_code: str | None, state_name: str | None) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\gst_service.py:145: def _has_text(value: str | None) -> bool:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\gst_service.py:149: def _preferred_value(primary: str | None, secondary: str | None) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\gst_service.py:153: def _resolve_company_country(company: Company) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\gst_service.py:165: def _is_union_territory_token(token: str | None) -> bool:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\gst_service.py:175: def determine_tax_mode(db: Session, party_type: str, party_id: UUID) -> TaxMode:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\gst_service.py:245: def invoice_type_tax_mode(invoice_type: str | None, fallback_is_igst: bool = False) -> TaxMode:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\gst_service.py:266: def determine_is_igst(db: Session, party_type: str, party_id: UUID) -> bool:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\gst_service.py:271: def determine_default_invoice_type(db: Session, customer_id: UUID) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\gst_service.py:319: def split_tax(
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\gst_service.py:350: def calc_line_item(
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\order_number_service.py:11: def _get_company_locked(db: Session) -> Company:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\order_number_service.py:23: def generate_po_number(db: Session) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\order_number_service.py:31: def generate_grn_number(db: Session) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\order_number_service.py:39: def generate_quotation_number(db: Session) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\order_number_service.py:47: def generate_so_number(db: Session) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\order_number_service.py:55: def generate_invoice_number(db: Session) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\order_number_service.py:63: def generate_purchase_return_number(db: Session) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\order_number_service.py:88: def generate_sales_return_number(db: Session) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\order_number_service.py:96: def generate_payment_number(db: Session) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:660: def _build_company_address(company) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:675: def _format_date(value: date | datetime | None) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:683: def _format_currency(paise: int, currency_code: str = "INR") -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:690: def _format_order_currency_display(currency_code_or_label: str | None) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:706: def _format_currency_rupee(paise: int) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:712: def _format_total_with_currency(amount: float | int, currency_prefix: str) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:723: def _invoice_type_label(invoice_type: str | None) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:733: def _invoice_doc_title(invoice_type: str | None) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:740: def _decimal_to_str(value: Decimal | float | int | None) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:746: def _get_corrected_cgst(doc, should_be_igst: bool = False) -> float:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:759: def _get_corrected_sgst(doc, should_be_igst: bool = False) -> float:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:772: def _get_corrected_igst(doc, should_be_igst: bool = False) -> float:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:785: def _safe_text(value: Any) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:789: def _optional_text(value: Any) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:793: def _get_uom_abbr(db: Session, uom_id) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:801: def _get_packing_label(db: Session, product: Product | None) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:811: def _get_base_unit_label(product: Product | None) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:818: def _get_payment_terms_label(supplier: Supplier | None) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:828: def _amount_in_words(paise: int, currency_code: str = "INR", numbering_system: str = "indian") -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:836: def words_under_thousand(n: int) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:845: def words_indian(n: int) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:854: def words_international(n: int) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:896: def _resolve_company_image_src(image_url: str | None) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:931: def _resolve_logo_src(company: Company | None) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:935: def _resolve_ambassador_logo_src(company: Company | None) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:939: def _read_image_bytes_from_src(image_src: str | None) -> bytes | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:969: def _build_ambassador_background_pdf(
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:1026: def _render_pdf(context: dict[str, Any]) -> bytes:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:1037: def _chunk_items(items: list, chunk_size: int = BILLING_PDF_ITEMS_PER_PAGE) -> list[list]:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:1042: def _render_pdf_with_pagination(context: dict[str, Any], template: str, rows: list[dict],
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:1110: def _layout_mode(rows: list[dict[str, str]], total_in_words: str, notes: str) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:1114: def generate_po_pdf(db: Session, po_id: UUID) -> bytes:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:1260: def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\pdf_service.py:1432: def generate_quotation_pdf(db: Session, quotation_id: UUID) -> bytes:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\stock_service.py:15: def get_current_stock(db: Session, product_id: UUID) -> float:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\stock_service.py:25: def refresh_materialized_view(db: Session) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\stock_service.py:36: def _try_refresh(sql: str) -> bool:
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\stock_service.py:52: def add_stock_entry(
+D:\IMS\3\inventory-management-system-full-project\backend\app\services\stock_service.py:100: def add_stock_entries_and_refresh(
+D:\IMS\3\inventory-management-system-full-project\backend\app\utils\input_validation.py:14: def normalize_search_query(value: str | None, *, max_length: int = 120) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\utils\input_validation.py:29: def validate_optional_token(value: str | None, *, field_name: str, allowed: Iterable[str]) -> str | None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\utils\seed.py:17: def seed_database():
+D:\IMS\3\inventory-management-system-full-project\backend\app\utils\state_mappings.py:58: def _normalize_text(value: Optional[str]) -> Optional[str]:
+D:\IMS\3\inventory-management-system-full-project\backend\app\utils\state_mappings.py:65: def canonical_state_code(value: Optional[str]) -> Optional[str]:
+D:\IMS\3\inventory-management-system-full-project\backend\app\utils\state_mappings.py:74: def state_name_from_code(value: Optional[str]) -> Optional[str]:
+D:\IMS\3\inventory-management-system-full-project\backend\app\utils\state_mappings.py:81: def state_abbreviation_from_code(value: Optional[str]) -> Optional[str]:
+D:\IMS\3\inventory-management-system-full-project\backend\app\utils\state_mappings.py:88: def validate_and_autofill_state_fields(
+D:\IMS\3\inventory-management-system-full-project\backend\app\config.py:9: class Settings(BaseSettings):
+D:\IMS\3\inventory-management-system-full-project\backend\app\config.py:17: def validate_postgres_only(cls, value: str) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\config.py:33: def validate_environment(cls, value: str) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\config.py:44: def validate_secret_key(cls, value: str) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\config.py:70: def validate_frontend_url(cls, value: str) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\config.py:97: def validate_cookie_samesite(cls, value: str) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\config.py:119: def csrf_exempt_paths(self) -> list[str]:
+D:\IMS\3\inventory-management-system-full-project\backend\app\config.py:131: def frontend_allowed_origins(self) -> list[str]:
+D:\IMS\3\inventory-management-system-full-project\backend\app\database.py:30: def get_db():
+D:\IMS\3\inventory-management-system-full-project\backend\app\dependencies.py:59: def require_role(*roles: str):
+D:\IMS\3\inventory-management-system-full-project\backend\app\dependencies.py:71: def require_permissions(*permissions: str):
+D:\IMS\3\inventory-management-system-full-project\backend\app\dependencies.py:90: def enforce_resource_ownership(
+D:\IMS\3\inventory-management-system-full-project\backend\app\dependencies.py:112: def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\dependencies.py:128: def create_refresh_token(data: dict) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\logging_setup.py:16: class JsonLikeFormatter(logging.Formatter):
+D:\IMS\3\inventory-management-system-full-project\backend\app\logging_setup.py:19: def format(self, record: logging.LogRecord) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\logging_setup.py:38: def configure_logging() -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\logging_setup.py:69: def _gzip_namer(default_name: str) -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\app\logging_setup.py:72: def _gzip_rotator(source: str, dest: str) -> None:
+D:\IMS\3\inventory-management-system-full-project\backend\app\main.py:48: class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+D:\IMS\3\inventory-management-system-full-project\backend\app\main.py:195: def custom_openapi():
+D:\IMS\3\inventory-management-system-full-project\backend\run_migration.py:14: def _load_database_url() -> str:
+D:\IMS\3\inventory-management-system-full-project\backend\run_migration.py:34: def main() -> int:
+D:\IMS\3\inventory-management-system-full-project\backend\setup_db.py:7: def main() -> int:

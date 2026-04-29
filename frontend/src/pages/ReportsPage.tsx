@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Reports Page
  * Visual analytics hub with charts, tables, and financial summaries.
  * Uses Recharts for data visualization.
@@ -185,7 +185,7 @@ const ReportsPage = () => {
   const [actionLogReference, setActionLogReference] = useState('');
   const [actionLogPage, setActionLogPage] = useState(1);
   const [actionLogPageSize, setActionLogPageSize] = useState(20);
-  const isFinanceTaxUser = (user?.role || '').toLowerCase() === 'admin' || (user?.role || '').toLowerCase() === 'accounting';
+  const isFinanceTaxUser = (user?.role || '').toLowerCase() === 'admin' || (user?.role || '').toLowerCase() === 'accounts';
   const fromDate = dateRange.from;
   const toDate = dateRange.to;
   const todayInput = toLocalDateInputValue(today);

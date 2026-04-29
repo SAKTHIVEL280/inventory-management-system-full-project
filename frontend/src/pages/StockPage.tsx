@@ -138,7 +138,7 @@ const StockPage = () => {
                     <td className="px-4 py-3 text-right text-neutral-500">{item.safety_stock}</td>
                     <td className="px-4 py-3 text-right text-neutral-500">{item.min_stock}</td>
                     <td className="px-4 py-3 text-center">
-                      <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${sc[item.status] || 'bg-gray-100'} ${item.status === 'Low Stock' ? 'hms-low-stock-blink' : ''}`}>{item.status}</span>
+                      <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${sc[item.status] || 'bg-gray-100'} ${item.status === 'Low Stock' ? 'animate-pulse border border-orange-300' : ''}`}>{item.status}</span>
                     </td>
                   </tr>
                 ))}

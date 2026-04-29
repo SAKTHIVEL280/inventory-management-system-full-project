@@ -289,7 +289,7 @@ def _customer_country_for_gstr(customer: Customer | None) -> str | None:
 
 
 def _ensure_finance_tax_user(current_user: User) -> None:
-    if current_user.role not in {"admin", "accounting"}:
+    if current_user.role not in {"admin", "accounts"}:
         raise HTTPException(
             status_code=403,
             detail="Only Finance/Tax users are allowed to generate GST reports",
@@ -297,7 +297,7 @@ def _ensure_finance_tax_user(current_user: User) -> None:
 
 
 def _ensure_action_log_view_user(current_user: User) -> None:
-    if current_user.role not in {"admin", "accounting", "auditor"}:
+    if current_user.role not in {"admin", "accounts", "auditor"}:
         raise HTTPException(
             status_code=403,
             detail="Only Admin/Auditor users can view action logs",
@@ -543,7 +543,11 @@ async def dashboard_report(
         if invoice_ids:
             invoice_rows = (
                 db.query(SalesInvoice.id, SalesInvoice.amount_due)
-                .filter(SalesInvoice.id.in_(list(invoice_ids)), SalesInvoice.is_deleted == False)
+                .filter(
+                    SalesInvoice.id.in_(list(invoice_ids)),
+                    SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
+                    SalesInvoice.is_deleted == False,
+                )
                 .all()
             )
             invoice_due_map = {str(row.id): int(row.amount_due or 0) for row in invoice_rows}
@@ -563,11 +567,13 @@ async def dashboard_report(
                     "partially_settled_amount": 0,
                 }
 
+            allocations = allocations_by_payment.get(str(row.id), [])
+            if allocations and not any(invoice_id in invoice_due_map for invoice_id, _ in allocations):
+                continue
+
             entry = by_customer[customer_key]
             receipt_amount = int(row.amount or 0)
             entry["total_received_amount"] = int(entry["total_received_amount"]) + receipt_amount
-
-            allocations = allocations_by_payment.get(str(row.id), [])
             allocated_total = 0
             fully_settled = 0
             partially_settled = 0

@@ -60,7 +60,8 @@ from app.services.order_number_service import (
     generate_sales_return_number,
 )
 from app.services.gst_service import determine_tax_mode, determine_default_invoice_type, invoice_type_tax_mode, is_india_country, calc_line_item, split_tax
-from app.services.stock_service import get_current_stock, add_stock_entry, refresh_materialized_view
+from app.services.auth_service import normalize_role
+from app.services.stock_service import get_current_stock, get_product_batch_snapshot, add_stock_entry, refresh_materialized_view
 from app.config import settings
 from app.utils.input_validation import validate_optional_token
 
@@ -69,7 +70,7 @@ GSTIN_REGEX = re.compile(r"^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$")
 
 
 def _scope_to_owner(query, model, current_user: User):
-    if current_user.role in {"admin", "accounting"}:
+    if normalize_role(current_user.role) in {"admin", "accounts"}:
         return query
     owner_col = getattr(model, "created_by", None)
     if owner_col is None:
@@ -1716,10 +1717,28 @@ async def issue_invoice(
     # SAL-044 safety guard: block issue if stored batch/date data is invalid.
     _validate_invoice_line_items_for_save(db, items, current_user, allow_deleted_products=True)
 
+    batch_snapshots = {
+        str(item.product_id): get_product_batch_snapshot(db, item.product_id)
+        for item in items
+        if item.batch_no
+    }
+    stock_cache = {}
     for item in items:
-        stock = get_current_stock(db, item.product_id)
-        if stock < float(item.quantity):
+        batch_token = (item.batch_no or "").strip()
+        product_key = str(item.product_id)
+        cache_key = f"{product_key}_{batch_token}"
+        
+        if cache_key not in stock_cache:
+            if batch_token:
+                stock_cache[cache_key] = float(batch_snapshots.get(product_key, {}).get(batch_token, {}).get("available_qty", 0.0))
+            else:
+                stock_cache[cache_key] = get_current_stock(db, item.product_id)
+                
+        total_qty = float(item.quantity) + float(item.free_quantity or 0)
+        if stock_cache[cache_key] < total_qty:
             raise HTTPException(status_code=400, detail=f"Insufficient stock for product {item.product_id}")
+            
+        stock_cache[cache_key] -= total_qty
 
     # BUG-01: Use stock service for entries
     for item in items:
@@ -1735,6 +1754,19 @@ async def issue_invoice(
             transaction_date=invoice.invoice_date,
             created_by=current_user.id,
         )
+        if item.free_quantity and float(item.free_quantity) > 0:
+            add_stock_entry(
+                db=db,
+                product_id=item.product_id,
+                transaction_type="sale",
+                reference_type="invoice",
+                reference_id=invoice.id,
+                reference_number=f"{invoice.invoice_number}-FREE",
+                quantity=-float(item.free_quantity),
+                rate=0,
+                transaction_date=invoice.invoice_date,
+                created_by=current_user.id,
+            )
 
     # BUG-01: Refresh materialized view
     refresh_materialized_view(db)

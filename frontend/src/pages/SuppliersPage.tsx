@@ -961,7 +961,32 @@ const SuppliersPage = () => {
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label htmlFor="supplier_payment_terms" className="hms-label">Payment Terms (Days)</label>
-                    <input id="supplier_payment_terms" type="number" min="0" className="hms-input" placeholder="e.g. 30" {...register('payment_terms_days')} />
+                    <select
+                      id="supplier_payment_terms"
+                      className="hms-input"
+                      value={watch('payment_terms_days') ?? ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === 'custom') {
+                          const custom = prompt('Enter custom payment terms (days):', '0');
+                          if (custom !== null) {
+                            const num = parseInt(custom, 10);
+                            setValue('payment_terms_days', Number.isNaN(num) ? 0 : num, { shouldDirty: true });
+                          }
+                        } else {
+                          setValue('payment_terms_days', val === '' ? undefined : Number(val), { shouldDirty: true });
+                        }
+                      }}
+                    >
+                      <option value="">Select Payment Terms</option>
+                      <option value="0">0 – Immediate</option>
+                      <option value="15">15 Days</option>
+                      <option value="30">30 Days</option>
+                      <option value="45">45 Days</option>
+                      <option value="60">60 Days</option>
+                      <option value="90">90 Days</option>
+                      <option value="custom">Custom...</option>
+                    </select>
                   </div>
                   <div>
                     <label htmlFor="supplier_currency_code" className="hms-label">Currency</label>

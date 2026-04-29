@@ -1,0 +1,5 @@
+-- This workspace pass did not require schema migrations.
+-- Verified fixes were implemented at the application layer only.
+--
+-- If a future prompt adds schema changes, record them here and mirror the
+-- same DDL in database/01_schema.sql.

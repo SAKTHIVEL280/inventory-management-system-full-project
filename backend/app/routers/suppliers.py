@@ -32,7 +32,7 @@ router = APIRouter(prefix="/api/v1/suppliers", tags=["suppliers"])
 
 
 def _scope_to_owner(query, model_cls, current_user: User):
-    if current_user.role in {"admin", "accounting"}:
+    if current_user.role in {"admin", "accounts"}:
         return query
     owner_col = getattr(model_cls, "created_by", None)
     if owner_col is None:

@@ -33,7 +33,7 @@ PO_ID_META_REGEX = re.compile(r"\[PO_ID:([0-9a-fA-F-]{36})\]")
 
 
 def _scope_to_owner(query, model, current_user: User):
-    if current_user.role in {"admin", "accounting"}:
+    if current_user.role in {"admin", "accounts"}:
         return query
     owner_col = getattr(model, "created_by", None)
     if owner_col is None:

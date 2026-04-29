@@ -166,7 +166,7 @@ PO_TEMPLATE = """<!DOCTYPE html>
 <table style="table-layout: fixed; width: 100%; border-left: 1px solid #000; border-right: 1px solid #000; border-bottom: 1px solid #000;">
     <thead>
         <tr style="background: #f2f2f2; border-bottom: 1px solid #000;">
-            <th style="width: 3%; border-right: 1px solid #000; padding: 4px 2px; text-align: center; font-size: 9px; font-weight: bold;">#</th>
+            <th style="width: 4%; border-right: 1px solid #000; padding: 4px 2px; text-align: center; font-size: 9px; font-weight: bold;">S.No</th>
             <th style="width: 28%; border-right: 1px solid #000; padding: 4px 2px; text-align: left; font-size: 9px; font-weight: bold;">Item Description</th>
             <th style="width: 9%; border-right: 1px solid #000; padding: 4px 2px; text-align: left; font-size: 9px; font-weight: bold;">Packing / Order Unit</th>
             <th style="width: 7%; border-right: 1px solid #000; padding: 4px 2px; text-align: right; font-size: 9px; font-weight: bold;">Qty</th>
@@ -259,7 +259,13 @@ PO_TEMPLATE = """<!DOCTYPE html>
             </table>
             <table style="width: 100%; border-collapse: collapse;">
                 <tr>
-                    <td style="height: 80px; text-align: center; vertical-align: bottom; border: none; padding-bottom: 5px;"></td>
+                    <td style="height: 60px; text-align: center; vertical-align: bottom; border: none; padding-bottom: 5px;"></td>
+                </tr>
+                <tr>
+                    <td style="text-align: center; border: none; padding: 2px 0 0 0; font-size: 8px; font-weight: 600; white-space: nowrap;">For Yes Yes Pharma &amp; Herba Cure</td>
+                </tr>
+                <tr>
+                    <td style="text-align: center; border: none; padding: 2px 0 0 0; font-size: 8px; font-weight: 600; white-space: nowrap;">For {{ company_name }}</td>
                 </tr>
                 <tr>
                     <td style="text-align: center; border: none; padding: 2px 0 8px 0; font-size: 9px;">Authorized Purchase Signature</td>
@@ -426,6 +432,35 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
 </table>
 
 <!-- ITEMS TABLE -->
+{% if export_invoice %}
+<table style="table-layout: fixed; width: 100%; border-left: 1px solid #000; border-right: 1px solid #000; border-bottom: 1px solid #000;">
+    <thead>
+        <tr style="background: #f2f2f2; border-bottom: 1px solid #000;">
+            <th style="width: 10%; border-right: 1px solid #000; padding: 4px 2px; text-align: center; font-size: 9px; font-weight: bold;">S.No</th>
+            <th style="width: 50%; border-right: 1px solid #000; padding: 4px 2px; text-align: center; font-size: 9px; font-weight: bold;">Description</th>
+            <th style="width: 25%; border-right: 1px solid #000; padding: 4px 2px; text-align: center; font-size: 9px; font-weight: bold;">Amount</th>
+            <th style="width: 15%; padding: 4px 2px; text-align: center; font-size: 9px; font-weight: bold;">Currency</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in rows %}
+        <tr>
+            <td style="border: 1px solid #000; padding: 3px 2px; text-align: center; font-size: 9px;">{{ row.sr }}</td>
+            <td style="border: 1px solid #000; padding: 3px 4px; text-align: left; font-size: 9px; word-wrap: break-word; overflow-wrap: break-word;">{{ row.description }}</td>
+            <td style="border: 1px solid #000; padding: 3px 4px; text-align: right; font-size: 9px; font-weight: bold;">{{ row.amount }}</td>
+            <td style="border: 1px solid #000; padding: 3px 2px; text-align: center; font-size: 9px;">{{ raw_currency }}</td>
+        </tr>
+        {% endfor %}
+        <!-- Spacer row -->
+        <tr style="height: {% if rows|length < items_per_page %}120px{% else %}12px{% endif %};">
+            <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
+            <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
+            <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
+            <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
+        </tr>
+    </tbody>
+</table>
+{% else %}
 {% if show_batch_columns %}
     {% if export_invoice %}
         {% set col_sr = 3 %}
@@ -574,6 +609,7 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
         </tr>
     </tbody>
 </table>
+{% endif %}
 
 <!-- FOOTER -->
 {% if is_last_page %}
@@ -615,6 +651,12 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
                 </tr>
                     {% endif %}
                 {% endif %}
+                {% if round_off and round_off != '0.00' %}
+                <tr>
+                    <td style="padding: 3px 6px; font-size: 9.5px; border-bottom: 1px solid #000;">Round Off</td>
+                    <td style="padding: 3px 6px; font-size: 9.5px; text-align: right; border-bottom: 1px solid #000;">{{ round_off }}</td>
+                </tr>
+                {% endif %}
                 <tr>
                     <td style="padding: 4px 6px; font-size: 10px; font-weight: bold; border-bottom: 1px solid #000;">Total</td>
                     <td style="padding: 4px 6px; font-size: 10px; font-weight: bold; text-align: right; border-bottom: 1px solid #000;">{{ grand_total_rupee }}</td>
@@ -626,7 +668,13 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
             </table>
             <table style="width: 100%; border-collapse: collapse;">
                 <tr>
-                    <td style="height: 80px; text-align: center; vertical-align: bottom; border: none; padding-bottom: 5px;"></td>
+                    <td style="height: 60px; text-align: center; vertical-align: bottom; border: none; padding-bottom: 5px;"></td>
+                </tr>
+                <tr>
+                    <td style="text-align: center; border: none; padding: 2px 0 0 0; font-size: 8px; font-weight: 600; white-space: nowrap;">For Yes Yes Pharma &amp; Herba Cure</td>
+                </tr>
+                <tr>
+                    <td style="text-align: center; border: none; padding: 2px 0 0 0; font-size: 8px; font-weight: 600; white-space: nowrap;">For {{ company_name }}</td>
                 </tr>
                 <tr>
                     <td style="text-align: center; border: none; padding: 2px 0 8px 0; font-size: 9px;">Authorized Signature</td>
@@ -1375,6 +1423,13 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
     tax_col_2_label = "UTGST" if show_utgst else "SGST"
     tax_secondary_prefix = "UTGST" if show_utgst else "SGST"
 
+    # GEN-001: Round-off computation
+    exact_total_paise = int(invoice.total_amount or 0)
+    exact_total_rupees = exact_total_paise / 100
+    rounded_total_rupees = round(exact_total_rupees)
+    round_off_value = rounded_total_rupees - exact_total_rupees
+    round_off_display = f"{round_off_value:+.2f}" if abs(round_off_value) >= 0.005 else "0.00"
+
     context = {
         "doc_title": _invoice_doc_title(invoice_type_token),
         "export_invoice": export_invoice,
@@ -1420,9 +1475,10 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
         "tax_secondary_total": _format_total_with_currency(_get_corrected_sgst(invoice, should_be_igst=show_igst), cs),
         "igst_label": "IGST",
         "igst_total": _format_total_with_currency(_get_corrected_igst(invoice, should_be_igst=show_igst), cs),
-        "grand_total_rupee": _format_total_with_currency(int(invoice.total_amount or 0) / 100, cs),
+        "round_off": round_off_display,
+        "grand_total_rupee": _format_total_with_currency(rounded_total_rupees, cs),
         "balance_due_rupee": _format_total_with_currency(int(invoice.amount_due or invoice.total_amount or 0) / 100, cs),
-        "total_in_words": _amount_in_words(int(invoice.total_amount or 0), currency, numbering_system=amount_words_numbering),
+        "total_in_words": _amount_in_words(int(rounded_total_rupees * 100), currency, numbering_system=amount_words_numbering),
         "notes": notes_text,
         "watermark_text": watermark_text,
     }

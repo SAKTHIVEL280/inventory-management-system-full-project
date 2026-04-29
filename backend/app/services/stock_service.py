@@ -3,13 +3,18 @@
 Fixes BUG-01: Adds materialized view refresh after stock transactions.
 Centralizes stock calculation logic.
 """
+from datetime import date
+from typing import Any
 from uuid import UUID
 from decimal import Decimal
 from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.models.inventory_count import InventoryCountDifferenceAudit, InventoryCountItem
+from app.models.purchase import GoodsReceiptNote, GRNItem, PurchaseReturn, PurchaseReturnItem
 from app.models.product import StockLedger
+from app.models.sales import SalesInvoice, SalesInvoiceItem, SalesReturn, SalesReturnItem
 
 
 def get_current_stock(db: Session, product_id: UUID) -> float:
@@ -20,6 +25,176 @@ def get_current_stock(db: Session, product_id: UUID) -> float:
         StockLedger.product_id == product_id
     ).scalar()
     return float(qty or 0)
+
+
+def get_product_batch_snapshot(db: Session, product_id: UUID) -> dict[str, dict[str, Any]]:
+    """Build a positive available batch map for a product from transactional data."""
+    batch_balances: dict[str, float] = {}
+    batch_meta: dict[str, tuple[date | None, date | None]] = {}
+
+    def _accumulate(batch_no, manufacture_date, expiry_date, qty_delta):
+        token = (batch_no or "").strip()
+        if not token:
+            return
+        if token not in batch_meta:
+            batch_meta[token] = (manufacture_date, expiry_date)
+        else:
+            prev_mfg, prev_exp = batch_meta[token]
+            batch_meta[token] = (
+                prev_mfg or manufacture_date,
+                prev_exp or expiry_date,
+            )
+        batch_balances[token] = batch_balances.get(token, 0.0) + float(qty_delta or 0)
+
+    grn_rows = (
+        db.query(
+            GRNItem.batch_no,
+            GRNItem.manufacture_date,
+            GRNItem.expiry_date,
+            func.coalesce(func.sum(GRNItem.quantity), 0).label("qty"),
+            func.coalesce(func.sum(GRNItem.free_quantity), 0).label("free_qty"),
+        )
+        .join(GoodsReceiptNote, GRNItem.grn_id == GoodsReceiptNote.id)
+        .filter(
+            GRNItem.product_id == product_id,
+            GoodsReceiptNote.status == "confirmed",
+            GoodsReceiptNote.is_deleted == False,
+            GRNItem.is_deleted == False,
+        )
+        .group_by(GRNItem.batch_no, GRNItem.manufacture_date, GRNItem.expiry_date)
+        .all()
+    )
+    for row in grn_rows:
+        _accumulate(
+            row.batch_no,
+            row.manufacture_date,
+            row.expiry_date,
+            float(row.qty or 0) + float(row.free_qty or 0),
+        )
+
+    purchase_return_rows = (
+        db.query(
+            GRNItem.batch_no,
+            GRNItem.manufacture_date,
+            GRNItem.expiry_date,
+            func.coalesce(func.sum(PurchaseReturnItem.quantity), 0).label("qty"),
+        )
+        .join(PurchaseReturn, PurchaseReturnItem.purchase_return_id == PurchaseReturn.id)
+        .outerjoin(GRNItem, PurchaseReturnItem.grn_item_id == GRNItem.id)
+        .filter(
+            PurchaseReturnItem.product_id == product_id,
+            PurchaseReturn.status == "confirmed",
+            PurchaseReturn.is_deleted == False,
+            PurchaseReturnItem.is_deleted == False,
+        )
+        .group_by(GRNItem.batch_no, GRNItem.manufacture_date, GRNItem.expiry_date)
+        .all()
+    )
+    for row in purchase_return_rows:
+        _accumulate(
+            row.batch_no,
+            row.manufacture_date,
+            row.expiry_date,
+            -float(row.qty or 0),
+        )
+
+    sales_issue_rows = (
+        db.query(
+            SalesInvoiceItem.batch_no,
+            SalesInvoiceItem.manufacture_date,
+            SalesInvoiceItem.expiry_date,
+            func.coalesce(func.sum(SalesInvoiceItem.quantity), 0).label("qty"),
+        )
+        .join(SalesInvoice, SalesInvoiceItem.invoice_id == SalesInvoice.id)
+        .filter(
+            SalesInvoiceItem.product_id == product_id,
+            SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
+            SalesInvoice.is_deleted == False,
+            SalesInvoiceItem.is_deleted == False,
+        )
+        .group_by(
+            SalesInvoiceItem.batch_no,
+            SalesInvoiceItem.manufacture_date,
+            SalesInvoiceItem.expiry_date,
+        )
+        .all()
+    )
+    for row in sales_issue_rows:
+        _accumulate(
+            row.batch_no,
+            row.manufacture_date,
+            row.expiry_date,
+            -float(row.qty or 0),
+        )
+
+    sales_return_rows = (
+        db.query(
+            SalesInvoiceItem.batch_no,
+            SalesInvoiceItem.manufacture_date,
+            SalesInvoiceItem.expiry_date,
+            func.coalesce(func.sum(SalesReturnItem.quantity), 0).label("qty"),
+        )
+        .join(SalesReturn, SalesReturnItem.sales_return_id == SalesReturn.id)
+        .outerjoin(SalesInvoiceItem, SalesReturnItem.invoice_item_id == SalesInvoiceItem.id)
+        .filter(
+            SalesReturnItem.product_id == product_id,
+            SalesReturn.status == "confirmed",
+            SalesReturn.is_deleted == False,
+            SalesReturnItem.is_deleted == False,
+        )
+        .group_by(
+            SalesInvoiceItem.batch_no,
+            SalesInvoiceItem.manufacture_date,
+            SalesInvoiceItem.expiry_date,
+        )
+        .all()
+    )
+    for row in sales_return_rows:
+        _accumulate(
+            row.batch_no,
+            row.manufacture_date,
+            row.expiry_date,
+            float(row.qty or 0),
+        )
+
+    inventory_count_diff_rows = (
+        db.query(
+            InventoryCountItem.batch_no,
+            InventoryCountItem.manufacture_date,
+            InventoryCountItem.expiry_date,
+            func.coalesce(func.sum(InventoryCountDifferenceAudit.difference_qty), 0).label("qty"),
+        )
+        .join(
+            InventoryCountDifferenceAudit,
+            InventoryCountDifferenceAudit.inventory_count_item_id == InventoryCountItem.id,
+        )
+        .filter(InventoryCountItem.product_id == product_id)
+        .group_by(
+            InventoryCountItem.batch_no,
+            InventoryCountItem.manufacture_date,
+            InventoryCountItem.expiry_date,
+        )
+        .all()
+    )
+    for row in inventory_count_diff_rows:
+        _accumulate(
+            row.batch_no,
+            row.manufacture_date,
+            row.expiry_date,
+            float(row.qty or 0),
+        )
+
+    snapshot: dict[str, dict[str, Any]] = {}
+    for batch_no, qty in batch_balances.items():
+        if qty <= 1e-6:
+            continue
+        manufacture_date, expiry_date = batch_meta.get(batch_no, (None, None))
+        snapshot[batch_no] = {
+            "available_qty": round(float(qty), 4),
+            "manufacture_date": manufacture_date,
+            "expiry_date": expiry_date,
+        }
+    return snapshot
 
 
 def refresh_materialized_view(db: Session) -> None:

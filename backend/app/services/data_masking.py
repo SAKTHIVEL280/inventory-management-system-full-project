@@ -70,4 +70,4 @@ class DataMasker:
 
 def should_mask_sensitive_fields(role: str | None) -> bool:
     normalized_role = (role or "").strip().lower()
-    return normalized_role not in {"admin", "accounting"}
+    return normalized_role not in {"admin", "accounts"}

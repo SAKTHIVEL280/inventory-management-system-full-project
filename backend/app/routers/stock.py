@@ -34,13 +34,14 @@ from app.schemas.stock import (
     InventoryCountNumberSearchResponse,
     InventoryCountResponse,
 )
-from app.services.stock_service import refresh_materialized_view
+from app.services.auth_service import normalize_role
+from app.services.stock_service import get_product_batch_snapshot, refresh_materialized_view
 
 router = APIRouter(prefix="/api/v1/stock", tags=["stock"])
 
 
 def _scope_to_owner(query, model, current_user: User):
-    if current_user.role in {"admin", "accounting"}:
+    if normalize_role(current_user.role) in {"admin", "accounts"}:
         return query
     owner_col = getattr(model, "created_by", None)
     if owner_col is None:
@@ -360,26 +361,22 @@ def _compute_inventory_count_difference_rows(
         for row in product_rows
     }
 
-    existing_stock_rows = (
-        db.query(
-            StockLedger.product_id,
-            func.coalesce(func.sum(StockLedger.quantity), 0).label("qty"),
-        )
-        .filter(
-            StockLedger.product_id.in_(product_ids),
-            StockLedger.is_deleted == False,
-        )
-        .group_by(StockLedger.product_id)
-        .all()
-    ) if product_ids else []
-    existing_stock_map = {str(row.product_id): float(row.qty or 0) for row in existing_stock_rows}
+    batch_snapshots = {
+        str(product_id): get_product_batch_snapshot(db, product_id)
+        for product_id in product_ids
+    } if product_ids else {}
 
     response_items: list[InventoryCountDifferenceItemResponse] = []
     adjustment_rows: list[dict[str, Any]] = []
     for row in count_items:
         product_key = str(row.product_id)
         counted_qty = float(row.quantity)
-        existing_qty = float(existing_stock_map.get(product_key, 0.0))
+        product_snapshot = batch_snapshots.get(product_key, {})
+        batch_token = (row.batch_no or "").strip()
+        if batch_token:
+            existing_qty = float(product_snapshot.get(batch_token, {}).get("available_qty", 0.0))
+        else:
+            existing_qty = round(sum(float(meta.get("available_qty", 0.0)) for meta in product_snapshot.values()), 4)
         difference = round(counted_qty - existing_qty, 4)
         meta = product_meta.get(product_key, {})
 
@@ -765,19 +762,10 @@ async def list_inventory_count_differences(
         for row in product_rows
     }
 
-    existing_stock_rows = (
-        db.query(
-            StockLedger.product_id,
-            func.coalesce(func.sum(StockLedger.quantity), 0).label("qty"),
-        )
-        .filter(
-            StockLedger.product_id.in_(list(product_ids)),
-            StockLedger.is_deleted == False,
-        )
-        .group_by(StockLedger.product_id)
-        .all()
-    ) if product_ids else []
-    existing_stock_map = {str(row.product_id): float(row.qty or 0) for row in existing_stock_rows}
+    batch_snapshots = {
+        str(product_id): get_product_batch_snapshot(db, product_id)
+        for product_id in list(product_ids)
+    } if product_ids else {}
 
     responses: list[InventoryCountDifferenceResponse] = []
     for count in inventory_counts:
@@ -786,7 +774,12 @@ async def list_inventory_count_differences(
         for row in rows:
             product_key = str(row.product_id)
             counted_qty = float(row.quantity)
-            existing_qty = float(existing_stock_map.get(product_key, 0.0))
+            product_snapshot = batch_snapshots.get(product_key, {})
+            batch_token = (row.batch_no or "").strip()
+            if batch_token:
+                existing_qty = float(product_snapshot.get(batch_token, {}).get("available_qty", 0.0))
+            else:
+                existing_qty = round(sum(float(meta.get("available_qty", 0.0)) for meta in product_snapshot.values()), 4)
             meta = product_meta.get(product_key, {})
             items.append(
                 InventoryCountDifferenceItemResponse(

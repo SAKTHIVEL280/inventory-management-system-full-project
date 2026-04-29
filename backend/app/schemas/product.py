@@ -66,8 +66,8 @@ class ProductBase(BaseModel):
     @field_validator("hsn_code")
     @classmethod
     def validate_hsn_code(cls, value: str) -> str:
-        if not value.isdigit() or len(value) not in {6, 7, 8}:
-            raise ValueError("hsn_code must be a 6-8 digit numeric string")
+        if not value.isdigit() or len(value) not in {4, 5, 6, 7, 8}:
+            raise ValueError("hsn_code must be a 4-8 digit numeric string")
         return value
 
 class ProductCreateRequest(ProductBase):

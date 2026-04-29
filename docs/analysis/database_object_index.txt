@@ -1,0 +1,224 @@
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:13: CREATE TABLE users (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:32: CREATE INDEX IF NOT EXISTS ix_users_email ON users (email);
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:35: CREATE TABLE gst_report_audit_logs (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:48: CREATE INDEX IF NOT EXISTS ix_gst_report_audit_logs_timestamp ON gst_report_audit_logs ("timestamp");
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:49: CREATE INDEX IF NOT EXISTS ix_gst_report_audit_logs_report_type ON gst_report_audit_logs (report_type);
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:50: CREATE INDEX IF NOT EXISTS ix_gst_report_audit_logs_user_id ON gst_report_audit_logs (user_id);
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:53: CREATE TABLE audit_logs (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:70: CREATE INDEX IF NOT EXISTS ix_audit_logs_created_at ON audit_logs (created_at);
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:71: CREATE INDEX IF NOT EXISTS ix_audit_logs_user_id ON audit_logs (user_id);
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:72: CREATE INDEX IF NOT EXISTS ix_audit_logs_module_name ON audit_logs (module_name);
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:73: CREATE INDEX IF NOT EXISTS ix_audit_logs_action_type ON audit_logs (action_type);
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:74: CREATE INDEX IF NOT EXISTS ix_audit_logs_record_reference ON audit_logs (record_reference);
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:77: CREATE TABLE company (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:115: ALTER TABLE users
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:119: CREATE INDEX IF NOT EXISTS ix_users_company_id ON users (company_id);
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:122: CREATE TABLE units_of_measure (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:133: CREATE TABLE customization_options (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:149: CREATE INDEX IF NOT EXISTS ix_customization_options_module ON customization_options (module);
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:150: CREATE INDEX IF NOT EXISTS ix_customization_options_field_name ON customization_options (field_name);
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:152: INSERT INTO customization_options (module, field_name, option_value, display_label, sort_order, is_active)
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:196: CREATE TABLE product_categories (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:210: CREATE TABLE products (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:238: CREATE INDEX IF NOT EXISTS ix_products_company_id ON products (company_id);
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:241: CREATE TABLE customers (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:277: CREATE INDEX IF NOT EXISTS ix_customers_company_id ON customers (company_id);
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:280: CREATE TABLE suppliers (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:313: CREATE TABLE stock_ledger (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:331: CREATE MATERIALIZED VIEW current_stock AS
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:352: CREATE TABLE inventory_counts (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:365: CREATE TABLE inventory_count_items (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:380: CREATE INDEX IF NOT EXISTS ix_inventory_counts_count_number ON inventory_counts (count_number);
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:381: CREATE INDEX IF NOT EXISTS ix_inventory_count_items_count_id ON inventory_count_items (inventory_count_id);
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:382: CREATE INDEX IF NOT EXISTS ix_inventory_count_items_product_id ON inventory_count_items (product_id);
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:384: CREATE TABLE inventory_count_difference_audits (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:399: CREATE INDEX IF NOT EXISTS ix_inventory_count_difference_audits_count_id ON inventory_count_difference_audits (inventory_count_id);
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:400: CREATE INDEX IF NOT EXISTS ix_inventory_count_difference_audits_accepted_at ON inventory_count_difference_audits (accepted_at);
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:406: CREATE TABLE purchase_orders (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:433: CREATE TABLE purchase_order_items (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:454: CREATE TABLE goods_receipt_notes (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:482: CREATE TABLE grn_items (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:506: CREATE TABLE purchase_returns (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:524: CREATE TABLE purchase_return_items (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:546: CREATE TABLE quotations (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:573: CREATE TABLE quotation_items (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:593: CREATE TABLE sales_orders (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:623: CREATE TABLE sales_order_items (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:644: CREATE TABLE sales_invoices (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:681: CREATE TABLE sales_invoice_items (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:707: CREATE TABLE sales_returns (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:725: CREATE TABLE sales_return_items (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:747: CREATE TABLE payments (
+D:\IMS\3\inventory-management-system-full-project\database\01_schema.sql:769: CREATE TABLE payment_allocations (
+D:\IMS\3\inventory-management-system-full-project\database\02_seed_data.sql:7: INSERT INTO company (name)
+D:\IMS\3\inventory-management-system-full-project\database\02_seed_data.sql:12: INSERT INTO units_of_measure (name, abbreviation, is_active)
+D:\IMS\3\inventory-management-system-full-project\database\02_seed_data.sql:28: INSERT INTO product_categories (name, description, is_active)
+D:\IMS\3\inventory-management-system-full-project\database\04_inventory_count_modules.sql:9: CREATE TABLE IF NOT EXISTS inventory_counts (
+D:\IMS\3\inventory-management-system-full-project\database\04_inventory_count_modules.sql:22: CREATE TABLE IF NOT EXISTS inventory_count_items (
+D:\IMS\3\inventory-management-system-full-project\database\04_inventory_count_modules.sql:37: CREATE INDEX IF NOT EXISTS ix_inventory_counts_count_number
+D:\IMS\3\inventory-management-system-full-project\database\04_inventory_count_modules.sql:40: CREATE INDEX IF NOT EXISTS ix_inventory_count_items_count_id
+D:\IMS\3\inventory-management-system-full-project\database\04_inventory_count_modules.sql:43: CREATE INDEX IF NOT EXISTS ix_inventory_count_items_product_id
+D:\IMS\3\inventory-management-system-full-project\database\04_inventory_count_modules.sql:46: CREATE TABLE IF NOT EXISTS inventory_count_difference_audits (
+D:\IMS\3\inventory-management-system-full-project\database\04_inventory_count_modules.sql:61: CREATE INDEX IF NOT EXISTS ix_inventory_count_difference_audits_count_id
+D:\IMS\3\inventory-management-system-full-project\database\04_inventory_count_modules.sql:64: CREATE INDEX IF NOT EXISTS ix_inventory_count_difference_audits_accepted_at
+D:\IMS\3\inventory-management-system-full-project\database\05_customer_payment_terms_optional.sql:6: ALTER TABLE customers
+D:\IMS\3\inventory-management-system-full-project\database\05_customer_payment_terms_optional.sql:9: ALTER TABLE customers
+D:\IMS\3\inventory-management-system-full-project\database\06_company_country_field.sql:6: ALTER TABLE company
+D:\IMS\3\inventory-management-system-full-project\database\07_company_ambassador_logo_field.sql:6: ALTER TABLE company
+D:\IMS\3\inventory-management-system-full-project\database\08_action_logs_rotation.sql:8: CREATE TABLE IF NOT EXISTS audit_logs (
+D:\IMS\3\inventory-management-system-full-project\database\08_action_logs_rotation.sql:25: ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS username VARCHAR(255);
+D:\IMS\3\inventory-management-system-full-project\database\08_action_logs_rotation.sql:26: ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS action_type VARCHAR(40);
+D:\IMS\3\inventory-management-system-full-project\database\08_action_logs_rotation.sql:27: ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS module_name VARCHAR(80);
+D:\IMS\3\inventory-management-system-full-project\database\08_action_logs_rotation.sql:28: ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS record_reference VARCHAR(255);
+D:\IMS\3\inventory-management-system-full-project\database\08_action_logs_rotation.sql:29: ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS description TEXT;
+D:\IMS\3\inventory-management-system-full-project\database\08_action_logs_rotation.sql:30: ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+D:\IMS\3\inventory-management-system-full-project\database\08_action_logs_rotation.sql:32: CREATE INDEX IF NOT EXISTS ix_audit_logs_created_at ON audit_logs (created_at);
+D:\IMS\3\inventory-management-system-full-project\database\08_action_logs_rotation.sql:33: CREATE INDEX IF NOT EXISTS ix_audit_logs_user_id ON audit_logs (user_id);
+D:\IMS\3\inventory-management-system-full-project\database\08_action_logs_rotation.sql:34: CREATE INDEX IF NOT EXISTS ix_audit_logs_module_name ON audit_logs (module_name);
+D:\IMS\3\inventory-management-system-full-project\database\08_action_logs_rotation.sql:35: CREATE INDEX IF NOT EXISTS ix_audit_logs_action_type ON audit_logs (action_type);
+D:\IMS\3\inventory-management-system-full-project\database\08_action_logs_rotation.sql:36: CREATE INDEX IF NOT EXISTS ix_audit_logs_record_reference ON audit_logs (record_reference);
+D:\IMS\3\inventory-management-system-full-project\database\08_inventory_count_difference_actions.sql:9: CREATE TABLE IF NOT EXISTS inventory_count_difference_audits (
+D:\IMS\3\inventory-management-system-full-project\database\08_inventory_count_difference_actions.sql:24: CREATE INDEX IF NOT EXISTS ix_inventory_count_difference_audits_count_id
+D:\IMS\3\inventory-management-system-full-project\database\08_inventory_count_difference_actions.sql:27: CREATE INDEX IF NOT EXISTS ix_inventory_count_difference_audits_accepted_at
+D:\IMS\3\inventory-management-system-full-project\database\09_security_update1.sql:7: ALTER TABLE users
+D:\IMS\3\inventory-management-system-full-project\database\09_security_update1.sql:10: ALTER TABLE product_categories
+D:\IMS\3\inventory-management-system-full-project\database\09_security_update1.sql:13: ALTER TABLE products
+D:\IMS\3\inventory-management-system-full-project\database\09_security_update1.sql:16: ALTER TABLE customers
+D:\IMS\3\inventory-management-system-full-project\database\10_security_update2.sql:55: ALTER TABLE users
+D:\IMS\3\inventory-management-system-full-project\database\10_security_update2.sql:71: ALTER TABLE products
+D:\IMS\3\inventory-management-system-full-project\database\10_security_update2.sql:87: ALTER TABLE customers
+D:\IMS\3\inventory-management-system-full-project\database\10_security_update2.sql:103: ALTER TABLE product_categories
+D:\IMS\3\inventory-management-system-full-project\database\10_security_update2.sql:109: CREATE INDEX IF NOT EXISTS ix_users_company_id
+D:\IMS\3\inventory-management-system-full-project\database\10_security_update2.sql:112: CREATE INDEX IF NOT EXISTS ix_products_company_id
+D:\IMS\3\inventory-management-system-full-project\database\10_security_update2.sql:115: CREATE INDEX IF NOT EXISTS ix_customers_company_id
+D:\IMS\3\inventory-management-system-full-project\database\11_gst_report_audit_logs.sql:8: CREATE TABLE IF NOT EXISTS gst_report_audit_logs (
+D:\IMS\3\inventory-management-system-full-project\database\11_gst_report_audit_logs.sql:21: CREATE INDEX IF NOT EXISTS ix_gst_report_audit_logs_timestamp
+D:\IMS\3\inventory-management-system-full-project\database\11_gst_report_audit_logs.sql:24: CREATE INDEX IF NOT EXISTS ix_gst_report_audit_logs_report_type
+D:\IMS\3\inventory-management-system-full-project\database\11_gst_report_audit_logs.sql:27: CREATE INDEX IF NOT EXISTS ix_gst_report_audit_logs_user_id
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES.sql:18: -- ALTER TABLE STATEMENTS (Run on existing database)
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES.sql:22: ALTER TABLE company
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES.sql:28: ALTER TABLE customers
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES.sql:36: ALTER TABLE suppliers
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES.sql:84: -- INSERT INTO some_master_table (id, name)
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES.sql:95: CREATE TABLE company (
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:18: CREATE TABLE IF NOT EXISTS customization_options (
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:36: CREATE INDEX IF NOT EXISTS ix_customization_options_module
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:39: CREATE INDEX IF NOT EXISTS ix_customization_options_field_name
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:42: ALTER TABLE customization_options
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:45: ALTER TABLE customization_options
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:48: ALTER TABLE customization_options
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:51: ALTER TABLE customization_options
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:54: ALTER TABLE customization_options
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:57: ALTER TABLE customization_options
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:60: INSERT INTO customization_options (module, field_name, option_value, display_label, sort_order, is_active)
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:107: ALTER TABLE customers
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:110: ALTER TABLE customers
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:117: ALTER TABLE suppliers
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:124: ALTER TABLE sales_invoices
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:131: ALTER TABLE sales_invoices
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:134: ALTER TABLE company
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:141: ALTER TABLE purchase_orders
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:144: ALTER TABLE purchase_orders
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:147: ALTER TABLE goods_receipt_notes
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:150: ALTER TABLE goods_receipt_notes
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:157: CREATE TABLE IF NOT EXISTS inventory_counts (
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:170: CREATE TABLE IF NOT EXISTS inventory_count_items (
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:185: CREATE INDEX IF NOT EXISTS ix_inventory_counts_count_number
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:188: CREATE INDEX IF NOT EXISTS ix_inventory_count_items_count_id
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:191: CREATE INDEX IF NOT EXISTS ix_inventory_count_items_product_id
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:198: ALTER TABLE customers
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:201: ALTER TABLE customers
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:208: ALTER TABLE company
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:215: ALTER TABLE company
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:222: CREATE TABLE IF NOT EXISTS inventory_count_difference_audits (
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:237: CREATE INDEX IF NOT EXISTS ix_inventory_count_difference_audits_count_id
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:240: CREATE INDEX IF NOT EXISTS ix_inventory_count_difference_audits_accepted_at
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:247: CREATE TABLE IF NOT EXISTS gst_report_audit_logs (
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:260: CREATE INDEX IF NOT EXISTS ix_gst_report_audit_logs_timestamp
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:263: CREATE INDEX IF NOT EXISTS ix_gst_report_audit_logs_report_type
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_03.sql:266: CREATE INDEX IF NOT EXISTS ix_gst_report_audit_logs_user_id
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:13: ALTER TABLE users
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:16: ALTER TABLE users
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:23: ALTER TABLE products
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:26: ALTER TABLE products
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:33: ALTER TABLE suppliers
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:36: ALTER TABLE suppliers
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:39: ALTER TABLE suppliers
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:42: ALTER TABLE suppliers
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:45: ALTER TABLE suppliers
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:48: ALTER TABLE suppliers
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:51: ALTER TABLE company
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:54: ALTER TABLE company
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:57: ALTER TABLE company
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:60: ALTER TABLE company
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:63: ALTER TABLE company
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:66: ALTER TABLE company
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:69: ALTER TABLE customers
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:72: ALTER TABLE customers
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:75: ALTER TABLE customers
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:78: ALTER TABLE customers
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:81: ALTER TABLE customers
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:84: ALTER TABLE customers
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:87: ALTER TABLE customers
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:94: ALTER TABLE purchase_orders
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:97: ALTER TABLE purchase_orders
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:100: ALTER TABLE purchase_orders
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:103: ALTER TABLE purchase_orders
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:106: ALTER TABLE sales_orders
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:109: ALTER TABLE sales_orders
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:116: ALTER TABLE grn_items
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:119: ALTER TABLE grn_items
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:122: ALTER TABLE grn_items
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:130: ALTER TABLE goods_receipt_notes
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:133: ALTER TABLE goods_receipt_notes
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:136: ALTER TABLE goods_receipt_notes
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:146: ALTER TABLE grn_items
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:155: ALTER TABLE sales_invoice_items
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:158: ALTER TABLE sales_invoice_items
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:161: ALTER TABLE sales_invoice_items
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:164: ALTER TABLE sales_invoice_items
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:167: ALTER TABLE sales_invoice_items
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:176: ALTER TABLE products
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:200: CREATE TABLE IF NOT EXISTS customization_options (
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:218: CREATE INDEX IF NOT EXISTS ix_customization_options_module
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:221: CREATE INDEX IF NOT EXISTS ix_customization_options_field_name
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:224: ALTER TABLE customization_options
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:227: ALTER TABLE customization_options
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:230: ALTER TABLE customization_options
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:233: ALTER TABLE customization_options
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:236: ALTER TABLE customization_options
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:239: ALTER TABLE customization_options
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:242: INSERT INTO customization_options (module, field_name, option_value, display_label, sort_order, is_active)
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:289: ALTER TABLE customers
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:292: ALTER TABLE customers
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:299: ALTER TABLE suppliers
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:306: ALTER TABLE sales_invoices
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:313: ALTER TABLE sales_invoices
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:316: ALTER TABLE company
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:323: CREATE TABLE IF NOT EXISTS inventory_counts (
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:336: CREATE TABLE IF NOT EXISTS inventory_count_items (
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:351: CREATE INDEX IF NOT EXISTS ix_inventory_counts_count_number
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:354: CREATE INDEX IF NOT EXISTS ix_inventory_count_items_count_id
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:357: CREATE INDEX IF NOT EXISTS ix_inventory_count_items_product_id
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:364: CREATE TABLE IF NOT EXISTS inventory_count_difference_audits (
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:379: CREATE INDEX IF NOT EXISTS ix_inventory_count_difference_audits_count_id
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:382: CREATE INDEX IF NOT EXISTS ix_inventory_count_difference_audits_accepted_at
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:389: ALTER TABLE customers
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:392: ALTER TABLE customers
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:399: CREATE TABLE IF NOT EXISTS gst_report_audit_logs (
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:412: CREATE INDEX IF NOT EXISTS ix_gst_report_audit_logs_timestamp
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:415: CREATE INDEX IF NOT EXISTS ix_gst_report_audit_logs_report_type
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:418: CREATE INDEX IF NOT EXISTS ix_gst_report_audit_logs_user_id
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:425: CREATE TABLE IF NOT EXISTS audit_logs (
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:442: ALTER TABLE audit_logs
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:445: ALTER TABLE audit_logs
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:448: ALTER TABLE audit_logs
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:451: ALTER TABLE audit_logs
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:454: ALTER TABLE audit_logs
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:457: ALTER TABLE audit_logs
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:460: CREATE INDEX IF NOT EXISTS ix_audit_logs_created_at
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:463: CREATE INDEX IF NOT EXISTS ix_audit_logs_user_id
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:466: CREATE INDEX IF NOT EXISTS ix_audit_logs_module_name
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:469: CREATE INDEX IF NOT EXISTS ix_audit_logs_action_type
+D:\IMS\3\inventory-management-system-full-project\database\ALL_UPDATES_2.sql:472: CREATE INDEX IF NOT EXISTS ix_audit_logs_record_reference
+D:\IMS\3\inventory-management-system-full-project\database\VERIFY_ALL_TABLES_CLEARED.sql:27: INSERT INTO tmp_table_row_counts (schema_name, table_name, row_count)

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models.user import User
+from app.services.auth_service import normalize_role
 
 security = HTTPBearer(auto_error=False)
 
@@ -59,7 +60,9 @@ async def get_current_user(
 def require_role(*roles: str):
     """Dependency to enforce specific roles."""
     async def check_role(current_user: User = Depends(get_current_user)) -> User:
-        if current_user.role not in roles:
+        current_role = normalize_role(current_user.role)
+        allowed_roles = {normalize_role(role) for role in roles}
+        if current_role not in allowed_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Insufficient permissions",
@@ -91,14 +94,14 @@ def enforce_resource_ownership(
     record_owner_id: UUID | None,
     current_user: User,
     *,
-    privileged_roles: tuple[str, ...] = ("admin", "accounting"),
+    privileged_roles: tuple[str, ...] = ("admin", "accounts"),
 ) -> None:
     """Block access to user-owned resources when requester is not privileged.
 
     Records created before ownership tracking may have a null owner and remain
     accessible to avoid breaking legacy data workflows.
     """
-    if current_user.role in privileged_roles:
+    if normalize_role(current_user.role) in {normalize_role(role) for role in privileged_roles}:
         return
     if record_owner_id is None:
         return

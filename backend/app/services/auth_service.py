@@ -28,7 +28,7 @@ ROLE_DEFAULTS = {
         "payments_read", "payments_write",
         "reports_read", "dashboard_read",
     ],
-    "accounting": [
+    "accounts": [
         "company_read",
         "customers_read",
         "suppliers_read",
@@ -70,7 +70,36 @@ ROLE_DEFAULTS = {
         "stock_ledger_read",
         "reports_read", "dashboard_read",
     ],
+    "billing": [
+        "customers_read", "customers_write",
+        "suppliers_read", "suppliers_write",
+        "products_read", "products_write",
+        "categories_read", "categories_write",
+        "uom_read", "uom_write",
+        "purchase_orders_read", "purchase_orders_write",
+        "grn_read", "grn_write",
+        "purchase_returns_read", "purchase_returns_write",
+        "stock_ledger_read",
+        "quotations_read", "quotations_write",
+        "sales_orders_read", "sales_orders_write",
+        "sales_invoices_read", "sales_invoices_write",
+        "sales_returns_read", "sales_returns_write",
+        "receipts_read", "receipts_write",
+        "payments_read", "payments_write",
+        "reports_read", "dashboard_read",
+    ],
 }
+
+
+ROLE_ALIASES = {
+    "doctor": "admin",
+}
+
+
+def normalize_role(role: str) -> str:
+    """Collapse UI-facing role aliases to their canonical backend role."""
+    token = (role or "").strip().lower()
+    return ROLE_ALIASES.get(token, token)
 
 
 def hash_password(password: str) -> str:
@@ -96,7 +125,8 @@ def calculate_effective_access(
     Effective access = role defaults + allowed overrides - denied overrides.
     Overrides cannot grant access to admin-only modules unless user role is admin.
     """
-    base_permissions = set(ROLE_DEFAULTS.get(role, []))
+    normalized_role = normalize_role(role)
+    base_permissions = set(ROLE_DEFAULTS.get(normalized_role, []))
     
     if not permission_overrides:
         return sorted(list(base_permissions))
@@ -107,7 +137,7 @@ def calculate_effective_access(
     
     # Filter allowed: cannot grant admin-only modules unless user is admin
     admin_only_modules = {"company_write", "users_read", "users_write"}
-    if role != "admin":
+    if normalized_role != "admin":
         allowed = [p for p in allowed if not any(ao in p for ao in admin_only_modules)]
     
     effective = base_permissions.union(set(allowed)) - set(denied)

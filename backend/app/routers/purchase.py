@@ -43,14 +43,14 @@ from app.services.order_number_service import (
     generate_purchase_return_number,
 )
 from app.services.gst_service import determine_tax_mode, calc_line_item, split_tax
-from app.services.stock_service import add_stock_entry, refresh_materialized_view
+from app.services.stock_service import add_stock_entry, refresh_materialized_view, get_product_batch_snapshot, get_current_stock
 from app.utils.input_validation import validate_optional_token
 
 router = APIRouter(tags=["purchase"])
 
 
 def _scope_to_owner(query, model, current_user: User):
-    if current_user.role in {"admin", "accounting"}:
+    if current_user.role in {"admin", "accounts"}:
         return query
     owner_col = getattr(model, "created_by", None)
     if owner_col is None:
@@ -1120,6 +1120,28 @@ async def confirm_purchase_return(
         raise HTTPException(status_code=400, detail="Only draft purchase return can be confirmed")
 
     items = db.query(PurchaseReturnItem).filter(PurchaseReturnItem.purchase_return_id == return_id).all()
+    
+    # Pre-fetch batch snapshots and validate stock to prevent negative stock
+    stock_cache = {}
+    for item in items:
+        grn_item = db.query(GRNItem).filter(GRNItem.id == item.grn_item_id).first() if item.grn_item_id else None
+        batch_token = (grn_item.batch_no or "").strip() if grn_item else ""
+        product_key = str(item.product_id)
+        cache_key = f"{product_key}_{batch_token}"
+
+        if cache_key not in stock_cache:
+            if batch_token:
+                batch_snapshots = get_product_batch_snapshot(db, item.product_id)
+                stock_cache[cache_key] = float(batch_snapshots.get(batch_token, {}).get("available_qty", 0.0))
+            else:
+                stock_cache[cache_key] = get_current_stock(db, item.product_id)
+
+        qty = float(item.quantity)
+        if stock_cache[cache_key] < qty:
+            raise HTTPException(status_code=400, detail=f"Insufficient stock to return product {item.product_id}")
+            
+        stock_cache[cache_key] -= qty
+
     for item in items:
         # BUG-01: Use stock service with reference_id
         add_stock_entry(

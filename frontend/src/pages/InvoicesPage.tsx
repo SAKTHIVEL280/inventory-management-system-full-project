@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Sales Invoices Page
  * List, create, edit, issue invoices. GST-aware line items.
  */
@@ -782,7 +782,19 @@ const InvoicesPage = () => {
                 </div>
               </div>
               <div>
-                <div className="mb-2 flex items-center justify-between"><h3 className="text-sm font-semibold">Items</h3><button onClick={addItem} className="rounded bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary">+ Add</button></div>
+                <div className="mb-2 flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">Items</h3>
+                  <div className="flex items-center gap-2">
+                    {isExportInvoice && (
+                      <button onClick={addItem} className="rounded border border-neutral-200 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-50">
+                        + Add Cost
+                      </button>
+                    )}
+                    <button onClick={addItem} className="rounded bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary">
+                      + Add Item
+                    </button>
+                  </div>
+                </div>
                 <div className="overflow-x-auto rounded-lg border border-neutral-200">
                   <table className="w-full min-w-[1760px] table-fixed text-sm">
                     <thead>

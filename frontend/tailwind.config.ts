@@ -7,7 +7,7 @@ export default {
   ],
   safelist: [
     'bg-role-admin',
-    'bg-role-accounting',
+    'bg-role-accounts',
     'bg-role-sales',
     'bg-role-inventory',
   ],
@@ -37,7 +37,7 @@ export default {
         },
         role: {
           admin: '#2563eb',
-          accounting: '#059669',
+          accounts: '#059669',
           sales: '#dc2626',
           inventory: '#0ea5e9',
         },
