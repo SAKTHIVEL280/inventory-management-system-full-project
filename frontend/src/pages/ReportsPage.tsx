@@ -185,7 +185,7 @@ const ReportsPage = () => {
   const [actionLogReference, setActionLogReference] = useState('');
   const [actionLogPage, setActionLogPage] = useState(1);
   const [actionLogPageSize, setActionLogPageSize] = useState(20);
-  const isFinanceTaxUser = (user?.role || '').toLowerCase() === 'admin' || (user?.role || '').toLowerCase() === 'accounts';
+  const isFinanceTaxUser = (user?.role || '').toLowerCase() === 'admin' || (user?.role || '').toLowerCase() === 'accounting';
   const fromDate = dateRange.from;
   const toDate = dateRange.to;
   const todayInput = toLocalDateInputValue(today);

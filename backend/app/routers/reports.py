@@ -289,7 +289,7 @@ def _customer_country_for_gstr(customer: Customer | None) -> str | None:
 
 
 def _ensure_finance_tax_user(current_user: User) -> None:
-    if current_user.role not in {"admin", "accounts"}:
+    if current_user.role not in {"admin", "accounting"}:
         raise HTTPException(
             status_code=403,
             detail="Only Finance/Tax users are allowed to generate GST reports",
@@ -297,7 +297,7 @@ def _ensure_finance_tax_user(current_user: User) -> None:
 
 
 def _ensure_action_log_view_user(current_user: User) -> None:
-    if current_user.role not in {"admin", "accounts", "auditor"}:
+    if current_user.role not in {"admin", "accounting", "auditor"}:
         raise HTTPException(
             status_code=403,
             detail="Only Admin/Auditor users can view action logs",
@@ -543,11 +543,7 @@ async def dashboard_report(
         if invoice_ids:
             invoice_rows = (
                 db.query(SalesInvoice.id, SalesInvoice.amount_due)
-                .filter(
-                    SalesInvoice.id.in_(list(invoice_ids)),
-                    SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
-                    SalesInvoice.is_deleted == False,
-                )
+                .filter(SalesInvoice.id.in_(list(invoice_ids)), SalesInvoice.is_deleted == False)
                 .all()
             )
             invoice_due_map = {str(row.id): int(row.amount_due or 0) for row in invoice_rows}
@@ -567,13 +563,11 @@ async def dashboard_report(
                     "partially_settled_amount": 0,
                 }
 
-            allocations = allocations_by_payment.get(str(row.id), [])
-            if allocations and not any(invoice_id in invoice_due_map for invoice_id, _ in allocations):
-                continue
-
             entry = by_customer[customer_key]
             receipt_amount = int(row.amount or 0)
             entry["total_received_amount"] = int(entry["total_received_amount"]) + receipt_amount
+
+            allocations = allocations_by_payment.get(str(row.id), [])
             allocated_total = 0
             fully_settled = 0
             partially_settled = 0
@@ -1603,12 +1597,26 @@ async def gstr1_export(
 
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from xml.sax.saxutils import escape as xml_escape
 
     stream = BytesIO()
     doc = SimpleDocTemplate(stream, pagesize=landscape(A4), leftMargin=18, rightMargin=18, topMargin=18, bottomMargin=18)
     styles = getSampleStyleSheet()
+    table_cell_style = ParagraphStyle(
+        "gstr1_table_cell",
+        parent=styles["Normal"],
+        fontSize=6,
+        leading=7,
+        spaceBefore=0,
+        spaceAfter=0,
+        wordWrap="CJK",
+    )
+
+    def to_table_paragraph(value: object) -> Paragraph:
+        text = "" if value is None else str(value)
+        return Paragraph(xml_escape(text), table_cell_style)
 
     story = [
         Paragraph(payload.get("report_title", "GSTR-1 (Sales / Output Tax Report)"), styles["Heading2"]),
@@ -1629,10 +1637,10 @@ async def gstr1_export(
             row.get("s_no", ""),
             row.get("sales_invoice_date", ""),
             row.get("sales_invoice_no", ""),
-            row.get("bill_to_party_name", ""),
+            to_table_paragraph(row.get("bill_to_party_name", "")),
             row.get("bill_to_party_gstin_no", ""),
-            row.get("place_of_supply", ""),
-            row.get("ship_to_party_name", ""),
+            to_table_paragraph(row.get("place_of_supply", "")),
+            to_table_paragraph(row.get("ship_to_party_name", "")),
             f"{float(row.get('invoice_amount', 0.0)):.2f}",
             row.get("currency", ""),
             _format_tax_percent(row.get("tax_percent")),
@@ -1657,12 +1665,35 @@ async def gstr1_export(
         f"{float(subtotal.get('total_tax_amount', 0.0)):.2f}",
     ])
 
-    table = Table(table_data, repeatRows=1)
+    col_fractions = [
+        0.03,  # S.No
+        0.06,  # Sales Invoice Date
+        0.07,  # Sales Invoice No
+        0.12,  # Bill To
+        0.08,  # Bill GSTIN
+        0.07,  # Place
+        0.12,  # Ship To
+        0.07,  # Invoice Amount
+        0.04,  # Currency
+        0.04,  # Tax %
+        0.05,  # CGST
+        0.05,  # SGST
+        0.05,  # IGST
+        0.05,  # UGST
+        0.05,  # Export
+        0.05,  # Total Tax
+    ]
+    col_widths = [doc.width * f for f in col_fractions]
+    table = Table(table_data, colWidths=col_widths, repeatRows=1)
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E5E7EB")),
         ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#9CA3AF")),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
     story.append(table)
@@ -2312,12 +2343,26 @@ async def gstr2_export(
 
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from xml.sax.saxutils import escape as xml_escape
 
     stream = BytesIO()
     doc = SimpleDocTemplate(stream, pagesize=landscape(A4), leftMargin=18, rightMargin=18, topMargin=18, bottomMargin=18)
     styles = getSampleStyleSheet()
+    table_cell_style = ParagraphStyle(
+        "gstr2_table_cell",
+        parent=styles["Normal"],
+        fontSize=6,
+        leading=7,
+        spaceBefore=0,
+        spaceAfter=0,
+        wordWrap="CJK",
+    )
+
+    def to_table_paragraph(value: object) -> Paragraph:
+        text = "" if value is None else str(value)
+        return Paragraph(xml_escape(text), table_cell_style)
 
     story = [
         Paragraph(payload.get("report_title", "GSTR-2 (Purchase / Input Tax Report)"), styles["Heading2"]),
@@ -2338,10 +2383,10 @@ async def gstr2_export(
             row.get("s_no", ""),
             row.get("grn_date", ""),
             row.get("grn_no", ""),
-            row.get("supplier_name", ""),
+            to_table_paragraph(row.get("supplier_name", "")),
             row.get("supplier_gstin_no", ""),
-            row.get("business_place", ""),
-            row.get("place_of_supply", ""),
+            to_table_paragraph(row.get("business_place", "")),
+            to_table_paragraph(row.get("place_of_supply", "")),
             f"{float(row.get('grn_amount', 0.0)):.2f}",
             row.get("currency", ""),
             _format_tax_percent(row.get("tax_percent")),
@@ -2366,12 +2411,35 @@ async def gstr2_export(
         f"{float(subtotal.get('total_tax_amount', 0.0)):.2f}",
     ])
 
-    table = Table(table_data, repeatRows=1)
+    col_fractions = [
+        0.03,  # S.No
+        0.06,  # GRN Date
+        0.07,  # GRN No
+        0.12,  # Supplier
+        0.08,  # Supplier GSTIN
+        0.07,  # Business Place
+        0.09,  # Place of Supply
+        0.07,  # GRN Amount
+        0.04,  # Currency
+        0.04,  # Tax %
+        0.05,  # CGST
+        0.05,  # SGST
+        0.05,  # IGST
+        0.05,  # UGST
+        0.05,  # Import
+        0.08,  # Total Tax
+    ]
+    col_widths = [doc.width * f for f in col_fractions]
+    table = Table(table_data, colWidths=col_widths, repeatRows=1)
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E5E7EB")),
         ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#9CA3AF")),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
         ("FONTSIZE", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING", (0, 0), (-1, -1), 2),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
     story.append(table)

@@ -2,6 +2,9 @@
 
 ---
 
+## BE-115: Fix GSTR PDF table overflow
+**Update**: Updated GSTR-1/GSTR-2 PDF exports to use fixed column widths (based on available landscape A4 width), wrap long text fields, and reduce cell padding so the report table no longer overflows/cuts off in deployed PDFs.
+
 ## BE-114: Human-readable Action Log descriptions
 **Update**: Standardized action-to-sentence mapping for audit descriptions (Created/Updated/Deleted/Viewed/Generated/Logged in/out), with entity and reference context extraction for clear client/auditor readability.
 
