@@ -41,7 +41,7 @@ const UsersPage = () => {
       full_name: '',
       email: '',
       password: '',
-      role: 'inventory',
+      role: 'admin',
     },
   });
 
@@ -95,7 +95,7 @@ const UsersPage = () => {
     setEditingUser(null);
     setFormError('');
     setShowPassword(false);
-    reset({ full_name: '', email: '', password: '', role: 'inventory' });
+    reset({ full_name: '', email: '', password: '', role: 'admin' });
   };
 
   const startEdit = (user: UserManagement) => {
