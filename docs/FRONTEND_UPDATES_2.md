@@ -1,5 +1,8 @@
 # Frontend Updates Log
 
+## FE-116: Customer/Supplier Master autofill suppression (Billing + State/State Code)
+**Update**: Stopped unintended autofill in Customer and Supplier Master new-entry forms. Customer Master no longer preloads Billing Address fields from Company Profile on “+ New Customer”, and both Customer/Supplier Masters now avoid re-populating State/State Code after the user clears inputs (state-code sync is guarded once the code field is manually edited). Supplier Master form also disables browser autofill for address/state fields.
+
 ## FE-115: Quotation MRP rupee display + Supplier state-code autofill
 **Update**: Fixed Quotation item MRP input to display rupees with decimals while storing paise internally (prevents 100× display like 35000 instead of 350), and aligned Supplier Master state/state-code autofill to always keep `state_code` in sync with selected `state` (matching Customer Master behavior).
 

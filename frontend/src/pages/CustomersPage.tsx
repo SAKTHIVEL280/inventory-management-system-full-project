@@ -2,7 +2,6 @@ import { type FocusEvent, useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
-import { companyApi } from '../api/company';
 import { customersApi } from '../api/customers';
 import { Customer } from '../types';
 import { AppLayout } from '../components/AppLayout';
@@ -442,7 +441,7 @@ const CustomersPage = () => {
     },
   });
 
-  const { register, handleSubmit, reset, setValue, watch } = useForm<CustomerForm>({
+  const { register, handleSubmit, reset, setValue, watch, formState } = useForm<CustomerForm>({
     defaultValues: buildDefaultValues(),
     shouldUnregister: true,
   });
@@ -533,22 +532,9 @@ const CustomersPage = () => {
     setNewFormSessionKey((prev) => prev + 1);
   };
 
-  const openNewCustomerForm = async (): Promise<void> => {
+  const openNewCustomerForm = (): void => {
     resetToNewCustomerDefaults();
     setIsFormOpen(true);
-    try {
-      const company = await companyApi.get();
-      setValue('billing_address_line1', company.address_line1 ?? '');
-      setValue('billing_address_line2', company.address_line2 ?? '');
-      setValue('billing_city', company.city ?? '');
-      setValue('billing_state', company.state ?? '');
-      setValue('billing_state_code', company.state_code ?? '');
-      setValue('billing_country', company.country ?? 'India');
-      setValue('billing_pincode', company.pincode ?? '');
-      setValue('same_as_billing', true);
-    } catch {
-      // Leave the form on the default blank state if company details cannot be loaded.
-    }
   };
 
   const resetForm = () => {
@@ -777,6 +763,8 @@ const CustomersPage = () => {
   const shippingStateValue = watch('shipping_state') ?? '';
   const billingStateCode = watch('billing_state_code');
   const shippingStateCode = watch('shipping_state_code');
+  const billingStateCodeDirty = Boolean(formState.dirtyFields.billing_state_code);
+  const shippingStateCodeDirty = Boolean(formState.dirtyFields.shipping_state_code);
   const billingCountryValue = watch('billing_country') ?? '';
   const sameAsBilling = watch('same_as_billing');
   const shippingCountryValue = watch('shipping_country') ?? '';
@@ -828,30 +816,20 @@ const CustomersPage = () => {
   }, [items, phoneCountryCode]);
 
   useEffect(() => {
-    const resolvedFromCode = stateNameFromStateCode(billingStateCode);
-    if (resolvedFromCode && billingStateValue.trim().length === 0) {
-      setValue('billing_state', resolvedFromCode, { shouldDirty: false });
-    }
-
     const resolvedFromState = canonicalStateCode(billingStateValue);
-    if (resolvedFromState && resolvedFromState !== (billingStateCode || '')) {
+    if (resolvedFromState && resolvedFromState !== (billingStateCode || '') && !billingStateCodeDirty) {
       setValue('billing_state_code', resolvedFromState, { shouldDirty: false });
     }
-  }, [billingStateCode, billingStateValue, setValue]);
+  }, [billingStateCode, billingStateCodeDirty, billingStateValue, setValue]);
 
   useEffect(() => {
     if (sameAsBilling) return;
 
-    const resolvedFromCode = stateNameFromStateCode(shippingStateCode);
-    if (resolvedFromCode && shippingStateValue.trim().length === 0) {
-      setValue('shipping_state', resolvedFromCode, { shouldDirty: false });
-    }
-
     const resolvedFromState = canonicalStateCode(shippingStateValue);
-    if (resolvedFromState && resolvedFromState !== (shippingStateCode || '')) {
+    if (resolvedFromState && resolvedFromState !== (shippingStateCode || '') && !shippingStateCodeDirty) {
       setValue('shipping_state_code', resolvedFromState, { shouldDirty: false });
     }
-  }, [sameAsBilling, setValue, shippingStateCode, shippingStateValue]);
+  }, [sameAsBilling, setValue, shippingStateCode, shippingStateCodeDirty, shippingStateValue]);
 
   return (
     <AppLayout title="Customer Master">
@@ -1096,6 +1074,9 @@ const CustomersPage = () => {
                       autoComplete="new-password"
                       onChange={(nextValue) => {
                         setValue('billing_state', nextValue, { shouldDirty: true });
+                        if (nextValue.trim().length === 0) {
+                          setValue('billing_state_code', '', { shouldDirty: true });
+                        }
                       }}
                     />
                   </div>
@@ -1156,6 +1137,9 @@ const CustomersPage = () => {
                           placeholder="Type or select state"
                           onChange={(nextValue) => {
                             setValue('shipping_state', nextValue, { shouldDirty: true });
+                            if (nextValue.trim().length === 0) {
+                              setValue('shipping_state_code', '', { shouldDirty: true });
+                            }
                           }}
                         />
                       </div>

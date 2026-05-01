@@ -299,6 +299,7 @@ type TypeaheadInputProps = {
   onChange: (nextValue: string) => void;
   className?: string;
   showAllWhenFocused?: boolean;
+  autoComplete?: string;
 };
 
 const TypeaheadInput = ({
@@ -309,6 +310,7 @@ const TypeaheadInput = ({
   onChange,
   className = 'hms-input',
   showAllWhenFocused = false,
+  autoComplete = 'off',
 }: TypeaheadInputProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const [hasTypedSinceFocus, setHasTypedSinceFocus] = useState(false);
@@ -340,6 +342,7 @@ const TypeaheadInput = ({
         className={className}
         value={value}
         placeholder={placeholder}
+        autoComplete={autoComplete}
         onFocus={() => {
           setHasTypedSinceFocus(false);
           setIsOpen(true);
@@ -408,7 +411,7 @@ const SuppliersPage = () => {
     },
   });
 
-  const { register, handleSubmit, reset, setValue, watch } = useForm<SupplierForm>({
+  const { register, handleSubmit, reset, setValue, watch, formState } = useForm<SupplierForm>({
     defaultValues: buildDefaultValues(),
   });
 
@@ -659,6 +662,7 @@ const SuppliersPage = () => {
   const gstinStatus = watch('gstin_status');
   const stateValue = watch('state') ?? '';
   const stateCodeValue = watch('state_code') ?? '';
+  const stateCodeDirty = Boolean(formState.dirtyFields.state_code);
   const country = watch('billing_country') ?? '';
   const currencyCodeValue = watch('currency_code') ?? 'INR';
   const supplierCodePreview = toSupplierCodePreview(businessType, stateValue, country);
@@ -709,16 +713,11 @@ const SuppliersPage = () => {
   }, [items, phoneCountryCode]);
 
   useEffect(() => {
-    const resolvedFromCode = stateNameFromStateCode(stateCodeValue);
-    if (resolvedFromCode && stateValue.trim().length === 0) {
-      setValue('state', resolvedFromCode, { shouldDirty: false });
-    }
-
     const resolvedFromState = canonicalStateCode(stateValue);
-    if (resolvedFromState && resolvedFromState !== (stateCodeValue || '')) {
+    if (resolvedFromState && resolvedFromState !== (stateCodeValue || '') && !stateCodeDirty) {
       setValue('state_code', resolvedFromState, { shouldDirty: false });
     }
-  }, [setValue, stateCodeValue, stateValue]);
+  }, [setValue, stateCodeDirty, stateCodeValue, stateValue]);
 
   return (
     <AppLayout title="Supplier Master">
@@ -767,7 +766,9 @@ const SuppliersPage = () => {
                   <button type="button" onClick={resetForm} className="text-sm text-neutral-500 hover:text-neutral-700">Cancel</button>
                 </div>
               )}
-              <form className="space-y-3" onSubmit={handleSubmit(onSubmit)}>
+              <form className="space-y-3" onSubmit={handleSubmit(onSubmit)} autoComplete="off">
+                <input type="text" className="hidden" tabIndex={-1} autoComplete="username" />
+                <input type="password" className="hidden" tabIndex={-1} autoComplete="new-password" />
                 <div>
                   <label htmlFor="supplier_company_name" className="hms-label">Company name</label>
                   <input id="supplier_company_name" className="hms-input" placeholder="Company name" {...register('company_name')} />
@@ -904,16 +905,16 @@ const SuppliersPage = () => {
                 </div>
                 <div>
                   <label htmlFor="supplier_address_line1" className="hms-label">Address</label>
-                  <input id="supplier_address_line1" className="hms-input" placeholder="Address line 1" {...register('address_line1')} />
+                  <input id="supplier_address_line1" className="hms-input" placeholder="Address line 1" autoComplete="new-password" {...register('address_line1')} />
                 </div>
                 <div>
                   <label htmlFor="supplier_address_line2" className="hms-label">Address line 2</label>
-                  <input id="supplier_address_line2" className="hms-input" placeholder="Address line 2" {...register('address_line2')} />
+                  <input id="supplier_address_line2" className="hms-input" placeholder="Address line 2" autoComplete="new-password" {...register('address_line2')} />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label htmlFor="supplier_city" className="hms-label">City</label>
-                    <input id="supplier_city" className="hms-input" placeholder="City" {...register('city')} />
+                    <input id="supplier_city" className="hms-input" placeholder="City" autoComplete="new-password" {...register('city')} />
                   </div>
                   <div>
                     <label htmlFor="supplier_state" className="hms-label">State</label>
@@ -923,8 +924,12 @@ const SuppliersPage = () => {
                       value={stateValue}
                       options={stateOptions}
                       placeholder="Type or select state"
+                      autoComplete="new-password"
                       onChange={(nextValue) => {
                         setValue('state', nextValue, { shouldDirty: true });
+                        if (nextValue.trim().length === 0) {
+                          setValue('state_code', '', { shouldDirty: true });
+                        }
                       }}
                     />
                   </div>
@@ -932,11 +937,11 @@ const SuppliersPage = () => {
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label htmlFor="supplier_state_code" className="hms-label">State code</label>
-                    <input id="supplier_state_code" className="hms-input" placeholder="e.g. 34" {...register('state_code')} />
+                    <input id="supplier_state_code" className="hms-input" placeholder="e.g. 34" autoComplete="new-password" {...register('state_code')} />
                   </div>
                   <div>
                     <label htmlFor="supplier_pincode" className="hms-label">Pincode</label>
-                    <input id="supplier_pincode" className="hms-input" placeholder="Pincode" {...register('pincode')} />
+                    <input id="supplier_pincode" className="hms-input" placeholder="Pincode" autoComplete="new-password" {...register('pincode')} />
                   </div>
                 </div>
                 <div>
@@ -947,6 +952,7 @@ const SuppliersPage = () => {
                     value={country}
                     options={countryOptions}
                     placeholder="Type or select country"
+                    autoComplete="new-password"
                     onChange={(nextValue) => {
                       setValue('billing_country', nextValue, { shouldDirty: true });
                     }}
@@ -954,7 +960,7 @@ const SuppliersPage = () => {
                 </div>
                 <div>
                   <label htmlFor="supplier_pos" className="hms-label">Place of Supply</label>
-                  <input id="supplier_pos" className="hms-input" placeholder="e.g. Tamil Nadu" {...register('place_of_supply')} />
+                  <input id="supplier_pos" className="hms-input" placeholder="e.g. Tamil Nadu" autoComplete="new-password" {...register('place_of_supply')} />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
