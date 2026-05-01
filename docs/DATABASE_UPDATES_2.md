@@ -2,6 +2,9 @@
 
 ---
 
+## DB-47: Clear-all-data utilities hardened
+**Update**: Updated `CLEAR_ALL_DATA.sql` and `VERIFY_ALL_TABLES_CLEARED.sql` to enumerate base tables via `pg_class/pg_namespace` (covers partitioned tables cleanly) and skip extension-owned tables, keeping resets safe if the DB includes extensions that ship reference tables.
+
 ## DB-46: Action Logs schema + compatibility migration pack
 **Update**: Added query-friendly `audit_logs` table columns/indexes for action tracking and propagated idempotent DDL to base schema, consolidated migration pack, and runtime compatibility migration.
 

@@ -714,11 +714,9 @@ const SuppliersPage = () => {
       setValue('state', resolvedFromCode, { shouldDirty: false });
     }
 
-    if (!stateCodeValue) {
-      const resolvedFromState = canonicalStateCode(stateValue);
-      if (resolvedFromState && resolvedFromState !== stateCodeValue) {
-        setValue('state_code', resolvedFromState, { shouldDirty: false });
-      }
+    const resolvedFromState = canonicalStateCode(stateValue);
+    if (resolvedFromState && resolvedFromState !== (stateCodeValue || '')) {
+      setValue('state_code', resolvedFromState, { shouldDirty: false });
     }
   }, [setValue, stateCodeValue, stateValue]);
 

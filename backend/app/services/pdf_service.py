@@ -139,7 +139,7 @@ PO_TEMPLATE = """<!DOCTYPE html>
             <table style="width: 100%;">
                 <tr><td style="width: 130px; border: none; padding: 1px 0; font-size: 10px;">PO Date:</td><td style="border: none; padding: 1px 0; font-size: 10px;">{{ doc_date }}</td></tr>
                 <tr><td style="width: 130px; border: none; padding: 1px 0; font-size: 10px;">Shipping/Delivery Date:</td><td style="border: none; padding: 1px 0; font-size: 10px;">{{ expected_delivery_date }}</td></tr>
-                <tr><td style="width: 130px; border: none; padding: 1px 0; font-size: 10px;">Place of Supply:</td><td style="border: none; padding: 1px 0; font-size: 10px;">{{ bill_to_state }}</td></tr>
+                <tr><td style="width: 130px; border: none; padding: 1px 0; font-size: 10px;">Place of Supply:</td><td style="border: none; padding: 1px 0; font-size: 10px;">{{ place_of_supply }}</td></tr>
                 <tr><td style="width: 130px; border: none; padding: 1px 0; font-size: 10px;">Under Delivery Tol.:</td><td style="border: none; padding: 1px 0; font-size: 10px;">{{ under_delivery_tolerance }}</td></tr>
                 <tr><td style="width: 130px; border: none; padding: 1px 0; font-size: 10px;">Over Delivery Tol.:</td><td style="border: none; padding: 1px 0; font-size: 10px;">{{ over_delivery_tolerance }}</td></tr>
             </table>
@@ -260,9 +260,6 @@ PO_TEMPLATE = """<!DOCTYPE html>
             <table style="width: 100%; border-collapse: collapse;">
                 <tr>
                     <td style="height: 60px; text-align: center; vertical-align: bottom; border: none; padding-bottom: 5px;"></td>
-                </tr>
-                <tr>
-                    <td style="text-align: center; border: none; padding: 2px 0 0 0; font-size: 8px; font-weight: 600; white-space: nowrap;">For Yes Yes Pharma &amp; Herba Cure</td>
                 </tr>
                 <tr>
                     <td style="text-align: center; border: none; padding: 2px 0 0 0; font-size: 8px; font-weight: 600; white-space: nowrap;">For {{ company_name }}</td>
@@ -401,7 +398,7 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
         <td style="width: 50%; padding: 4px 6px; vertical-align: top;">
             <table style="width: 100%;">
                 <tr><td style="width: 90px; border: none; padding: 1px 0; font-size: 10px;">Invoice Type</td><td style="border: none; padding: 1px 0; font-size: 10px; font-weight: bold;">: {{ invoice_type_label }}</td></tr>
-                <tr><td style="width: 90px; border: none; padding: 1px 0; font-size: 10px;">Place Of Supply</td><td style="border: none; padding: 1px 0; font-size: 10px; font-weight: bold;">: {{ bill_to_state }}</td></tr>
+                <tr><td style="width: 90px; border: none; padding: 1px 0; font-size: 10px;">Place Of Supply</td><td style="border: none; padding: 1px 0; font-size: 10px; font-weight: bold;">: {{ place_of_supply }}</td></tr>
                 {% if order_currency %}<tr><td style="width: 90px; border: none; padding: 1px 0; font-size: 10px;">Order Currency</td><td style="border: none; padding: 1px 0; font-size: 10px; font-weight: bold;">: {{ order_currency }}</td></tr>{% endif %}
                 {% if export_invoice and import_export_code %}<tr><td style="width: 120px; border: none; padding: 1px 0; font-size: 10px;">Import &amp; Export Code</td><td style="border: none; padding: 1px 0; font-size: 10px; font-weight: bold;">: {{ import_export_code }}</td></tr>{% endif %}
             </table>
@@ -671,9 +668,6 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
                     <td style="height: 60px; text-align: center; vertical-align: bottom; border: none; padding-bottom: 5px;"></td>
                 </tr>
                 <tr>
-                    <td style="text-align: center; border: none; padding: 2px 0 0 0; font-size: 8px; font-weight: 600; white-space: nowrap;">For Yes Yes Pharma &amp; Herba Cure</td>
-                </tr>
-                <tr>
                     <td style="text-align: center; border: none; padding: 2px 0 0 0; font-size: 8px; font-weight: 600; white-space: nowrap;">For {{ company_name }}</td>
                 </tr>
                 <tr>
@@ -771,11 +765,11 @@ def _format_total_with_currency(amount: float | int, currency_prefix: str) -> st
 def _invoice_type_label(invoice_type: str | None) -> str:
     mapping = {
         "export_invoice": "Export Invoice",
-        "within_state": "Sales Invoice - Within State",
-        "other_states": "Sales Invoice - Other States",
-        "union_territory": "Sales Invoice - Union Territory",
+        "within_state": "Within State",
+        "other_states": "Other States",
+        "union_territory": "Union Territory",
     }
-    return mapping.get((invoice_type or "").strip().lower(), "Sales Invoice - Within State")
+    return mapping.get((invoice_type or "").strip().lower(), "Within State")
 
 
 def _invoice_doc_title(invoice_type: str | None) -> str:
@@ -1280,6 +1274,11 @@ def generate_po_pdf(db: Session, po_id: UUID) -> bytes:
         "company_gstin": _safe_text(company.gstin if company else None),
         "company_contact": _safe_text(company.phone if company and company.phone else (company.email if company else None)),
         "party_gstin": _safe_text(supplier.gstin if supplier else None),
+        "place_of_supply": _safe_text(
+            (getattr(company, "state", None) if company else None)
+            or (supplier.place_of_supply if supplier else None)
+            or (supplier.state if supplier else None)
+        ),
         "bill_to_state": _safe_text((supplier.place_of_supply if supplier else None) or (supplier.state if supplier else None)),
         "bill_to_name": _safe_text(supplier.company_name if supplier else None),
         "bill_to_address": supplier_address,
@@ -1311,7 +1310,20 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
         raise ValueError("Invoice not found")
 
     company = db.query(Company).first()
-    customer = db.query(Customer).filter(Customer.id == invoice.customer_id).first()
+    bill_to_customer_id = getattr(invoice, "bill_to_customer_id", None) or invoice.customer_id
+    ship_to_customer_id = getattr(invoice, "ship_to_customer_id", None) or invoice.customer_id
+
+    bill_to_customer = (
+        db.query(Customer).filter(Customer.id == bill_to_customer_id).first()
+        if bill_to_customer_id
+        else None
+    )
+    ship_to_customer = (
+        db.query(Customer).filter(Customer.id == ship_to_customer_id).first()
+        if ship_to_customer_id
+        else None
+    )
+    customer = bill_to_customer or ship_to_customer
     sales_order = db.query(SalesOrder).filter(SalesOrder.id == invoice.sales_order_id).first() if invoice.sales_order_id else None
     items = (
         db.query(SalesInvoiceItem)
@@ -1330,6 +1342,13 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
     cs = currency_symbols.get(currency, currency)
 
     invoice_type_token = (getattr(invoice, "invoice_type", "") or "").strip().lower()
+    if not invoice_type_token:
+        derived_customer_id = ship_to_customer_id or bill_to_customer_id
+        invoice_type_token = (
+            determine_default_invoice_type(db, derived_customer_id)
+            if derived_customer_id
+            else "within_state"
+        )
     invoice_type_label = _invoice_type_label(invoice_type_token)
     export_invoice = invoice_type_token == "export_invoice"
     show_igst = invoice_type_token == "other_states"
@@ -1391,30 +1410,42 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
         )
 
     billing_parts = [
-        customer.billing_address_line1 if customer else None,
-        customer.billing_address_line2 if customer else None,
-        customer.billing_city if customer else None,
-        customer.billing_state if customer else None,
-        customer.billing_pincode if customer else None,
-        customer.billing_country if customer else None,
+        bill_to_customer.billing_address_line1 if bill_to_customer else None,
+        bill_to_customer.billing_address_line2 if bill_to_customer else None,
+        bill_to_customer.billing_city if bill_to_customer else None,
+        bill_to_customer.billing_state if bill_to_customer else None,
+        bill_to_customer.billing_pincode if bill_to_customer else None,
+        bill_to_customer.billing_country if bill_to_customer else None,
     ]
     shipping_parts = [
-        customer.shipping_address_line1 if customer else None,
-        customer.shipping_address_line2 if customer else None,
-        customer.shipping_city if customer else None,
-        customer.shipping_state if customer else None,
-        customer.shipping_pincode if customer else None,
-        customer.shipping_country if customer else None,
+        ship_to_customer.shipping_address_line1 if ship_to_customer else None,
+        ship_to_customer.shipping_address_line2 if ship_to_customer else None,
+        ship_to_customer.shipping_city if ship_to_customer else None,
+        ship_to_customer.shipping_state if ship_to_customer else None,
+        ship_to_customer.shipping_pincode if ship_to_customer else None,
+        ship_to_customer.shipping_country if ship_to_customer else None,
+    ]
+    ship_to_billing_parts = [
+        ship_to_customer.billing_address_line1 if ship_to_customer else None,
+        ship_to_customer.billing_address_line2 if ship_to_customer else None,
+        ship_to_customer.billing_city if ship_to_customer else None,
+        ship_to_customer.billing_state if ship_to_customer else None,
+        ship_to_customer.billing_pincode if ship_to_customer else None,
+        ship_to_customer.billing_country if ship_to_customer else None,
     ]
 
     ship_to_address = ", ".join([p.strip() for p in shipping_parts if p and p.strip()])
+    if not ship_to_address:
+        ship_to_address = ", ".join([p.strip() for p in ship_to_billing_parts if p and p.strip()])
     if not ship_to_address:
         ship_to_address = ", ".join([p.strip() for p in billing_parts if p and p.strip()])
 
     notes_text = _safe_text(invoice.notes if invoice.notes else (f"Sales Order: {sales_order.so_number}" if sales_order else "-"))
     invoice_country = None
-    if customer:
-        invoice_country = customer.shipping_country or customer.billing_country
+    if ship_to_customer:
+        invoice_country = ship_to_customer.shipping_country or ship_to_customer.billing_country
+    if not invoice_country and bill_to_customer:
+        invoice_country = bill_to_customer.shipping_country or bill_to_customer.billing_country
     amount_words_numbering = "indian"
     if export_invoice and invoice_country and not is_india_country(invoice_country):
         amount_words_numbering = "international"
@@ -1429,6 +1460,13 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
     rounded_total_rupees = round(exact_total_rupees)
     round_off_value = rounded_total_rupees - exact_total_rupees
     round_off_display = f"{round_off_value:+.2f}" if abs(round_off_value) >= 0.005 else "0.00"
+
+    place_of_supply_value = (
+        getattr(invoice, "supply_state", None)
+        or (ship_to_customer.shipping_state if ship_to_customer else None)
+        or (ship_to_customer.billing_state if ship_to_customer else None)
+        or (bill_to_customer.billing_state if bill_to_customer else None)
+    )
 
     context = {
         "doc_title": _invoice_doc_title(invoice_type_token),
@@ -1445,6 +1483,7 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
         "due_date": _format_date(invoice.due_date),
         "payment_terms": _get_payment_terms_label(customer),
         "order_currency": _format_order_currency_display(currency),
+        "raw_currency": _safe_text(currency),
         "company_logo": _resolve_logo_src(company),
         "company_ambassador_logo": _resolve_ambassador_logo_src(company),
         "company_name": _safe_text(company.name if company else None),
@@ -1459,14 +1498,21 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
         "company_bank_branch": _optional_text(company.bank_branch if company else None),
         "invoice_type_label": invoice_type_label,
         "import_export_code": _optional_text(getattr(invoice, "import_export_code", None)),
-        "party_gstin": _safe_text(customer.gstin if customer else None),
-        "bill_to_state": _safe_text(customer.billing_state if customer else None),
-        "bill_to_name": _safe_text(customer.company_name if customer else None),
+        "party_gstin": _safe_text(bill_to_customer.gstin if bill_to_customer else None),
+        "bill_to_state": _safe_text(bill_to_customer.billing_state if bill_to_customer else None),
+        "place_of_supply": _safe_text(place_of_supply_value),
+        "bill_to_name": _safe_text(bill_to_customer.company_name if bill_to_customer else None),
         "bill_to_address": _safe_text(", ".join([p.strip() for p in billing_parts if p and p.strip()])),
-        "bill_to_gstin": _safe_text(customer.gstin if customer else None),
-        "ship_to_name": _safe_text(customer.company_name if customer else None),
+        "bill_to_gstin": _safe_text(bill_to_customer.gstin if bill_to_customer else None),
+        "ship_to_name": _safe_text(
+            (ship_to_customer.company_name if ship_to_customer else None)
+            or (bill_to_customer.company_name if bill_to_customer else None)
+        ),
         "ship_to_address": _safe_text(ship_to_address),
-        "ship_to_gstin": _safe_text(customer.gstin if customer else None),
+        "ship_to_gstin": _safe_text(
+            (ship_to_customer.gstin if ship_to_customer else None)
+            or (bill_to_customer.gstin if bill_to_customer else None)
+        ),
         "rows": rows,
         "subtotal": _format_total_with_currency(int(invoice.subtotal or 0) / 100, cs),
         "cgst_label": "CGST",
@@ -1508,8 +1554,10 @@ def generate_quotation_pdf(db: Session, quotation_id: UUID) -> bytes:
 
     rows: list[dict[str, str]] = []
     quotation_invoice_type = determine_default_invoice_type(db, quotation.customer_id) if customer else "within_state"
+    export_invoice = quotation_invoice_type == "export_invoice"
     show_igst = quotation_invoice_type == "other_states"
     show_utgst = quotation_invoice_type == "union_territory"
+    invoice_type_label = _invoice_type_label(quotation_invoice_type)
     tax_col_1_label = "CGST"
     tax_col_2_label = "UTGST" if show_utgst else "SGST"
     tax_secondary_label = "UTGST" if show_utgst else "SGST"
@@ -1582,12 +1630,18 @@ def generate_quotation_pdf(db: Session, quotation_id: UUID) -> bytes:
     if not ship_to_address:
         ship_to_address = ", ".join([p.strip() for p in billing_parts if p and p.strip()])
 
+    place_of_supply_value = _safe_text(
+        (customer.shipping_state if customer else None)
+        or (customer.billing_state if customer else None)
+    )
+
     valid_until_text = _format_date(quotation.valid_until)
     notes_text = _safe_text(quotation.notes)
     watermark_text = "Approved" if (quotation.status or "").strip().lower() != "draft" else "Not Approved"
 
     context = {
         "doc_title": "QUOTATION",
+        "export_invoice": export_invoice,
         "show_igst": show_igst,
         "tax_col_1_label": tax_col_1_label,
         "tax_col_2_label": tax_col_2_label,
@@ -1600,6 +1654,8 @@ def generate_quotation_pdf(db: Session, quotation_id: UUID) -> bytes:
         "due_date": valid_until_text,
         "payment_terms": _get_payment_terms_label(customer),
         "order_currency": _format_order_currency_display(currency),
+        "raw_currency": _safe_text(currency),
+        "invoice_type_label": invoice_type_label,
         "company_logo": _resolve_logo_src(company),
         "company_ambassador_logo": _resolve_ambassador_logo_src(company),
         "company_name": _safe_text(company.name if company else None),
@@ -1613,6 +1669,7 @@ def generate_quotation_pdf(db: Session, quotation_id: UUID) -> bytes:
         "company_bank_branch": _optional_text(company.bank_branch if company else None),
         "party_gstin": _safe_text(customer.gstin if customer else None),
         "bill_to_state": _safe_text(customer.billing_state if customer else None),
+        "place_of_supply": place_of_supply_value,
         "bill_to_name": _safe_text(customer.company_name if customer else None),
         "bill_to_address": _safe_text(", ".join([p.strip() for p in billing_parts if p and p.strip()])),
         "bill_to_gstin": _safe_text(customer.gstin if customer else None),

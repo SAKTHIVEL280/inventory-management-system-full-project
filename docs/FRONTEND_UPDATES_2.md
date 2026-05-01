@@ -1,5 +1,8 @@
 # Frontend Updates Log
 
+## FE-115: Quotation MRP rupee display + Supplier state-code autofill
+**Update**: Fixed Quotation item MRP input to display rupees with decimals while storing paise internally (prevents 100× display like 35000 instead of 350), and aligned Supplier Master state/state-code autofill to always keep `state_code` in sync with selected `state` (matching Customer Master behavior).
+
 ## FE-114: Action Logs viewer with filters and pagination
 **Update**: Added GST-tab Action Logs card with module/action/user/reference filters, paginated table view, and typed API integration.
 

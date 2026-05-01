@@ -50,9 +50,9 @@ psql -h localhost -U ims_user -d ims_db -f database/CLEAR_ALL_DATA.sql
 
 What it does:
 
-- Dynamically discovers all tables in schema `public` via `pg_tables`
+- Dynamically discovers base tables in schema `public` via `pg_class/pg_namespace` (skips extension-owned tables)
 - Executes one `TRUNCATE TABLE ... RESTART IDENTITY CASCADE`
-- Removes all rows from all tables
+- Removes all rows from all application tables
 - Resets identity/serial-backed counters
 - Preserves table definitions, columns, constraints, indexes, and keys
 

@@ -2,6 +2,9 @@
 
 ---
 
+## BE-116: Billing PDFs - place of supply, invoice type, ship-to, footer fix
+**Update**: Fixed Sales Invoice/Quotation/Purchase Order PDF generation to (1) derive Place of Supply from shipping/supply state (instead of billing), (2) display the correct invoice type label in the PDF (including quotation context), (3) use `bill_to_customer_id` + `ship_to_customer_id` correctly for invoice address blocks, and (4) remove the duplicate company-name footer line (kept only one).
+
 ## BE-115: Fix GSTR PDF table overflow
 **Update**: Updated GSTR-1/GSTR-2 PDF exports to use fixed column widths (based on available landscape A4 width), wrap long text fields, and reduce cell padding so the report table no longer overflows/cuts off in deployed PDFs.
 

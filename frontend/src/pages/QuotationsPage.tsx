@@ -106,6 +106,12 @@ const QuotationsPage = () => {
     setItems([...items, { product_id: '', quantity: 1, unit_price: 0, discount_percent: 0, gst_rate: 18 }]);
   };
 
+  const paiseToRupees = (paise: number) => (Number.isFinite(paise) ? paise / 100 : 0);
+  const rupeesToPaise = (value: string | number) => {
+    const num = typeof value === 'number' ? value : parseFloat(value);
+    return Number.isFinite(num) ? Math.round(num * 100) : 0;
+  };
+
   const updateItem = (index: number, field: keyof SalesLineItem, value: string | number) => {
     const updated = [...items];
     (updated[index] as unknown as Record<string, unknown>)[field] = value;
@@ -519,7 +525,7 @@ const QuotationsPage = () => {
                             <td className="px-3 py-2 text-xs text-neutral-500">{prod?.description || prod?.name || '-'}</td>
                             <td className="px-3 py-2"><input type="number" min="0.01" step="0.01" className="w-full rounded border border-neutral-200 px-2 py-1.5 text-right text-sm" value={item.quantity} onChange={e => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} /></td>
                             {/* SAL-003: MRP column */}
-                            <td className="px-3 py-2"><input type="number" min="0" className="w-full rounded border border-neutral-200 px-2 py-1.5 text-right text-sm" value={item.unit_price || ''} onChange={e => updateItem(idx, 'unit_price', parseInt(e.target.value) || 0)} /></td>
+                            <td className="px-3 py-2"><input type="number" min="0" step="0.01" className="w-full rounded border border-neutral-200 px-2 py-1.5 text-right text-sm" value={item.unit_price ? paiseToRupees(item.unit_price) : ''} onChange={e => updateItem(idx, 'unit_price', rupeesToPaise(e.target.value))} /></td>
                             <td className="px-3 py-2"><input type="number" min="0" max="100" className="w-full rounded border border-neutral-200 px-2 py-1.5 text-right text-sm" value={emptyWhenZero(item.discount_percent)} onChange={e => updateItem(idx, 'discount_percent', parseFloat(e.target.value) || 0)} /></td>
                             <td className="px-3 py-2">
                               <select className="w-full rounded border border-neutral-200 px-2 py-1.5 text-sm" value={item.gst_rate} onChange={e => updateItem(idx, 'gst_rate', parseInt(e.target.value))}>
