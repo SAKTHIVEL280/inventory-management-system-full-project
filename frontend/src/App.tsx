@@ -26,6 +26,7 @@ import InventoryCountDifferencePage from './pages/InventoryCountDifferencePage';
 import ReceivablesPage from './pages/ReceivablesPage';
 import PayablesPage from './pages/PayablesPage';
 import ReportsPage from './pages/ReportsPage';
+import ActionLogsPage from './pages/ActionLogsPage';
 import { PERMISSION_SCOPES } from './types';
 import { Toaster } from 'sonner';
 import { authApi } from './api/auth';
@@ -284,6 +285,16 @@ function App() {
           element={
             <ProtectedRoute requiredPermission={PERMISSION_SCOPES.REPORTS_READ}>
               <ReportsPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ── Action Logs ─────────────────────────────────── */}
+        <Route
+          path="/reports/action-logs"
+          element={
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.REPORTS_READ}>
+              <ActionLogsPage />
             </ProtectedRoute>
           }
         />

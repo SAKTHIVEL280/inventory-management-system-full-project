@@ -1,5 +1,23 @@
 # Frontend Updates Log
 
+## FE-122: Action Logs - Reference field handling with empty string trim and fallback
+**Update**: Enhanced ActionLogsPage.tsx Reference column display to properly handle empty strings by trimming whitespace before applying fallbacks: `(item.reference && item.reference.trim()) || (item.record_reference && item.record_reference.trim()) || '-'`. Now correctly displays invoice numbers, PO numbers, GRN numbers, and payment references from backend, with "-" shown when no reference is available.
+
+## FE-121: Reports JSX parse fix + frontend dependency vulnerability remediation
+**Update**: Fixed malformed JSX in GSTR-1 warning list rendering that caused Vite parser crash in Reports page, corrected required AppLayout title usage in Action Logs page, and upgraded vulnerable frontend dependencies (axios, postcss, vite, plugin-react). Frontend build passes and npm audit now reports zero vulnerabilities.
+
+## FE-120: Calendar-aligned report date filters (Monthly/Quarterly/Annually)
+**Update**: Refined Reports page filter logic to generate exact calendar windows from selected frequency and anchor date: Monthly (full month), Quarterly (full quarter), and Annually (full year). Date changes now auto-align to boundary ranges and are validated against frequency-period rules before API calls for consistent results.
+
+## FE-119: Action Logs date-range loading fix (remove frequency mismatch)
+**Update**: Removed frequency selection from Action Logs page (API is date-range based), aligned module filter options to backend-supported modules only, and added helper copy to avoid misleading Quarterly/Monthly behavior that caused empty/no-load confusion for short ranges.
+
+## FE-118: GST tables GSTIN wrap
+**Update**: Allowed GSTIN values to wrap in GSTR-1, GSTR-2, and GST Reconciliation tables to prevent truncation in the UI.
+
+## FE-117: GST report drill-down for product details
+**Update**: Kept GST report tables at one row per invoice/GRN while adding a `View Details` toggle to reveal product-level items (Item Name & Description, HSN, Quantity, and tax breakdown) for GSTR-1 and GSTR-2. Updated report typings to accept detail items from the backend.
+
 ## FE-116: Customer/Supplier Master autofill suppression (Billing + State/State Code)
 **Update**: Stopped unintended autofill in Customer and Supplier Master new-entry forms. Customer Master no longer preloads Billing Address fields from Company Profile on “+ New Customer”, and both Customer/Supplier Masters now avoid re-populating State/State Code after the user clears inputs (state-code sync is guarded once the code field is manually edited). Supplier Master form also disables browser autofill for address/state fields.
 

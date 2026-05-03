@@ -1,6 +1,7 @@
 """Reports router."""
 from collections import defaultdict
 from datetime import date, datetime, timedelta
+from uuid import UUID
 from io import BytesIO
 import os
 import re
@@ -22,7 +23,7 @@ from app.models.customer import Customer
 from app.models.supplier import Supplier
 from app.models.company import Company
 from app.models.payment import Payment, PaymentAllocation
-from app.services.audit_service import ensure_audit_logs_storage, log_audit_event
+from app.services.audit_service import ensure_audit_logs_storage, log_audit_event, _extract_document_reference
 from app.services.gst_service import (
     INVOICE_TYPE_EXPORT,
     INVOICE_TYPE_OTHER_STATES,
@@ -115,22 +116,35 @@ def _normalize_frequency(frequency: str) -> tuple[str, str]:
     return token, GST_REPORT_FREQUENCY_LABELS[token]
 
 
-def _validate_frequency_date_window(from_date: date, to_date: date, frequency: str) -> None:
+def _frequency_date_window(anchor_date: date, frequency: str) -> tuple[date, date]:
+    if frequency == "monthly":
+        start = anchor_date.replace(day=1)
+        if start.month == 12:
+            end = date(start.year + 1, 1, 1) - timedelta(days=1)
+        else:
+            end = date(start.year, start.month + 1, 1) - timedelta(days=1)
+        return start, end
+
+    if frequency == "quarterly":
+        quarter_index = (anchor_date.month - 1) // 3
+        start_month = quarter_index * 3 + 1
+        start = date(anchor_date.year, start_month, 1)
+        if start_month == 10:
+            end = date(anchor_date.year + 1, 1, 1) - timedelta(days=1)
+        else:
+            end = date(anchor_date.year, start_month + 3, 1) - timedelta(days=1)
+        return start, end
+
+    start = date(anchor_date.year, 1, 1)
+    end = date(anchor_date.year, 12, 31)
+    return start, end
+
+
+def _validate_frequency_date_window(from_date: date, to_date: date, frequency: str) -> tuple[date, date]:
     _ensure_valid_date_range(from_date, to_date)
-    today = date.today()
-    if to_date > today:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "message": "End date cannot be in the future",
-                "code": "VAL-001",
-                "frequency": frequency,
-                "from_date": from_date.isoformat(),
-                "to_date": to_date.isoformat(),
-                "today": today.isoformat(),
-            },
-        )
-    total_days = (to_date - from_date).days + 1
+
+    normalized_from_date, normalized_to_date = _frequency_date_window(from_date, frequency)
+    total_days = (normalized_to_date - normalized_from_date).days + 1
     if total_days > 366:
         raise HTTPException(
             status_code=422,
@@ -138,8 +152,8 @@ def _validate_frequency_date_window(from_date: date, to_date: date, frequency: s
                 "message": "Maximum report period is 12 months",
                 "code": "VAL-001",
                 "frequency": frequency,
-                "from_date": from_date.isoformat(),
-                "to_date": to_date.isoformat(),
+                "from_date": normalized_from_date.isoformat(),
+                "to_date": normalized_to_date.isoformat(),
                 "selected_days": total_days,
                 "allowed_days": 366,
             },
@@ -157,13 +171,15 @@ def _validate_frequency_date_window(from_date: date, to_date: date, frequency: s
                 "message": f"Selected date range exceeds {GST_REPORT_FREQUENCY_LABELS[frequency]} limits",
                 "code": "VAL-001",
                 "frequency": frequency,
-                "from_date": from_date.isoformat(),
-                "to_date": to_date.isoformat(),
+                "from_date": normalized_from_date.isoformat(),
+                "to_date": normalized_to_date.isoformat(),
                 "selected_days": total_days,
                 "allowed_days": max_days,
                 "hint": f"Choose a shorter date range or switch frequency from {GST_REPORT_FREQUENCY_LABELS[frequency]}",
             },
         )
+
+    return normalized_from_date, normalized_to_date
 
 
 def _round_2(value: float | int) -> float:
@@ -223,6 +239,26 @@ def _resolve_report_fx_rate(
 
 def _format_ddmmyyyy(value: date | None) -> str | None:
     return value.strftime("%d.%m.%Y") if value else None
+
+
+def _round_quantity(value: float | int | None) -> float:
+    return round(float(value or 0.0), 4)
+
+
+def _compose_item_description(
+    product_name: str | None,
+    item_description: str | None,
+    product_description: str | None = None,
+) -> str:
+    name = (product_name or "").strip()
+    item_desc = (item_description or "").strip()
+    product_desc = (product_description or "").strip()
+    detail = item_desc or product_desc
+    if name and detail:
+        if detail.lower() in name.lower():
+            return name
+        return f"{name} - {detail}"
+    return name or detail
 
 
 def _normalize_invoice_type(invoice_type: str | None, fallback_is_igst: bool) -> str:
@@ -302,6 +338,101 @@ def _ensure_action_log_view_user(current_user: User) -> None:
             status_code=403,
             detail="Only Admin/Auditor users can view action logs",
         )
+
+
+FINANCIAL_ACTION_LOG_MODULES = (
+    "invoices",
+    "purchase-orders",
+    "grn",
+    "payments",
+    "stock",
+    "sales-returns",
+    "purchase-returns",
+)
+FINANCIAL_ACTION_LOG_MODULES_SQL = "', '".join(FINANCIAL_ACTION_LOG_MODULES)
+
+
+def _parse_uuid(value: str | None) -> UUID | None:
+    if not value:
+        return None
+    try:
+        return UUID(str(value))
+    except (ValueError, TypeError):
+        return None
+
+
+def _format_inr_amount(value: int | float | None) -> str | None:
+    if value is None:
+        return None
+    try:
+        amount = float(value) / 100.0
+    except (TypeError, ValueError):
+        return None
+    return f"INR {amount:,.2f}"
+
+
+def _resolve_action_log_amount(
+    db: Session,
+    module_name: str,
+    record_reference: str | None,
+) -> int | None:
+    token = (module_name or "").strip().lower()
+    reference = (record_reference or "").strip()
+    if not reference:
+        return None
+
+    record_id = _parse_uuid(reference)
+
+    if token == "invoices":
+        query = db.query(SalesInvoice).filter(SalesInvoice.is_deleted == False)
+        invoice = (
+            query.filter(SalesInvoice.id == record_id).first()
+            if record_id else
+            query.filter(SalesInvoice.invoice_number == reference).first()
+        )
+        return invoice.total_amount if invoice else None
+    if token == "purchase-orders":
+        query = db.query(PurchaseOrder).filter(PurchaseOrder.is_deleted == False)
+        po = (
+            query.filter(PurchaseOrder.id == record_id).first()
+            if record_id else
+            query.filter(PurchaseOrder.po_number == reference).first()
+        )
+        return po.total_amount if po else None
+    if token == "grn":
+        query = db.query(GoodsReceiptNote).filter(GoodsReceiptNote.is_deleted == False)
+        grn = (
+            query.filter(GoodsReceiptNote.id == record_id).first()
+            if record_id else
+            query.filter(GoodsReceiptNote.grn_number == reference).first()
+        )
+        return grn.total_amount if grn else None
+    if token == "payments":
+        query = db.query(Payment).filter(Payment.is_deleted == False)
+        payment = (
+            query.filter(Payment.id == record_id).first()
+            if record_id else
+            query.filter(Payment.payment_number == reference).first()
+        )
+        return payment.amount if payment else None
+    if token == "sales-returns":
+        query = db.query(SalesReturn).filter(SalesReturn.is_deleted == False)
+        sales_return = (
+            query.filter(SalesReturn.id == record_id).first()
+            if record_id else
+            query.filter(SalesReturn.return_number == reference).first()
+        )
+        return sales_return.total_amount if sales_return else None
+    if token == "purchase-returns":
+        query = db.query(PurchaseReturn).filter(PurchaseReturn.is_deleted == False)
+        purchase_return = (
+            query.filter(PurchaseReturn.id == record_id).first()
+            if record_id else
+            query.filter(PurchaseReturn.return_number == reference).first()
+        )
+        return purchase_return.total_amount if purchase_return else None
+
+    return None
 
 
 def _ensure_gst_report_audit_table(db: Session) -> None:
@@ -1042,7 +1173,7 @@ async def gstr1_report(
     _ensure_finance_tax_user(current_user)
 
     normalized_frequency, frequency_label = _normalize_frequency(frequency)
-    _validate_frequency_date_window(from_date, to_date, normalized_frequency)
+    from_date, to_date = _validate_frequency_date_window(from_date, to_date, normalized_frequency)
 
     invoices = (
         db.query(SalesInvoice)
@@ -1058,6 +1189,46 @@ async def gstr1_report(
 
     invoice_ids = [row.id for row in invoices]
     invoice_id_map = {str(row.id): row for row in invoices}
+
+    invoice_item_map: dict[str, list[dict]] = defaultdict(list)
+    if invoice_ids:
+        item_rows = (
+            db.query(
+                SalesInvoiceItem.invoice_id,
+                SalesInvoiceItem.description.label("item_description"),
+                SalesInvoiceItem.quantity,
+                SalesInvoiceItem.taxable_amount,
+                SalesInvoiceItem.cgst_amount,
+                SalesInvoiceItem.sgst_amount,
+                SalesInvoiceItem.igst_amount,
+                SalesInvoiceItem.gst_rate,
+                Product.name.label("product_name"),
+                Product.description.label("product_description"),
+                Product.hsn_code.label("hsn_code"),
+            )
+            .outerjoin(Product, SalesInvoiceItem.product_id == Product.id)
+            .filter(
+                SalesInvoiceItem.invoice_id.in_(invoice_ids),
+                SalesInvoiceItem.is_deleted == False,
+            )
+            .all()
+        )
+        for item in item_rows:
+            invoice_key = str(item.invoice_id)
+            invoice_item_map[invoice_key].append(
+                {
+                    "item_description": item.item_description,
+                    "product_name": item.product_name,
+                    "product_description": item.product_description,
+                    "hsn_code": item.hsn_code,
+                    "quantity": _round_quantity(item.quantity),
+                    "taxable_amount": _paise_to_amount(item.taxable_amount),
+                    "cgst_amount": _paise_to_amount(item.cgst_amount),
+                    "sgst_amount": _paise_to_amount(item.sgst_amount),
+                    "igst_amount": _paise_to_amount(item.igst_amount),
+                    "gst_rate": _round_2(float(item.gst_rate or 0.0)),
+                }
+            )
 
     invoice_totals_map: dict[str, dict[str, float]] = {}
     invoice_rate_map: dict[str, set[float]] = defaultdict(set)
@@ -1159,6 +1330,7 @@ async def gstr1_report(
         )
 
     report_rows: list[dict] = []
+    detail_rows: list[dict] = []
     problematic_records: list[dict] = []
     subtotal = {
         "invoice_amount": 0.0,
@@ -1169,8 +1341,18 @@ async def gstr1_report(
         "export_amount": 0.0,
         "total_tax_amount": 0.0,
     }
+    detail_subtotal = {
+        "invoice_amount": 0.0,
+        "cgst_amount": 0.0,
+        "sgst_amount": 0.0,
+        "igst_amount": 0.0,
+        "ugst_amount": 0.0,
+        "export_amount": 0.0,
+        "total_tax_amount": 0.0,
+    }
 
     serial_no = 1
+    detail_serial_no = 1
     for invoice in invoices:
         row_error_start_index = len(validation_errors)
         invoice_key = str(invoice.id)
@@ -1355,6 +1537,64 @@ async def gstr1_report(
                 "total_tax_amount": total_tax_amount,
             }
         )
+
+        for item in invoice_item_map.get(invoice_key, []):
+            item_name = _compose_item_description(
+                item.get("product_name"),
+                item.get("item_description"),
+                item.get("product_description"),
+            )
+            line_amount = _convert_with_rate(item.get("taxable_amount"), float(conversion_rate or 1.0))
+            line_cgst = _convert_with_rate(item.get("cgst_amount"), float(conversion_rate or 1.0))
+            line_sgst = _convert_with_rate(item.get("sgst_amount"), float(conversion_rate or 1.0))
+            line_igst = _convert_with_rate(item.get("igst_amount"), float(conversion_rate or 1.0))
+            line_ugst = 0.0
+            line_export = 0.0
+
+            if invoice_type == INVOICE_TYPE_UNION_TERRITORY:
+                line_ugst = line_sgst
+                line_sgst = 0.0
+            elif invoice_type == INVOICE_TYPE_EXPORT:
+                line_export = line_amount
+                line_cgst = 0.0
+                line_sgst = 0.0
+                line_igst = 0.0
+                line_ugst = 0.0
+
+            line_total_tax = _round_2(line_cgst + line_sgst + line_igst + line_ugst + line_export)
+
+            detail_rows.append(
+                {
+                    "s_no": detail_serial_no,
+                    "sales_invoice_date": _format_ddmmyyyy(invoice.invoice_date),
+                    "sales_invoice_no": invoice_number,
+                    "bill_to_party_name": bill_to_name,
+                    "bill_to_party_gstin_no": display_bill_to_gstin,
+                    "place_of_supply": place_of_supply,
+                    "ship_to_party_name": ship_to_name,
+                    "item_name_description": item_name,
+                    "hsn": (item.get("hsn_code") or ""),
+                    "quantity": item.get("quantity", 0.0),
+                    "invoice_amount": line_amount,
+                    "currency": GST_REPORT_BASE_CURRENCY,
+                    "tax_percent": item.get("gst_rate"),
+                    "cgst_amount": line_cgst,
+                    "sgst_amount": line_sgst,
+                    "igst_amount": line_igst,
+                    "ugst_amount": line_ugst,
+                    "export_amount": line_export,
+                    "total_tax_amount": line_total_tax,
+                }
+            )
+            detail_serial_no += 1
+
+            detail_subtotal["invoice_amount"] = _round_2(detail_subtotal["invoice_amount"] + line_amount)
+            detail_subtotal["cgst_amount"] = _round_2(detail_subtotal["cgst_amount"] + line_cgst)
+            detail_subtotal["sgst_amount"] = _round_2(detail_subtotal["sgst_amount"] + line_sgst)
+            detail_subtotal["igst_amount"] = _round_2(detail_subtotal["igst_amount"] + line_igst)
+            detail_subtotal["ugst_amount"] = _round_2(detail_subtotal["ugst_amount"] + line_ugst)
+            detail_subtotal["export_amount"] = _round_2(detail_subtotal["export_amount"] + line_export)
+            detail_subtotal["total_tax_amount"] = _round_2(detail_subtotal["total_tax_amount"] + line_total_tax)
         serial_no += 1
 
         subtotal["invoice_amount"] = _round_2(subtotal["invoice_amount"] + taxable_amount)
@@ -1366,36 +1606,6 @@ async def gstr1_report(
         subtotal["total_tax_amount"] = _round_2(subtotal["total_tax_amount"] + total_tax_amount)
 
     if validation_errors and strict_validation:
-        _log_gst_report_event(
-            db,
-            user_id=current_user.id,
-            action="GENERATE_GSTR1",
-            report_type="GSTR-1",
-            start_date=from_date,
-            end_date=to_date,
-            frequency=normalized_frequency,
-            status="failed",
-            details={
-                "error_count": len(validation_errors),
-                "strict_validation": True,
-            },
-        )
-        log_audit_event(
-            db,
-            action="REPORT:GSTR1_GENERATION_FAILED",
-            resource_type="reports",
-            status="failure",
-            user_id=current_user.id,
-            details={
-                "report": "gstr1",
-                "from_date": from_date.isoformat(),
-                "to_date": to_date.isoformat(),
-                "frequency": normalized_frequency,
-                "error_count": len(validation_errors),
-                "strict_validation": True,
-            },
-        )
-        db.commit()
         _raise_gstr1_validation_error(validation_errors)
 
     summary = {
@@ -1404,41 +1614,6 @@ async def gstr1_report(
         "total_sgst": _amount_to_paise(sum(row.get("sgst_amount", 0.0) for row in report_rows)),
         "total_igst": _amount_to_paise(sum(row.get("igst_amount", 0.0) for row in report_rows)),
     }
-
-    _log_gst_report_event(
-        db,
-        user_id=current_user.id,
-        action="GENERATE_GSTR1",
-        report_type="GSTR-1",
-        start_date=from_date,
-        end_date=to_date,
-        frequency=normalized_frequency,
-        status="success",
-        details={
-            "row_count": len(report_rows),
-            "validation_error_count": len(validation_errors),
-            "strict_validation": strict_validation,
-        },
-    )
-
-    log_audit_event(
-        db,
-        action="REPORT:GSTR1_GENERATED_WITH_WARNINGS" if validation_errors else "REPORT:GSTR1_GENERATED",
-        resource_type="reports",
-        status="success" if not validation_errors else "warning",
-        user_id=current_user.id,
-        details={
-            "report": "gstr1",
-            "from_date": from_date.isoformat(),
-            "to_date": to_date.isoformat(),
-            "frequency": normalized_frequency,
-            "row_count": len(report_rows),
-            "generated_at": datetime.utcnow().isoformat(),
-            "validation_error_count": len(validation_errors),
-            "strict_validation": strict_validation,
-        },
-    )
-    db.commit()
 
     return {
         "report_title": "GSTR-1 (Sales / Output Tax Report)",
@@ -1451,7 +1626,10 @@ async def gstr1_report(
         "summary": summary,
         "count": len(report_rows),
         "items": report_rows,
+        "detail_count": len(detail_rows),
+        "detail_items": detail_rows,
         "subtotal": subtotal,
+        "detail_subtotal": detail_subtotal,
         "strict_validation": strict_validation,
         "validation_error_count": len(validation_errors),
         "validation_errors": validation_errors[:100],
@@ -1482,12 +1660,18 @@ async def gstr1_export(
         current_user=current_user,
     )
 
-    report_items = payload.get("items", [])
-    subtotal = payload.get("subtotal", {})
+    report_items = payload.get("detail_items") or payload.get("items", [])
+    subtotal = payload.get("detail_subtotal") or payload.get("subtotal", {})
     filename_base = f"gstr1_{from_date.isoformat()}_{to_date.isoformat()}"
 
     if format_token == "xlsx":
         from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font
+        from openpyxl.utils import get_column_letter
+        from openpyxl.styles import Alignment, Font
+        from openpyxl.utils import get_column_letter
+        from openpyxl.styles import Alignment, Font
+        from openpyxl.utils import get_column_letter
 
         wb = Workbook()
         ws = wb.active
@@ -1507,6 +1691,9 @@ async def gstr1_export(
             "Bill to Party GSTIN No",
             "Place of Supply",
             "Name of the Ship to Party",
+            "Item Name & Description",
+            "HSN",
+            "Quantity",
             "Invoice Amount",
             "Currency",
             "Tax %",
@@ -1519,6 +1706,105 @@ async def gstr1_export(
         ]
         ws.append(headers)
 
+        header_row = ws.max_row
+        ws.row_dimensions[header_row].height = 30
+        header_alignment = Alignment(wrapText=True, horizontal="center", vertical="center")
+        header_font = Font(bold=True)
+        for col_idx in range(1, len(headers) + 1):
+            cell = ws.cell(row=header_row, column=col_idx)
+            cell.alignment = header_alignment
+            cell.font = header_font
+
+        column_widths = [
+            6,   # S.No
+            18,  # Tax Type
+            14,  # Date
+            22,  # Partner
+            20,  # GSTIN
+            20,  # Business Place
+            20,  # Place of Supply
+            30,  # Item Name & Description
+            10,  # HSN
+            10,  # Quantity
+            16,  # GRN / Invoice Amount
+            8,   # Currency
+            8,   # Tax %
+            12,  # CGST
+            12,  # SGST
+            12,  # IGST
+            12,  # UGST
+            12,  # Import / Export
+            14,  # Total Tax
+        ]
+        for idx, width in enumerate(column_widths, start=1):
+            ws.column_dimensions[get_column_letter(idx)].width = width
+
+        header_row = ws.max_row
+        ws.row_dimensions[header_row].height = 30
+        header_alignment = Alignment(wrapText=True, horizontal="center", vertical="center")
+        header_font = Font(bold=True)
+        for col_idx in range(1, len(headers) + 1):
+            cell = ws.cell(row=header_row, column=col_idx)
+            cell.alignment = header_alignment
+            cell.font = header_font
+
+        column_widths = [
+            6,   # S.No
+            16,  # GRN Date
+            18,  # GRN No
+            22,  # Supplier
+            20,  # Supplier GSTIN
+            20,  # Business Place
+            20,  # Place of Supply
+            30,  # Item Name & Description
+            10,  # HSN
+            10,  # Quantity
+            14,  # GRN Amount
+            8,   # Currency
+            8,   # Tax %
+            12,  # CGST
+            12,  # SGST
+            12,  # IGST
+            12,  # UGST
+            10,  # Import
+            14,  # Total Tax
+        ]
+        for idx, width in enumerate(column_widths, start=1):
+            ws.column_dimensions[get_column_letter(idx)].width = width
+
+        header_row = ws.max_row
+        ws.row_dimensions[header_row].height = 30
+        header_alignment = Alignment(wrapText=True, horizontal="center", vertical="center")
+        header_font = Font(bold=True)
+        for col_idx in range(1, len(headers) + 1):
+            cell = ws.cell(row=header_row, column=col_idx)
+            cell.alignment = header_alignment
+            cell.font = header_font
+
+        column_widths = [
+            6,   # S.No
+            16,  # Sales Invoice Date
+            18,  # Sales Invoice No
+            22,  # Bill To
+            20,  # Bill GSTIN
+            22,  # Place of Supply
+            22,  # Ship To
+            30,  # Item Name & Description
+            10,  # HSN
+            10,  # Quantity
+            14,  # Invoice Amount
+            8,   # Currency
+            8,   # Tax %
+            12,  # CGST
+            12,  # SGST
+            12,  # IGST
+            12,  # UGST
+            10,  # Export
+            14,  # Total Tax
+        ]
+        for idx, width in enumerate(column_widths, start=1):
+            ws.column_dimensions[get_column_letter(idx)].width = width
+
         for row in report_items:
             ws.append([
                 row.get("s_no"),
@@ -1528,6 +1814,9 @@ async def gstr1_export(
                 row.get("bill_to_party_gstin_no"),
                 row.get("place_of_supply"),
                 row.get("ship_to_party_name"),
+                row.get("item_name_description"),
+                row.get("hsn"),
+                row.get("quantity"),
                 row.get("invoice_amount"),
                 row.get("currency"),
                 row.get("tax_percent"),
@@ -1546,7 +1835,10 @@ async def gstr1_export(
             "",
             "",
             "",
+            "",
             "Sub Total",
+            "",
+            "",
             subtotal.get("invoice_amount", 0.0),
             "",
             "",
@@ -1607,8 +1899,8 @@ async def gstr1_export(
     table_cell_style = ParagraphStyle(
         "gstr1_table_cell",
         parent=styles["Normal"],
-        fontSize=6,
-        leading=7,
+        fontSize=5.5,
+        leading=6.5,
         spaceBefore=0,
         spaceAfter=0,
         wordWrap="CJK",
@@ -1628,8 +1920,25 @@ async def gstr1_export(
     ]
 
     table_data = [[
-        "S.No", "Sales Invoice Date", "Sales Invoice No", "Bill To", "Bill GSTIN", "Place", "Ship To",
-        "Invoice Amount", "Currency", "Tax %", "CGST", "SGST", "IGST", "UGST", "Export", "Total Tax",
+        to_table_paragraph("S.No"),
+        to_table_paragraph("Sales Invoice Date"),
+        to_table_paragraph("Sales Invoice No"),
+        to_table_paragraph("Bill To"),
+        to_table_paragraph("Bill GSTIN"),
+        to_table_paragraph("Place of Supply"),
+        to_table_paragraph("Ship To"),
+        to_table_paragraph("Item Name & Description"),
+        to_table_paragraph("HSN"),
+        to_table_paragraph("Qty"),
+        to_table_paragraph("Invoice Amount"),
+        to_table_paragraph("Currency"),
+        to_table_paragraph("Tax %"),
+        to_table_paragraph("CGST"),
+        to_table_paragraph("SGST"),
+        to_table_paragraph("IGST"),
+        to_table_paragraph("UGST"),
+        to_table_paragraph("Export"),
+        to_table_paragraph("Total Tax"),
     ]]
 
     for row in report_items:
@@ -1638,9 +1947,12 @@ async def gstr1_export(
             row.get("sales_invoice_date", ""),
             row.get("sales_invoice_no", ""),
             to_table_paragraph(row.get("bill_to_party_name", "")),
-            row.get("bill_to_party_gstin_no", ""),
+            to_table_paragraph(row.get("bill_to_party_gstin_no", "")),
             to_table_paragraph(row.get("place_of_supply", "")),
             to_table_paragraph(row.get("ship_to_party_name", "")),
+            to_table_paragraph(row.get("item_name_description", "")),
+            row.get("hsn", ""),
+            f"{float(row.get('quantity', 0.0)):.2f}",
             f"{float(row.get('invoice_amount', 0.0)):.2f}",
             row.get("currency", ""),
             _format_tax_percent(row.get("tax_percent")),
@@ -1653,7 +1965,10 @@ async def gstr1_export(
         ])
 
     table_data.append([
-        "", "", "", "", "", "", "Sub Total",
+        "", "", "", "", "", "", "",
+        "Sub Total",
+        "",
+        "",
         f"{float(subtotal.get('invoice_amount', 0.0)):.2f}",
         "",
         "",
@@ -1666,21 +1981,24 @@ async def gstr1_export(
     ])
 
     col_fractions = [
-        0.03,  # S.No
-        0.06,  # Sales Invoice Date
-        0.07,  # Sales Invoice No
-        0.12,  # Bill To
-        0.08,  # Bill GSTIN
-        0.07,  # Place
-        0.12,  # Ship To
-        0.07,  # Invoice Amount
-        0.04,  # Currency
-        0.04,  # Tax %
-        0.05,  # CGST
-        0.05,  # SGST
-        0.05,  # IGST
-        0.05,  # UGST
-        0.05,  # Export
+        0.02,  # S.No
+        0.05,  # Sales Invoice Date
+        0.065,  # Sales Invoice No
+        0.085,  # Bill To
+        0.075,  # Bill GSTIN
+        0.075,  # Place
+        0.085,  # Ship To
+        0.09,  # Item Name
+        0.035,  # HSN
+        0.035,  # Qty
+        0.055,  # Invoice Amount
+        0.035,  # Currency
+        0.035,  # Tax %
+        0.042,  # CGST
+        0.042,  # SGST
+        0.042,  # IGST
+        0.042,  # UGST
+        0.042,  # Export
         0.05,  # Total Tax
     ]
     col_widths = [doc.width * f for f in col_fractions]
@@ -1689,11 +2007,12 @@ async def gstr1_export(
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E5E7EB")),
         ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#9CA3AF")),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 6),
-        ("LEFTPADDING", (0, 0), (-1, -1), 2),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
-        ("TOPPADDING", (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("FONTSIZE", (0, 0), (-1, -1), 5.5),
+        ("VALIGN", (0, 0), (-1, 0), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 1.5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 1.5),
+        ("TOPPADDING", (0, 0), (-1, -1), 1.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
     story.append(table)
@@ -1760,21 +2079,6 @@ async def gstr3b_report(
     output_tax = sum(row.total_gst for row in sales_rows)
     input_tax = sum(row.total_gst for row in purchase_rows)
 
-    _log_gst_report_event(
-        db,
-        user_id=current_user.id,
-        action="GENERATE_GSTR3B",
-        report_type="GSTR-3B",
-        start_date=from_date,
-        end_date=to_date,
-        frequency="monthly",
-        status="success",
-        details={
-            "output_tax": int(output_tax),
-            "itc": int(input_tax),
-        },
-    )
-
     return {
         "output_tax": int(output_tax),
         "itc": int(input_tax),
@@ -1794,7 +2098,7 @@ async def gstr2_report(
     _ensure_finance_tax_user(current_user)
 
     normalized_frequency, frequency_label = _normalize_frequency(frequency)
-    _validate_frequency_date_window(from_date, to_date, normalized_frequency)
+    from_date, to_date = _validate_frequency_date_window(from_date, to_date, normalized_frequency)
 
     grns = (
         db.query(GoodsReceiptNote)
@@ -1810,6 +2114,44 @@ async def gstr2_report(
 
     grn_ids = [row.id for row in grns]
     grn_id_map = {str(row.id): row for row in grns}
+
+    grn_item_map: dict[str, list[dict]] = defaultdict(list)
+    if grn_ids:
+        item_rows = (
+            db.query(
+                GRNItem.grn_id,
+                GRNItem.quantity,
+                GRNItem.taxable_amount,
+                GRNItem.cgst_amount,
+                GRNItem.sgst_amount,
+                GRNItem.igst_amount,
+                GRNItem.gst_rate,
+                Product.name.label("product_name"),
+                Product.description.label("product_description"),
+                Product.hsn_code.label("hsn_code"),
+            )
+            .outerjoin(Product, GRNItem.product_id == Product.id)
+            .filter(
+                GRNItem.grn_id.in_(grn_ids),
+                GRNItem.is_deleted == False,
+            )
+            .all()
+        )
+        for item in item_rows:
+            grn_key = str(item.grn_id)
+            grn_item_map[grn_key].append(
+                {
+                    "product_name": item.product_name,
+                    "product_description": item.product_description,
+                    "hsn_code": item.hsn_code,
+                    "quantity": _round_quantity(item.quantity),
+                    "taxable_amount": _paise_to_amount(item.taxable_amount),
+                    "cgst_amount": _paise_to_amount(item.cgst_amount),
+                    "sgst_amount": _paise_to_amount(item.sgst_amount),
+                    "igst_amount": _paise_to_amount(item.igst_amount),
+                    "gst_rate": _round_2(float(item.gst_rate or 0.0)),
+                }
+            )
 
     grn_totals_map: dict[str, dict[str, float]] = {}
     grn_rate_map: dict[str, set[float]] = defaultdict(set)
@@ -1916,6 +2258,7 @@ async def gstr2_report(
         )
 
     report_rows: list[dict] = []
+    detail_rows: list[dict] = []
     problematic_records: list[dict] = []
     subtotal = {
         "grn_amount": 0.0,
@@ -1926,8 +2269,18 @@ async def gstr2_report(
         "import_amount": 0.0,
         "total_tax_amount": 0.0,
     }
+    detail_subtotal = {
+        "grn_amount": 0.0,
+        "cgst_amount": 0.0,
+        "sgst_amount": 0.0,
+        "igst_amount": 0.0,
+        "ugst_amount": 0.0,
+        "import_amount": 0.0,
+        "total_tax_amount": 0.0,
+    }
 
     serial_no = 1
+    detail_serial_no = 1
     for grn in grns:
         row_error_start_index = len(validation_errors)
         grn_key = str(grn.id)
@@ -2101,6 +2454,64 @@ async def gstr2_report(
                 "total_tax_amount": total_tax_amount,
             }
         )
+
+        for item in grn_item_map.get(grn_key, []):
+            item_name = _compose_item_description(
+                item.get("product_name"),
+                None,
+                item.get("product_description"),
+            )
+            line_amount = _convert_with_rate(item.get("taxable_amount"), float(conversion_rate or 1.0))
+            line_cgst = _convert_with_rate(item.get("cgst_amount"), float(conversion_rate or 1.0))
+            line_sgst = _convert_with_rate(item.get("sgst_amount"), float(conversion_rate or 1.0))
+            line_igst = _convert_with_rate(item.get("igst_amount"), float(conversion_rate or 1.0))
+            line_ugst = 0.0
+            line_import = 0.0
+
+            if is_import:
+                line_import = line_igst
+                line_igst = 0.0
+                line_cgst = 0.0
+                line_sgst = 0.0
+                line_ugst = 0.0
+            elif is_ut and not is_inter_state:
+                line_ugst = line_sgst
+                line_sgst = 0.0
+
+            line_total_tax = _round_2(line_cgst + line_sgst + line_igst + line_ugst + line_import)
+
+            detail_rows.append(
+                {
+                    "s_no": detail_serial_no,
+                    "grn_date": _format_ddmmyyyy(grn.receipt_date),
+                    "grn_no": grn_number,
+                    "supplier_name": supplier_name,
+                    "supplier_gstin_no": display_supplier_gstin,
+                    "business_place": business_place,
+                    "place_of_supply": place_of_supply,
+                    "item_name_description": item_name,
+                    "hsn": (item.get("hsn_code") or ""),
+                    "quantity": item.get("quantity", 0.0),
+                    "grn_amount": line_amount,
+                    "currency": GST_REPORT_BASE_CURRENCY,
+                    "tax_percent": item.get("gst_rate"),
+                    "cgst_amount": line_cgst,
+                    "sgst_amount": line_sgst,
+                    "igst_amount": line_igst,
+                    "ugst_amount": line_ugst,
+                    "import_amount": line_import,
+                    "total_tax_amount": line_total_tax,
+                }
+            )
+            detail_serial_no += 1
+
+            detail_subtotal["grn_amount"] = _round_2(detail_subtotal["grn_amount"] + line_amount)
+            detail_subtotal["cgst_amount"] = _round_2(detail_subtotal["cgst_amount"] + line_cgst)
+            detail_subtotal["sgst_amount"] = _round_2(detail_subtotal["sgst_amount"] + line_sgst)
+            detail_subtotal["igst_amount"] = _round_2(detail_subtotal["igst_amount"] + line_igst)
+            detail_subtotal["ugst_amount"] = _round_2(detail_subtotal["ugst_amount"] + line_ugst)
+            detail_subtotal["import_amount"] = _round_2(detail_subtotal["import_amount"] + line_import)
+            detail_subtotal["total_tax_amount"] = _round_2(detail_subtotal["total_tax_amount"] + line_total_tax)
         serial_no += 1
 
         subtotal["grn_amount"] = _round_2(subtotal["grn_amount"] + grn_amount)
@@ -2112,36 +2523,6 @@ async def gstr2_report(
         subtotal["total_tax_amount"] = _round_2(subtotal["total_tax_amount"] + total_tax_amount)
 
     if validation_errors and strict_validation:
-        _log_gst_report_event(
-            db,
-            user_id=current_user.id,
-            action="GENERATE_GSTR2",
-            report_type="GSTR-2",
-            start_date=from_date,
-            end_date=to_date,
-            frequency=normalized_frequency,
-            status="failed",
-            details={
-                "error_count": len(validation_errors),
-                "strict_validation": True,
-            },
-        )
-        log_audit_event(
-            db,
-            action="REPORT:GSTR2_GENERATION_FAILED",
-            resource_type="reports",
-            status="failure",
-            user_id=current_user.id,
-            details={
-                "report": "gstr2",
-                "from_date": from_date.isoformat(),
-                "to_date": to_date.isoformat(),
-                "frequency": normalized_frequency,
-                "error_count": len(validation_errors),
-                "strict_validation": True,
-            },
-        )
-        db.commit()
         _raise_gstr2_validation_error(validation_errors)
 
     summary = {
@@ -2150,41 +2531,6 @@ async def gstr2_report(
         "total_sgst": _amount_to_paise(sum(row.get("sgst_amount", 0.0) for row in report_rows)),
         "total_igst": _amount_to_paise(sum(row.get("igst_amount", 0.0) for row in report_rows)),
     }
-
-    _log_gst_report_event(
-        db,
-        user_id=current_user.id,
-        action="GENERATE_GSTR2",
-        report_type="GSTR-2",
-        start_date=from_date,
-        end_date=to_date,
-        frequency=normalized_frequency,
-        status="success",
-        details={
-            "row_count": len(report_rows),
-            "validation_error_count": len(validation_errors),
-            "strict_validation": strict_validation,
-        },
-    )
-
-    log_audit_event(
-        db,
-        action="REPORT:GSTR2_GENERATED_WITH_WARNINGS" if validation_errors else "REPORT:GSTR2_GENERATED",
-        resource_type="reports",
-        status="success" if not validation_errors else "warning",
-        user_id=current_user.id,
-        details={
-            "report": "gstr2",
-            "from_date": from_date.isoformat(),
-            "to_date": to_date.isoformat(),
-            "frequency": normalized_frequency,
-            "row_count": len(report_rows),
-            "generated_at": datetime.utcnow().isoformat(),
-            "validation_error_count": len(validation_errors),
-            "strict_validation": strict_validation,
-        },
-    )
-    db.commit()
 
     return {
         "report_title": "GSTR-2 (Purchase / Input Tax Report)",
@@ -2197,7 +2543,10 @@ async def gstr2_report(
         "summary": summary,
         "count": len(report_rows),
         "items": report_rows,
+        "detail_count": len(detail_rows),
+        "detail_items": detail_rows,
         "subtotal": subtotal,
+        "detail_subtotal": detail_subtotal,
         "strict_validation": strict_validation,
         "validation_error_count": len(validation_errors),
         "validation_errors": validation_errors[:100],
@@ -2228,8 +2577,8 @@ async def gstr2_export(
         current_user=current_user,
     )
 
-    report_items = payload.get("items", [])
-    subtotal = payload.get("subtotal", {})
+    report_items = payload.get("detail_items") or payload.get("items", [])
+    subtotal = payload.get("detail_subtotal") or payload.get("subtotal", {})
     filename_base = f"gstr2_{from_date.isoformat()}_{to_date.isoformat()}"
 
     if format_token == "xlsx":
@@ -2253,6 +2602,9 @@ async def gstr2_export(
             "Supplier GSTIN No",
             "Business Place",
             "Place of Supply",
+            "Item Name & Description",
+            "HSN",
+            "Quantity",
             "GRN Amount",
             "Currency",
             "Tax %",
@@ -2274,6 +2626,9 @@ async def gstr2_export(
                 row.get("supplier_gstin_no"),
                 row.get("business_place"),
                 row.get("place_of_supply"),
+                row.get("item_name_description"),
+                row.get("hsn"),
+                row.get("quantity"),
                 row.get("grn_amount"),
                 row.get("currency"),
                 row.get("tax_percent"),
@@ -2292,7 +2647,10 @@ async def gstr2_export(
             "",
             "",
             "",
+            "",
             "Sub Total",
+            "",
+            "",
             subtotal.get("grn_amount", 0.0),
             "",
             "",
@@ -2353,8 +2711,8 @@ async def gstr2_export(
     table_cell_style = ParagraphStyle(
         "gstr2_table_cell",
         parent=styles["Normal"],
-        fontSize=6,
-        leading=7,
+        fontSize=5.5,
+        leading=6.5,
         spaceBefore=0,
         spaceAfter=0,
         wordWrap="CJK",
@@ -2374,8 +2732,25 @@ async def gstr2_export(
     ]
 
     table_data = [[
-        "S.No", "GRN Date", "GRN No", "Supplier", "Supplier GSTIN", "Business Place", "Place of Supply",
-        "GRN Amount", "Currency", "Tax %", "CGST", "SGST", "IGST", "UGST", "Import", "Total Tax",
+        to_table_paragraph("S.No"),
+        to_table_paragraph("GRN Date"),
+        to_table_paragraph("GRN No"),
+        to_table_paragraph("Supplier"),
+        to_table_paragraph("Supplier GSTIN"),
+        to_table_paragraph("Business Place"),
+        to_table_paragraph("Place of Supply"),
+        to_table_paragraph("Item Name & Description"),
+        to_table_paragraph("HSN"),
+        to_table_paragraph("Qty"),
+        to_table_paragraph("GRN Amount"),
+        to_table_paragraph("Currency"),
+        to_table_paragraph("Tax %"),
+        to_table_paragraph("CGST"),
+        to_table_paragraph("SGST"),
+        to_table_paragraph("IGST"),
+        to_table_paragraph("UGST"),
+        to_table_paragraph("Import"),
+        to_table_paragraph("Total Tax"),
     ]]
 
     for row in report_items:
@@ -2384,9 +2759,12 @@ async def gstr2_export(
             row.get("grn_date", ""),
             row.get("grn_no", ""),
             to_table_paragraph(row.get("supplier_name", "")),
-            row.get("supplier_gstin_no", ""),
+            to_table_paragraph(row.get("supplier_gstin_no", "")),
             to_table_paragraph(row.get("business_place", "")),
             to_table_paragraph(row.get("place_of_supply", "")),
+            to_table_paragraph(row.get("item_name_description", "")),
+            row.get("hsn", ""),
+            f"{float(row.get('quantity', 0.0)):.2f}",
             f"{float(row.get('grn_amount', 0.0)):.2f}",
             row.get("currency", ""),
             _format_tax_percent(row.get("tax_percent")),
@@ -2399,7 +2777,10 @@ async def gstr2_export(
         ])
 
     table_data.append([
-        "", "", "", "", "", "", "Sub Total",
+        "", "", "", "", "", "", "",
+        "Sub Total",
+        "",
+        "",
         f"{float(subtotal.get('grn_amount', 0.0)):.2f}",
         "",
         "",
@@ -2412,22 +2793,25 @@ async def gstr2_export(
     ])
 
     col_fractions = [
-        0.03,  # S.No
-        0.06,  # GRN Date
-        0.07,  # GRN No
-        0.12,  # Supplier
-        0.08,  # Supplier GSTIN
-        0.07,  # Business Place
-        0.09,  # Place of Supply
-        0.07,  # GRN Amount
-        0.04,  # Currency
-        0.04,  # Tax %
-        0.05,  # CGST
-        0.05,  # SGST
-        0.05,  # IGST
-        0.05,  # UGST
-        0.05,  # Import
-        0.08,  # Total Tax
+        0.02,  # S.No
+        0.05,  # GRN Date
+        0.065,  # GRN No
+        0.085,  # Supplier
+        0.075,  # Supplier GSTIN
+        0.075,  # Business Place
+        0.07,  # Place of Supply
+        0.105,  # Item Name
+        0.035,  # HSN
+        0.035,  # Qty
+        0.055,  # GRN Amount
+        0.035,  # Currency
+        0.035,  # Tax %
+        0.042,  # CGST
+        0.042,  # SGST
+        0.042,  # IGST
+        0.042,  # UGST
+        0.042,  # Import
+        0.05,  # Total Tax
     ]
     col_widths = [doc.width * f for f in col_fractions]
     table = Table(table_data, colWidths=col_widths, repeatRows=1)
@@ -2435,11 +2819,11 @@ async def gstr2_export(
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E5E7EB")),
         ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#9CA3AF")),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 6),
-        ("LEFTPADDING", (0, 0), (-1, -1), 2),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
-        ("TOPPADDING", (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("FONTSIZE", (0, 0), (-1, -1), 5.5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 1.5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 1.5),
+        ("TOPPADDING", (0, 0), (-1, -1), 1.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
     story.append(table)
@@ -2520,6 +2904,9 @@ async def gst_reconciliation_report(
     items: list[dict] = []
     running_s_no = 1
 
+    detail_items: list[dict] = []
+    detail_running_s_no = 1
+
     subtotal_input_tax = {
         "transaction_amount": 0.0,
         "cgst_amount": 0.0,
@@ -2553,6 +2940,7 @@ async def gst_reconciliation_report(
                 "s_no": running_s_no,
                 "tax_type": "Input Tax (Purchase)",
                 "date": row.get("grn_date"),
+                "reference_no": row.get("grn_no", ""),
                 "name_of_partner": row.get("supplier_name", ""),
                 "partner_gstin_no": row.get("supplier_gstin_no", ""),
                 "business_place": row.get("business_place") or business_place,
@@ -2595,6 +2983,7 @@ async def gst_reconciliation_report(
                 "s_no": running_s_no,
                 "tax_type": "Output Tax (Sales)",
                 "date": row.get("sales_invoice_date"),
+                "reference_no": row.get("sales_invoice_no", ""),
                 "name_of_partner": row.get("bill_to_party_name", ""),
                 "partner_gstin_no": row.get("bill_to_party_gstin_no", ""),
                 "business_place": business_place,
@@ -2623,6 +3012,60 @@ async def gst_reconciliation_report(
         subtotal_output_tax["import_export_amount"] = _round_2(subtotal_output_tax["import_export_amount"] + import_export_amount)
         subtotal_output_tax["total_tax_amount"] = _round_2(subtotal_output_tax["total_tax_amount"] + total_tax_amount)
 
+    for row in gstr2_payload.get("detail_items", []) or []:
+        detail_items.append(
+            {
+                "s_no": detail_running_s_no,
+                "tax_type": "Input Tax (Purchase)",
+                "date": row.get("grn_date"),
+                "reference_no": row.get("grn_no", ""),
+                "name_of_partner": row.get("supplier_name", ""),
+                "partner_gstin_no": row.get("supplier_gstin_no", ""),
+                "business_place": row.get("business_place") or business_place,
+                "place_of_supply": row.get("place_of_supply", ""),
+                "item_name_description": row.get("item_name_description", ""),
+                "hsn": row.get("hsn", ""),
+                "quantity": row.get("quantity", 0.0),
+                "grn_or_invoice_amount": _round_2(float(row.get("grn_amount", 0.0))),
+                "currency": row.get("currency", "INR"),
+                "tax_percent": _coerce_tax_percent(row.get("tax_percent")),
+                "cgst_amount": _round_2(float(row.get("cgst_amount", 0.0))),
+                "sgst_amount": _round_2(float(row.get("sgst_amount", 0.0))),
+                "igst_amount": _round_2(float(row.get("igst_amount", 0.0))),
+                "ugst_amount": _round_2(float(row.get("ugst_amount", 0.0))),
+                "import_export_amount": _round_2(float(row.get("import_amount", 0.0))),
+                "total_tax_amount": _round_2(float(row.get("total_tax_amount", 0.0))),
+            }
+        )
+        detail_running_s_no += 1
+
+    for row in gstr1_payload.get("detail_items", []) or []:
+        detail_items.append(
+            {
+                "s_no": detail_running_s_no,
+                "tax_type": "Output Tax (Sales)",
+                "date": row.get("sales_invoice_date"),
+                "reference_no": row.get("sales_invoice_no", ""),
+                "name_of_partner": row.get("bill_to_party_name", ""),
+                "partner_gstin_no": row.get("bill_to_party_gstin_no", ""),
+                "business_place": business_place,
+                "place_of_supply": row.get("place_of_supply", ""),
+                "item_name_description": row.get("item_name_description", ""),
+                "hsn": row.get("hsn", ""),
+                "quantity": row.get("quantity", 0.0),
+                "grn_or_invoice_amount": _round_2(float(row.get("invoice_amount", 0.0))),
+                "currency": row.get("currency", "INR"),
+                "tax_percent": _coerce_tax_percent(row.get("tax_percent")),
+                "cgst_amount": _round_2(float(row.get("cgst_amount", 0.0))),
+                "sgst_amount": _round_2(float(row.get("sgst_amount", 0.0))),
+                "igst_amount": _round_2(float(row.get("igst_amount", 0.0))),
+                "ugst_amount": _round_2(float(row.get("ugst_amount", 0.0))),
+                "import_export_amount": _round_2(float(row.get("export_amount", 0.0))),
+                "total_tax_amount": _round_2(float(row.get("total_tax_amount", 0.0))),
+            }
+        )
+        detail_running_s_no += 1
+
     difference_amount = {
         "transaction_amount": _round_2(subtotal_output_tax["transaction_amount"] - subtotal_input_tax["transaction_amount"]),
         "cgst_amount": _round_2(subtotal_output_tax["cgst_amount"] - subtotal_input_tax["cgst_amount"]),
@@ -2641,22 +3084,6 @@ async def gst_reconciliation_report(
         *(gstr1_payload.get("problematic_records", []) or []),
         *(gstr2_payload.get("problematic_records", []) or []),
     ]
-
-    _log_gst_report_event(
-        db,
-        user_id=current_user.id,
-        action="GENERATE_GST_RECONCILIATION",
-        report_type="GST_RECONCILIATION",
-        start_date=from_date,
-        end_date=to_date,
-        frequency=gstr1_payload.get("frequency", "monthly"),
-        status="success",
-        details={
-            "row_count": len(items),
-            "validation_error_count": len(validation_errors),
-            "strict_validation": strict_validation,
-        },
-    )
 
     log_audit_event(
         db,
@@ -2687,6 +3114,8 @@ async def gst_reconciliation_report(
         "to_date_display": _format_ddmmyyyy(to_date),
         "count": len(items),
         "items": items,
+        "detail_count": len(detail_items),
+        "detail_items": detail_items,
         "subtotal_input_tax": subtotal_input_tax,
         "subtotal_output_tax": subtotal_output_tax,
         "difference_amount": difference_amount,
@@ -2720,7 +3149,7 @@ async def gst_reconciliation_export(
         current_user=current_user,
     )
 
-    report_items = payload.get("items", [])
+    report_items = payload.get("detail_items") or payload.get("items", [])
     subtotal_input = payload.get("subtotal_input_tax", {})
     subtotal_output = payload.get("subtotal_output_tax", {})
     difference_amount = payload.get("difference_amount", {})
@@ -2744,10 +3173,14 @@ async def gst_reconciliation_export(
             "S.No",
             "Tax Type",
             "Date",
+            "Reference No",
             "Name of the Partner",
             "Partner GSTIN No",
             "Business Place",
             "Place of Supply",
+            "Item Name & Description",
+            "HSN",
+            "Quantity",
             "GRN / Invoice Amount",
             "Currency",
             "Tax %",
@@ -2765,10 +3198,14 @@ async def gst_reconciliation_export(
                 row.get("s_no"),
                 row.get("tax_type"),
                 row.get("date"),
+                row.get("reference_no"),
                 row.get("name_of_partner"),
                 row.get("partner_gstin_no"),
                 row.get("business_place"),
                 row.get("place_of_supply"),
+                row.get("item_name_description"),
+                row.get("hsn"),
+                row.get("quantity"),
                 row.get("grn_or_invoice_amount"),
                 row.get("currency"),
                 row.get("tax_percent"),
@@ -2781,9 +3218,9 @@ async def gst_reconciliation_export(
             ])
 
         ws.append([])
-        ws.append(["Sub Total (Input Tax)", "", "", "", "", "", "", subtotal_input.get("transaction_amount", 0.0), "", "", subtotal_input.get("cgst_amount", 0.0), subtotal_input.get("sgst_amount", 0.0), subtotal_input.get("igst_amount", 0.0), subtotal_input.get("ugst_amount", 0.0), subtotal_input.get("import_export_amount", 0.0), subtotal_input.get("total_tax_amount", 0.0)])
-        ws.append(["Sub Total (Output Tax)", "", "", "", "", "", "", subtotal_output.get("transaction_amount", 0.0), "", "", subtotal_output.get("cgst_amount", 0.0), subtotal_output.get("sgst_amount", 0.0), subtotal_output.get("igst_amount", 0.0), subtotal_output.get("ugst_amount", 0.0), subtotal_output.get("import_export_amount", 0.0), subtotal_output.get("total_tax_amount", 0.0)])
-        ws.append(["Difference Amount (Output - Input)", "", "", "", "", "", "", difference_amount.get("transaction_amount", 0.0), "", "", difference_amount.get("cgst_amount", 0.0), difference_amount.get("sgst_amount", 0.0), difference_amount.get("igst_amount", 0.0), difference_amount.get("ugst_amount", 0.0), difference_amount.get("import_export_amount", 0.0), difference_amount.get("total_tax_amount", 0.0)])
+        ws.append(["Sub Total (Input Tax)", "", "", "", "", "", "", "", "", "", "", subtotal_input.get("transaction_amount", 0.0), "", "", subtotal_input.get("cgst_amount", 0.0), subtotal_input.get("sgst_amount", 0.0), subtotal_input.get("igst_amount", 0.0), subtotal_input.get("ugst_amount", 0.0), subtotal_input.get("import_export_amount", 0.0), subtotal_input.get("total_tax_amount", 0.0)])
+        ws.append(["Sub Total (Output Tax)", "", "", "", "", "", "", "", "", "", "", subtotal_output.get("transaction_amount", 0.0), "", "", subtotal_output.get("cgst_amount", 0.0), subtotal_output.get("sgst_amount", 0.0), subtotal_output.get("igst_amount", 0.0), subtotal_output.get("ugst_amount", 0.0), subtotal_output.get("import_export_amount", 0.0), subtotal_output.get("total_tax_amount", 0.0)])
+        ws.append(["Difference Amount (Output - Input)", "", "", "", "", "", "", "", "", "", "", difference_amount.get("transaction_amount", 0.0), "", "", difference_amount.get("cgst_amount", 0.0), difference_amount.get("sgst_amount", 0.0), difference_amount.get("igst_amount", 0.0), difference_amount.get("ugst_amount", 0.0), difference_amount.get("import_export_amount", 0.0), difference_amount.get("total_tax_amount", 0.0)])
 
         stream = BytesIO()
         wb.save(stream)
@@ -2827,12 +3264,26 @@ async def gst_reconciliation_export(
 
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from xml.sax.saxutils import escape as xml_escape
 
     stream = BytesIO()
     doc = SimpleDocTemplate(stream, pagesize=landscape(A4), leftMargin=18, rightMargin=18, topMargin=18, bottomMargin=18)
     styles = getSampleStyleSheet()
+    table_cell_style = ParagraphStyle(
+        "gst_recon_table_cell",
+        parent=styles["Normal"],
+        fontSize=5.5,
+        leading=6.5,
+        spaceBefore=0,
+        spaceAfter=0,
+        wordWrap="CJK",
+    )
+
+    def to_table_paragraph(value: object) -> Paragraph:
+        text = "" if value is None else str(value)
+        return Paragraph(xml_escape(text), table_cell_style)
 
     story = [
         Paragraph(payload.get("report_title", "GST Reconciliation Report"), styles["Heading2"]),
@@ -2844,19 +3295,41 @@ async def gst_reconciliation_export(
     ]
 
     table_data = [[
-        "S.No", "Tax Type", "Date", "Partner", "GSTIN", "Business Place", "Place of Supply",
-        "Amount", "Currency", "Tax %", "CGST", "SGST", "IGST", "UGST", "Imp/Exp", "Total Tax",
+        to_table_paragraph("S.No"),
+        to_table_paragraph("Tax Type"),
+        to_table_paragraph("Date"),
+        to_table_paragraph("Reference No"),
+        to_table_paragraph("Partner"),
+        to_table_paragraph("GSTIN"),
+        to_table_paragraph("Business Place"),
+        to_table_paragraph("Place of Supply"),
+        to_table_paragraph("Item Name & Description"),
+        to_table_paragraph("HSN"),
+        to_table_paragraph("Qty"),
+        to_table_paragraph("Amount"),
+        to_table_paragraph("Currency"),
+        to_table_paragraph("Tax %"),
+        to_table_paragraph("CGST"),
+        to_table_paragraph("SGST"),
+        to_table_paragraph("IGST"),
+        to_table_paragraph("UGST"),
+        to_table_paragraph("Imp/Exp"),
+        to_table_paragraph("Total Tax"),
     ]]
 
     for row in report_items:
         table_data.append([
             row.get("s_no", ""),
-            row.get("tax_type", ""),
+            to_table_paragraph(row.get("tax_type", "")),
             row.get("date", ""),
-            row.get("name_of_partner", ""),
-            row.get("partner_gstin_no", ""),
-            row.get("business_place", ""),
-            row.get("place_of_supply", ""),
+            to_table_paragraph(row.get("reference_no", "")),
+            to_table_paragraph(row.get("name_of_partner", "")),
+            to_table_paragraph(row.get("partner_gstin_no", "")),
+            to_table_paragraph(row.get("business_place", "")),
+            to_table_paragraph(row.get("place_of_supply", "")),
+            to_table_paragraph(row.get("item_name_description", "")),
+            row.get("hsn", ""),
+            f"{float(row.get('quantity', 0.0)):.2f}",
             f"{float(row.get('grn_or_invoice_amount', 0.0)):.2f}",
             row.get("currency", ""),
             _format_tax_percent(row.get("tax_percent")),
@@ -2868,12 +3341,39 @@ async def gst_reconciliation_export(
             f"{float(row.get('total_tax_amount', 0.0)):.2f}",
         ])
 
-    table = Table(table_data, repeatRows=1)
+    col_fractions = [
+        0.02,  # S.No
+        0.075,  # Tax Type
+        0.06,  # Date
+        0.04,  # Reference No
+        0.075,  # Partner
+        0.075,  # GSTIN
+        0.07,  # Business Place
+        0.07,  # Place of Supply
+        0.06,  # Item Name (reduced to make space for Reference No)
+        0.035,  # HSN
+        0.035,  # Qty
+        0.055,  # Amount
+        0.035,  # Currency
+        0.035,  # Tax %
+        0.04,  # CGST
+        0.04,  # SGST
+        0.04,  # IGST
+        0.04,  # UGST
+        0.04,  # Imp/Exp
+        0.05,  # Total Tax
+    ]
+    col_widths = [doc.width * f for f in col_fractions]
+    table = Table(table_data, colWidths=col_widths, repeatRows=1)
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E5E7EB")),
         ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#9CA3AF")),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 6),
+        ("FONTSIZE", (0, 0), (-1, -1), 5.5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 1.5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 1.5),
+        ("TOPPADDING", (0, 0), (-1, -1), 1.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
     story.append(table)
@@ -2936,7 +3436,7 @@ async def gst_audit_trail_report(
     """Return GST report generation/export audit events for the selected period."""
     _ensure_finance_tax_user(current_user)
     normalized_frequency, frequency_label = _normalize_frequency(frequency)
-    _validate_frequency_date_window(from_date, to_date, normalized_frequency)
+    from_date, to_date = _validate_frequency_date_window(from_date, to_date, normalized_frequency)
 
     report_type_token = (report_type or "all").strip().lower()
     report_type_map = {
@@ -3039,24 +3539,6 @@ async def gst_audit_trail_report(
 
     total_pages = (total_count + page_size - 1) // page_size if total_count else 0
 
-    _log_gst_report_event(
-        db,
-        user_id=current_user.id,
-        action="VIEW_GST_AUDIT_TRAIL",
-        report_type="GST_AUDIT_TRAIL",
-        start_date=from_date,
-        end_date=to_date,
-        frequency=normalized_frequency,
-        status="success",
-        details={
-            "selected_report_type": selected_report_type or "all",
-            "page": page,
-            "page_size": page_size,
-            "result_count": len(items),
-        },
-    )
-    db.commit()
-
     return {
         "report_title": "GST Audit Trail",
         "frequency": normalized_frequency,
@@ -3095,6 +3577,24 @@ async def action_logs_report(
 
     module_token = (module or "all").strip().lower()
     selected_module = None if module_token in {"", "all"} else module_token
+    if selected_module and selected_module not in FINANCIAL_ACTION_LOG_MODULES:
+        return {
+            "report_title": "Action Logs",
+            "from_date": from_date.isoformat(),
+            "to_date": to_date.isoformat(),
+            "from_date_display": _format_ddmmyyyy(from_date),
+            "to_date_display": _format_ddmmyyyy(to_date),
+            "module": selected_module,
+            "action_type": (action_type or "all").strip().upper() or "all",
+            "user_query": (user_query or "").strip(),
+            "reference": (reference or "").strip(),
+            "page": page,
+            "page_size": page_size,
+            "total": 0,
+            "total_pages": 0,
+            "count": 0,
+            "items": [],
+        }
 
     action_type_token = (action_type or "all").strip().upper()
     selected_action_type = None if action_type_token in {"", "ALL"} else action_type_token
@@ -3107,12 +3607,13 @@ async def action_logs_report(
 
     count_row = db.execute(
         text(
-            """
+            f"""
             SELECT COUNT(*)
             FROM audit_logs a
             LEFT JOIN users u ON u.id = a.user_id
             WHERE a.created_at::date >= :from_date
               AND a.created_at::date <= :to_date
+              AND LOWER(COALESCE(a.module_name, '')) IN ('{FINANCIAL_ACTION_LOG_MODULES_SQL}')
               AND (:module_name IS NULL OR LOWER(COALESCE(a.module_name, '')) = :module_name)
               AND (:action_type IS NULL OR UPPER(COALESCE(a.action_type, '')) = :action_type)
               AND (
@@ -3139,7 +3640,7 @@ async def action_logs_report(
 
     rows = db.execute(
         text(
-            """
+            f"""
             SELECT
                 a.id,
                 a.user_id,
@@ -3156,6 +3657,7 @@ async def action_logs_report(
             LEFT JOIN users u ON u.id = a.user_id
             WHERE a.created_at::date >= :from_date
               AND a.created_at::date <= :to_date
+              AND LOWER(COALESCE(a.module_name, '')) IN ('{FINANCIAL_ACTION_LOG_MODULES_SQL}')
               AND (:module_name IS NULL OR LOWER(COALESCE(a.module_name, '')) = :module_name)
               AND (:action_type IS NULL OR UPPER(COALESCE(a.action_type, '')) = :action_type)
               AND (
@@ -3197,6 +3699,17 @@ async def action_logs_report(
         else:
             details = {}
 
+        module_name = (row.get("module_name") or "").strip().lower()
+        record_reference = (row.get("record_reference") or "").strip()
+        description = row.get("description") or ""
+        amount_value = _resolve_action_log_amount(db, module_name, record_reference)
+        amount_label = _format_inr_amount(amount_value)
+        if amount_label and amount_label not in description:
+            description = f"{description} | Amount: {amount_label}".strip(" |") if description else f"Amount: {amount_label}"
+
+        # Extract reference from audit details or DB record_reference
+        extracted_ref = _extract_document_reference(row.get("record_reference"), details, db, module_name)
+
         items.append(
             {
                 "id": str(row.get("id")),
@@ -3206,7 +3719,8 @@ async def action_logs_report(
                 "action_type": row.get("action_type") or "",
                 "module_name": row.get("module_name") or "",
                 "record_reference": row.get("record_reference") or "",
-                "description": row.get("description") or "",
+                "reference": extracted_ref,
+                "description": description,
                 "status": row.get("status") or "",
                 "timestamp": row.get("created_at").isoformat() if row.get("created_at") else None,
                 "details": details,
@@ -3214,26 +3728,6 @@ async def action_logs_report(
         )
 
     total_pages = (total_count + page_size - 1) // page_size if total_count else 0
-
-    log_audit_event(
-        db,
-        action="VIEW_ACTION_LOGS",
-        resource_type="audit",
-        status="success",
-        user_id=current_user.id,
-        details={
-            "module": selected_module or "all",
-            "action_type": selected_action_type or "all",
-            "user_query": user_token,
-            "reference": reference_token,
-            "from_date": from_date.isoformat(),
-            "to_date": to_date.isoformat(),
-            "page": page,
-            "page_size": page_size,
-            "result_count": len(items),
-        },
-    )
-    db.commit()
 
     return {
         "report_title": "Action Logs",

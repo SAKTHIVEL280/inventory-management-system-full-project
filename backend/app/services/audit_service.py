@@ -41,11 +41,26 @@ _ENTITY_LABELS = {
     "purchase": "Purchase Order",
     "purchases": "Purchase Order",
     "sales": "Invoice",
+    "invoices": "Invoice",
+    "purchase-orders": "Purchase Order",
+    "grn": "GRN",
     "payments": "Payment",
-    "stock": "Stock Record",
+    "stock": "Stock Adjustment",
+    "sales-returns": "Sales Return",
+    "purchase-returns": "Purchase Return",
     "reports": "Report",
     "audit": "Action Log",
     "auth": "Session",
+}
+
+_FINANCIAL_MODULES = {
+    "invoices",
+    "purchase-orders",
+    "grn",
+    "payments",
+    "stock",
+    "sales-returns",
+    "purchase-returns",
 }
 
 
@@ -199,6 +214,240 @@ def _reference_display(record_reference: str | None, details: dict[str, Any]) ->
     return (record_reference or "").strip()
 
 
+def _extract_document_reference(record_reference: str | None, details: dict[str, Any], db: Session | None = None, module_name: str | None = None) -> str:
+    """Extract and display document numbers (invoice/PO/GRN) from audit details, DB lookup, or path."""
+    # Priority order for document numbers in details
+    doc_number_keys = [
+        "invoice_number",
+        "invoice_no",
+        "sales_invoice_no",
+        "po_number",
+        "po_no",
+        "purchase_order_no",
+        "grn_number",
+        "grn_no",
+        "goods_receipt_no",
+        "payment_number",
+        "receipt_number",
+        "count_number",
+        "product_code",
+        "customer_code",
+        "supplier_code",
+    ]
+    
+    if not isinstance(details, dict):
+        details = {}
+    
+    # First try to find a document number in details
+    for key in doc_number_keys:
+        value = details.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    
+    # Try to extract from path if available (e.g., /api/v2/invoices/INV-2024-001 -> INV-2024-001)
+    path = (details.get("path") or "").strip()
+    if path:
+        segments = [segment for segment in path.strip("/").split("/") if segment]
+        # Look for document reference patterns: typically last segment or second-to-last if last is an action
+        if len(segments) >= 3:
+            # Check last segment first
+            candidate = segments[-1]
+            # Skip common action suffixes and numeric pagination
+            skip_suffixes = {"export", "bulk", "items", "status", "action-logs", "create", "update", "delete", "page"}
+            if candidate.lower() not in skip_suffixes and not candidate.isdigit():
+                # Document references typically have letters (e.g., INV-001, PO-002, GRN-001)
+                if candidate and any(ch.isalpha() for ch in candidate):
+                    return candidate
+            
+            # Try second-to-last segment (in case last is an action)
+            if len(segments) >= 4:
+                candidate = segments[-2]
+                if candidate and any(ch.isalpha() for ch in candidate) and not candidate.isdigit():
+                    return candidate
+    
+    # Try to fetch from database if we have DB connection, module_name, and record_reference (as UUID)
+    if db and module_name and record_reference and _looks_like_uuid(record_reference):
+        try:
+            ref = _fetch_document_reference_from_db(db, module_name.strip().lower(), record_reference)
+            if ref:
+                return ref
+        except Exception as e:
+            logger.debug(f"Failed to fetch reference from DB: {e}")
+    
+    # Fall back to record_reference stored in DB
+    if record_reference:
+        return (record_reference or "").strip()
+    
+    return ""
+
+
+def _fetch_document_reference_from_db(db: Session, module_name: str, resource_id: str) -> str | None:
+    """Fetch the actual document reference number from database based on module and resource ID.
+    
+    Uses exact field names from schema:
+    - sales_invoices.invoice_number
+    - purchase_orders.po_number
+    - goods_receipt_notes.grn_number
+    - quotations.quotation_number
+    - payments.payment_number
+    - inventory_counts.count_number
+    - products.product_code
+    """
+    module = (module_name or "").strip().lower()
+    
+    try:
+        # Sales invoices (invoices module)
+        if module in {"invoices", "sales", "sales-invoices"}:
+            result = db.execute(
+                text("SELECT invoice_number FROM sales_invoices WHERE id = :id AND is_deleted = FALSE LIMIT 1"),
+                {"id": resource_id}
+            ).scalar()
+            if result:
+                return str(result).strip()
+        
+        # Quotations
+        elif module in {"quotations", "quotation"}:
+            result = db.execute(
+                text("SELECT quotation_number FROM quotations WHERE id = :id AND is_deleted = FALSE LIMIT 1"),
+                {"id": resource_id}
+            ).scalar()
+            if result:
+                return str(result).strip()
+        
+        # Purchase orders
+        elif module in {"purchase-orders", "purchase_orders", "purchase"}:
+            result = db.execute(
+                text("SELECT po_number FROM purchase_orders WHERE id = :id AND is_deleted = FALSE LIMIT 1"),
+                {"id": resource_id}
+            ).scalar()
+            if result:
+                return str(result).strip()
+        
+        # GRN (Goods Receipt Notes)
+        elif module in {"grn", "goods-receipt", "goods_receipt"}:
+            result = db.execute(
+                text("SELECT grn_number FROM goods_receipt_notes WHERE id = :id AND is_deleted = FALSE LIMIT 1"),
+                {"id": resource_id}
+            ).scalar()
+            if result:
+                return str(result).strip()
+        
+        # Payments - return payment number with related invoice/GRN and status
+        elif module in {"payments", "payment"}:
+            payment = db.execute(
+                text("""
+                    SELECT p.payment_number, p.status 
+                    FROM payments p
+                    WHERE p.id = :id AND p.is_deleted = FALSE
+                    LIMIT 1
+                """),
+                {"id": resource_id}
+            ).mappings().first()
+            
+            if payment:
+                payment_num = payment.get("payment_number")
+                status = (payment.get("status") or "").strip().lower()
+                
+                # Try to get related invoice or GRN from allocations
+                allocation = db.execute(
+                    text("""
+                        SELECT si.invoice_number, grn.grn_number
+                        FROM payment_allocations pa
+                        LEFT JOIN sales_invoices si ON pa.invoice_id = si.id AND si.is_deleted = FALSE
+                        LEFT JOIN goods_receipt_notes grn ON pa.purchase_grn_id = grn.id AND grn.is_deleted = FALSE
+                        WHERE pa.payment_id = :payment_id AND pa.is_deleted = FALSE
+                        LIMIT 1
+                    """),
+                    {"payment_id": resource_id}
+                ).mappings().first()
+                
+                if allocation:
+                    invoice_num = allocation.get("invoice_number")
+                    grn_num = allocation.get("grn_number")
+                    
+                    # Return invoice number with status if available
+                    if invoice_num:
+                        status_label = _payment_status_label(status)
+                        return f"{invoice_num} {status_label}".strip() if status_label else str(invoice_num).strip()
+                    
+                    # Return GRN number with status if available
+                    elif grn_num:
+                        status_label = _payment_status_label(status)
+                        return f"{grn_num} {status_label}".strip() if status_label else str(grn_num).strip()
+                
+                # Fallback to payment number only
+                if payment_num:
+                    return str(payment_num).strip()
+        
+        # Stock/Inventory adjustments
+        elif module in {"stock", "inventory-count", "inventory_count", "inventory_counts"}:
+            result = db.execute(
+                text("SELECT count_number FROM inventory_counts WHERE id = :id AND is_deleted = FALSE LIMIT 1"),
+                {"id": resource_id}
+            ).scalar()
+            if result:
+                return str(result).strip()
+        
+        # Customers
+        elif module in {"customers", "customer"}:
+            result = db.execute(
+                text("SELECT company_name FROM customers WHERE id = :id AND is_deleted = FALSE LIMIT 1"),
+                {"id": resource_id}
+            ).scalar()
+            if result:
+                return str(result).strip()
+        
+        # Suppliers
+        elif module in {"suppliers", "supplier"}:
+            result = db.execute(
+                text("SELECT supplier_name FROM suppliers WHERE id = :id AND is_deleted = FALSE LIMIT 1"),
+                {"id": resource_id}
+            ).scalar()
+            if result:
+                return str(result).strip()
+        
+        # Products
+        elif module in {"products", "product"}:
+            result = db.execute(
+                text("SELECT product_code FROM products WHERE id = :id AND is_deleted = FALSE LIMIT 1"),
+                {"id": resource_id}
+            ).scalar()
+            if result:
+                return str(result).strip()
+        
+        # Users
+        elif module in {"users", "user"}:
+            result = db.execute(
+                text("SELECT email FROM users WHERE id = :id LIMIT 1"),
+                {"id": resource_id}
+            ).scalar()
+            if result:
+                return str(result).strip()
+        
+    except Exception as e:
+        logger.debug(f"Error fetching reference from DB for {module}:{resource_id}: {e}")
+    
+    return None
+
+
+def _payment_status_label(status: str) -> str:
+    """Convert payment status to human-readable label."""
+    status_lower = (status or "").strip().lower()
+    
+    if status_lower in {"pending", "draft"}:
+        return ""
+    elif status_lower == "partial":
+        return "Partially Received"
+    elif status_lower == "completed":
+        return "Fully Received"
+    elif status_lower == "full_payment_cleared":
+        return "Full Payment Cleared"
+    elif status_lower == "partial_payment_cleared":
+        return "Partial Payment Cleared"
+    
+    return ""
+
+
 def _build_human_readable_description(
     *,
     action_type: str,
@@ -310,6 +559,8 @@ def log_audit_event(
         safe_details = _sanitize_details(details or {})
         action_type = _derive_action_type(action)
         module_name = (resource_type or "system").strip().lower() or "system"
+        if module_name not in _FINANCIAL_MODULES:
+            return
         safe_detail_dict = safe_details if isinstance(safe_details, dict) else {}
         record_reference = _derive_record_reference(resource_id, safe_detail_dict, action)
         description = _build_human_readable_description(

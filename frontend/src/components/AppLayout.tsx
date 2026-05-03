@@ -158,7 +158,10 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
       key: 'reports',
       label: 'Reports',
       icon: 'bar_chart',
-      items: [{ to: '/reports', label: 'Reports', visible: can('reports_read'), icon: 'bar_chart' }],
+      items: [
+        { to: '/reports', label: 'Reports', visible: can('reports_read'), icon: 'bar_chart' },
+        { to: '/reports/action-logs', label: 'Action Logs', visible: can('reports_read'), icon: 'history' },
+      ],
     },
   ], [can, isAdmin]);
 

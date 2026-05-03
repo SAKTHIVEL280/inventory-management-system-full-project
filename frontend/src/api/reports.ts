@@ -85,6 +85,28 @@ export interface GSTR1ReportRow {
   total_tax_amount: number;
 }
 
+export interface GSTR1ReportDetailRow {
+  s_no: number;
+  sales_invoice_date: string | null;
+  sales_invoice_no: string;
+  bill_to_party_name: string;
+  bill_to_party_gstin_no: string;
+  place_of_supply: string;
+  ship_to_party_name: string;
+  item_name_description: string;
+  hsn: string;
+  quantity: number;
+  invoice_amount: number;
+  currency: string;
+  tax_percent: number | null;
+  cgst_amount: number;
+  sgst_amount: number;
+  igst_amount: number;
+  ugst_amount: number;
+  export_amount: number;
+  total_tax_amount: number;
+}
+
 export interface GSTR1Subtotal {
   invoice_amount: number;
   cgst_amount: number;
@@ -118,7 +140,10 @@ export interface GSTR1ReportResponse {
   };
   count: number;
   items: GSTR1ReportRow[];
+  detail_count?: number;
+  detail_items?: GSTR1ReportDetailRow[];
   subtotal: GSTR1Subtotal;
+  detail_subtotal?: GSTR1Subtotal;
   strict_validation?: boolean;
   validation_error_count?: number;
   validation_errors?: string[];
@@ -133,6 +158,28 @@ export interface GSTR2ReportRow {
   supplier_gstin_no: string;
   business_place: string;
   place_of_supply: string;
+  grn_amount: number;
+  currency: string;
+  tax_percent: number | null;
+  cgst_amount: number;
+  sgst_amount: number;
+  igst_amount: number;
+  ugst_amount: number;
+  import_amount: number;
+  total_tax_amount: number;
+}
+
+export interface GSTR2ReportDetailRow {
+  s_no: number;
+  grn_date: string | null;
+  grn_no: string;
+  supplier_name: string;
+  supplier_gstin_no: string;
+  business_place: string;
+  place_of_supply: string;
+  item_name_description: string;
+  hsn: string;
+  quantity: number;
   grn_amount: number;
   currency: string;
   tax_percent: number | null;
@@ -170,7 +217,10 @@ export interface GSTR2ReportResponse {
   };
   count: number;
   items: GSTR2ReportRow[];
+  detail_count?: number;
+  detail_items?: GSTR2ReportDetailRow[];
   subtotal: GSTR2Subtotal;
+  detail_subtotal?: GSTR2Subtotal;
   strict_validation?: boolean;
   validation_error_count?: number;
   validation_errors?: string[];
@@ -199,6 +249,28 @@ export interface GSTReconciliationRow {
   difference_amount: number | null;
 }
 
+export interface GSTReconciliationDetailRow {
+  s_no: number;
+  tax_type: 'Input Tax (Purchase)' | 'Output Tax (Sales)';
+  date: string | null;
+  name_of_partner: string;
+  partner_gstin_no: string;
+  business_place: string;
+  place_of_supply: string;
+  item_name_description: string;
+  hsn: string;
+  quantity: number;
+  grn_or_invoice_amount: number;
+  currency: string;
+  tax_percent: number | null;
+  cgst_amount: number;
+  sgst_amount: number;
+  igst_amount: number;
+  ugst_amount: number;
+  import_export_amount: number;
+  total_tax_amount: number;
+}
+
 export interface GSTReconciliationTotals {
   transaction_amount: number;
   cgst_amount: number;
@@ -219,6 +291,8 @@ export interface GSTReconciliationResponse {
   to_date_display: string | null;
   count: number;
   items: GSTReconciliationRow[];
+  detail_count?: number;
+  detail_items?: GSTReconciliationDetailRow[];
   subtotal_input_tax: GSTReconciliationTotals;
   subtotal_output_tax: GSTReconciliationTotals;
   difference_amount: GSTReconciliationTotals;
@@ -267,6 +341,7 @@ export interface ActionLogItem {
   action_type: string;
   module_name: string;
   record_reference: string;
+  reference: string;
   description: string;
   status: string;
   timestamp: string | null;

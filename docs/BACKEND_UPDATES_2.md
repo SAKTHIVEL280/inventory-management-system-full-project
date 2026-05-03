@@ -2,6 +2,30 @@
 
 ---
 
+## BE-121: Action Logs - Fixed Reference field to display actual document numbers
+**Update**: Enhanced `_extract_document_reference()` in audit_service.py to query the database based on module_name and resource_id (UUID), extracting the correct document reference numbers:
+- Sales Invoices → invoice_number (e.g., INV-00002)
+- Quotations → quotation_number (e.g., QTN-00001)
+- Sales Orders → so_number
+- Purchase Orders → po_number (e.g., PO-00004)
+- GRNs (Goods Receipt Notes) → grn_number (e.g., GRN-00002)
+- Payments → payment_number + related invoice/GRN number + status (e.g., "INV-00003 Fully Received", "GRN-00001 Full Payment Cleared")
+- Inventory Counts → count_number
+- Suppliers/Customers/Products → respective identifiers
+- Fallback to empty string if reference not found. Updated action_logs_report endpoint to pass db and module_name to enable DB lookups.
+
+## BE-120: Calendar-aligned GST frequency window normalization
+**Update**: Standardized GST frequency handling so backend now normalizes incoming ranges to exact calendar periods before querying: Monthly (1st to last day of month), Quarterly (Q1 Jan-Mar, Q2 Apr-Jun, Q3 Jul-Sep, Q4 Oct-Dec), and Annually (Jan 1 to Dec 31). Ensured inclusive date filtering uses the normalized boundaries consistently across GSTR-1, GSTR-2, and GST Audit Trail endpoints.
+
+## BE-119: GST export value overlap fix (PDF/XLSX)
+**Update**: Prevented GSTIN/Place/Tax Type/Date value collisions by wrapping GSTIN and tax type values in PDF tables, rebalancing PDF column widths, cleaning GSTR-1 XLSX header/width logic, and adding explicit XLSX column widths with header wrap for GSTR-2 and GST Reconciliation.
+
+## BE-118: GST export header overlap fix (PDF/XLSX)
+**Update**: Resolved GST export header collisions by wrapping long header labels in PDF tables, adjusting column width fractions for GSTR-1/GSTR-2/Reconciliation, and setting explicit XLSX column widths with wrapped header rows for readable labels.
+
+## BE-117: GST reports product-level exports + detail payloads
+**Update**: Added product-level line items to GSTR-1/GSTR-2/GST Reconciliation exports (PDF/XLSX), including Item Name & Description, HSN, and Quantity columns. Introduced detail item arrays in GST report payloads for drill-down UI and updated PDF layouts (landscape with tighter columns/padding) to prevent overlap with the new fields.
+
 ## BE-116: Billing PDFs - place of supply, invoice type, ship-to, footer fix
 **Update**: Fixed Sales Invoice/Quotation/Purchase Order PDF generation to (1) derive Place of Supply from shipping/supply state (instead of billing), (2) display the correct invoice type label in the PDF (including quotation context), (3) use `bill_to_customer_id` + `ship_to_customer_id` correctly for invoice address blocks, and (4) remove the duplicate company-name footer line (kept only one).
 

@@ -3,11 +3,11 @@
  * Visual analytics hub with charts, tables, and financial summaries.
  * Uses Recharts for data visualization.
  */
-import { useState, useEffect } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { AppLayout } from '../components/AppLayout';
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { apiClient, type ApiRequestConfig } from '../api/client';
-import { downloadGSTR1Export, downloadGSTR2Export, downloadGSTReconciliationExport, getActionLogs, getGstAuditTrail, getGSTR1Report, getGSTR2Report, getGSTReconciliationReport, type ActionLogsResponse, type GSTAuditTrailResponse, type GSTR1ReportResponse, type GSTR2ReportResponse, type GSTReconciliationResponse } from '../api/reports';
+import { downloadGSTR1Export, downloadGSTR2Export, downloadGSTReconciliationExport, getGstAuditTrail, getGSTR1Report, getGSTR2Report, getGSTReconciliationReport, type GSTAuditTrailResponse, type GSTR1ReportDetailRow, type GSTR1ReportResponse, type GSTR2ReportDetailRow, type GSTR2ReportResponse, type GSTReconciliationResponse } from '../api/reports';
 import { toLocalDateInputValue } from '../utils/date';
 import { useAuthStore } from '../store/auth';
 
@@ -38,6 +38,11 @@ interface ApiErrorShape {
 
 const formatAmount = (p: number) => `₹${(p / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 const formatDecimalAmount = (amount: number) => `₹${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const formatQuantity = (value: number | null | undefined) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '-';
+  return numeric.toLocaleString('en-IN', { maximumFractionDigits: 3 });
+};
 const formatTaxPercent = (value: number | null) => (value == null ? '-' : value.toFixed(2));
 const formatAuditTimestamp = (value: string | null) => {
   if (!value) return '-';
@@ -61,24 +66,18 @@ const getFrequencyDateWindow = (frequency: ReportFrequency, baseDate: Date) => {
   const month = baseDate.getMonth();
   if (frequency === 'monthly') {
     const start = new Date(year, month, 1);
-    const end = new Date(baseDate);
+    const end = new Date(year, month + 1, 0);
     return { from: toInputDate(start), to: toInputDate(end) };
   }
   if (frequency === 'quarterly') {
-    const start = new Date(baseDate);
-    start.setMonth(start.getMonth() - 3);
-    const end = new Date(baseDate);
+    const quarterStartMonth = Math.floor(month / 3) * 3;
+    const start = new Date(year, quarterStartMonth, 1);
+    const end = new Date(year, quarterStartMonth + 3, 0);
     return { from: toInputDate(start), to: toInputDate(end) };
   }
   const start = new Date(year, 0, 1);
-  const end = new Date(baseDate);
+  const end = new Date(year, 11, 31);
   return { from: toInputDate(start), to: toInputDate(end) };
-};
-
-const maxDaysByFrequency: Record<ReportFrequency, number> = {
-  monthly: 31,
-  quarterly: 93,
-  annually: 366,
 };
 
 const parseLocalDate = (value: string): Date | null => {
@@ -174,46 +173,73 @@ const ReportsPage = () => {
   const [gstr2Data, setGstr2Data] = useState<GSTR2ReportResponse | null>(null);
   const [gstReconciliationData, setGstReconciliationData] = useState<GSTReconciliationResponse | null>(null);
   const [gstAuditTrail, setGstAuditTrail] = useState<GSTAuditTrailResponse | null>(null);
-  const [actionLogsData, setActionLogsData] = useState<ActionLogsResponse | null>(null);
   const [gstr3bData, setGstr3bData] = useState<GSTR3BData | null>(null);
   const [auditReportType, setAuditReportType] = useState<'all' | 'gstr1' | 'gstr2' | 'gstr3b' | 'reconciliation'>('all');
   const [auditPage, setAuditPage] = useState(1);
   const [auditPageSize, setAuditPageSize] = useState(20);
-  const [actionLogModule, setActionLogModule] = useState('all');
-  const [actionLogType, setActionLogType] = useState('all');
-  const [actionLogUserQuery, setActionLogUserQuery] = useState('');
-  const [actionLogReference, setActionLogReference] = useState('');
-  const [actionLogPage, setActionLogPage] = useState(1);
-  const [actionLogPageSize, setActionLogPageSize] = useState(20);
+  const [expandedGstr1Invoices, setExpandedGstr1Invoices] = useState<Record<string, boolean>>({});
+  const [expandedGstr2Grns, setExpandedGstr2Grns] = useState<Record<string, boolean>>({});
   const isFinanceTaxUser = (user?.role || '').toLowerCase() === 'admin' || (user?.role || '').toLowerCase() === 'accounting';
   const fromDate = dateRange.from;
   const toDate = dateRange.to;
-  const todayInput = toLocalDateInputValue(today);
-  const fromDateMax = toDate && toDate < todayInput ? toDate : todayInput;
+
+  const getAlignedWindow = (frequency: ReportFrequency, anchorValue: string, fallbackValue: string) => {
+    const anchorDate = parseLocalDate(anchorValue) || parseLocalDate(fallbackValue) || new Date();
+    return getFrequencyDateWindow(frequency, anchorDate);
+  };
+
+  const gstr1DetailMap = useMemo(() => {
+    const map = new Map<string, GSTR1ReportDetailRow[]>();
+    (gstData?.detail_items || []).forEach((item) => {
+      const key = item.sales_invoice_no || '';
+      if (!key) return;
+      const existing = map.get(key) || [];
+      existing.push(item);
+      map.set(key, existing);
+    });
+    return map;
+  }, [gstData?.detail_items]);
+
+  const gstr2DetailMap = useMemo(() => {
+    const map = new Map<string, GSTR2ReportDetailRow[]>();
+    (gstr2Data?.detail_items || []).forEach((item) => {
+      const key = item.grn_no || '';
+      if (!key) return;
+      const existing = map.get(key) || [];
+      existing.push(item);
+      map.set(key, existing);
+    });
+    return map;
+  }, [gstr2Data?.detail_items]);
+
+  const toggleGstr1Details = (invoiceNo: string) => {
+    setExpandedGstr1Invoices((prev) => ({
+      ...prev,
+      [invoiceNo]: !prev[invoiceNo],
+    }));
+  };
+
+  const toggleGstr2Details = (grnNo: string) => {
+    setExpandedGstr2Grns((prev) => ({
+      ...prev,
+      [grnNo]: !prev[grnNo],
+    }));
+  };
 
   const handleFromDateChange = (value: string) => {
     setAuditPage(1);
-    setActionLogPage(1);
-    setDateRange((prev) => {
-      const nextToDate = prev.to && value && value > prev.to ? value : prev.to;
-      return { from: value, to: nextToDate };
-    });
+    setDateRange(getAlignedWindow(reportFrequency, value, toDate));
   };
 
   const handleToDateChange = (value: string) => {
     setAuditPage(1);
-    setActionLogPage(1);
-    setDateRange((prev) => {
-      const nextFromDate = prev.from && value && value < prev.from ? value : prev.from;
-      return { from: nextFromDate, to: value };
-    });
+    setDateRange(getAlignedWindow(reportFrequency, value, fromDate));
   };
 
   const handleFrequencyChange = (value: ReportFrequency) => {
-    const window = getFrequencyDateWindow(value, new Date());
+    const window = getAlignedWindow(value, fromDate, toDate);
     setReportFrequency(value);
     setAuditPage(1);
-    setActionLogPage(1);
     setDateRange({ from: window.from, to: window.to });
     setDateInputError('');
     setFetchWarning('');
@@ -229,11 +255,6 @@ const ReportsPage = () => {
     setAuditPage(1);
   };
 
-  const handleActionLogPageSizeChange = (value: number) => {
-    setActionLogPageSize(value);
-    setActionLogPage(1);
-  };
-
   const validateFrequencyRangeOnClient = (): string | null => {
     if (!fromDate || !toDate) {
       return 'From date and To date are required.';
@@ -246,16 +267,11 @@ const ReportsPage = () => {
     if (!start || !end) {
       return 'Please select valid dates.';
     }
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    if (start > today || end > today) {
-      return 'Future dates are not allowed. End date must be today or earlier.';
-    }
-    const days = Math.floor((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1;
-    const allowed = maxDaysByFrequency[reportFrequency];
-    if (days > allowed) {
-      const label = reportFrequency === 'monthly' ? 'Monthly' : reportFrequency === 'quarterly' ? 'Quarterly' : 'Annually';
-      return `Selected date range (${days} days) exceeds ${label} limit (${allowed} days). Adjust dates or change frequency.`;
+
+    const expected = getFrequencyDateWindow(reportFrequency, start);
+    if (expected.from !== fromDate || expected.to !== toDate) {
+      const label = reportFrequency === 'monthly' ? 'Monthly' : reportFrequency === 'quarterly' ? 'Quarterly' : 'Annual';
+      return `${label} range must match the exact selected period boundaries.`;
     }
     return null;
   };
@@ -277,23 +293,11 @@ const ReportsPage = () => {
       const auditTrailPromise = shouldLoadGst
         ? getGstAuditTrail(fromDate, toDate, reportFrequency, auditReportType, auditPage, auditPageSize)
         : Promise.resolve(null);
-      const actionLogsPromise = shouldLoadGst
-        ? getActionLogs(
-          fromDate,
-          toDate,
-          actionLogModule,
-          actionLogType,
-          actionLogUserQuery,
-          actionLogReference,
-          actionLogPage,
-          actionLogPageSize,
-        )
-        : Promise.resolve(null);
       const gstr3bPromise = shouldLoadGst
         ? apiClient.get('/api/v2/reports/gstr3b', { params: { from_date: fromDate, to_date: toDate } })
         : Promise.resolve(null);
 
-      const [dashRes, plRes, stockRes, salesRes, gstRes, gstr2Res, reconciliationRes, auditTrailRes, actionLogsRes, gstr3bRes] = await Promise.allSettled([
+      const [dashRes, plRes, stockRes, salesRes, gstRes, gstr2Res, reconciliationRes, auditTrailRes, gstr3bRes] = await Promise.allSettled([
         withTimeout(apiClient.get('/api/v2/reports/dashboard'), 15000, 'Dashboard'),
         withTimeout(apiClient.get('/api/v2/reports/pl', { params: { from_date: fromDate, to_date: toDate } }), 15000, 'P&L'),
         withTimeout(apiClient.get('/api/v2/reports/stock'), 15000, 'Stock'),
@@ -302,7 +306,6 @@ const ReportsPage = () => {
         gstr2Promise,
         reconciliationPromise,
         shouldLoadGst ? withTimeout(auditTrailPromise, 20000, 'GST Audit Trail') : auditTrailPromise,
-        shouldLoadGst ? withTimeout(actionLogsPromise, 20000, 'Action Logs') : actionLogsPromise,
         shouldLoadGst ? withTimeout(gstr3bPromise, 20000, 'GSTR-3B') : gstr3bPromise,
       ]);
 
@@ -373,15 +376,6 @@ const ReportsPage = () => {
       }
 
       if (!shouldLoadGst) {
-        setActionLogsData(null);
-      } else if (actionLogsRes.status === 'fulfilled') {
-        setActionLogsData((actionLogsRes.value as ActionLogsResponse) || null);
-      } else {
-        setActionLogsData(null);
-        failedSections.push(`Action Logs (${getErrorMessage(actionLogsRes.reason)})`);
-      }
-
-      if (!shouldLoadGst) {
         setGstr3bData(null);
       } else if (gstr3bRes.status === 'fulfilled') {
         setGstr3bData(((gstr3bRes.value as { data?: GSTR3BData }).data as GSTR3BData) || null);
@@ -420,6 +414,15 @@ const ReportsPage = () => {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
+      // Refresh GST Audit Trail to show the new export event immediately (page 1)
+      try {
+        setAuditPage(1);
+        const refreshed = await withTimeout(getGstAuditTrail(fromDate, toDate, reportFrequency, auditReportType, 1, auditPageSize), 10000, 'Refresh GST Audit Trail');
+        setGstAuditTrail((refreshed as GSTAuditTrailResponse) || null);
+      } catch (err) {
+        // Non-fatal: ignore refresh errors but log for debugging
+        console.debug('Failed to refresh GST Audit Trail after export:', err);
+      }
     } catch {
       setFetchWarning('Failed to export GST reconciliation report. Please retry.');
     }
@@ -436,6 +439,14 @@ const ReportsPage = () => {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
+      // Refresh GST Audit Trail to show the new export event immediately (page 1)
+      try {
+        setAuditPage(1);
+        const refreshed = await withTimeout(getGstAuditTrail(fromDate, toDate, reportFrequency, auditReportType, 1, auditPageSize), 10000, 'Refresh GST Audit Trail');
+        setGstAuditTrail((refreshed as GSTAuditTrailResponse) || null);
+      } catch (err) {
+        console.debug('Failed to refresh GST Audit Trail after GSTR-1 export:', err);
+      }
     } catch {
       setFetchWarning('Failed to export GSTR-1 report. Please retry.');
     }
@@ -452,10 +463,26 @@ const ReportsPage = () => {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
+      // Refresh GST Audit Trail to show the new export event immediately (page 1)
+      try {
+        setAuditPage(1);
+        const refreshed = await withTimeout(getGstAuditTrail(fromDate, toDate, reportFrequency, auditReportType, 1, auditPageSize), 10000, 'Refresh GST Audit Trail');
+        setGstAuditTrail((refreshed as GSTAuditTrailResponse) || null);
+      } catch (err) {
+        console.debug('Failed to refresh GST Audit Trail after GSTR-2 export:', err);
+      }
     } catch {
       setFetchWarning('Failed to export GSTR-2 report. Please retry.');
     }
   };
+
+  useEffect(() => {
+    setExpandedGstr1Invoices({});
+  }, [gstData?.items]);
+
+  useEffect(() => {
+    setExpandedGstr2Grns({});
+  }, [gstr2Data?.items]);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- debounce filter updates to avoid flicker and intermediate validation
   useEffect(() => {
@@ -478,12 +505,6 @@ const ReportsPage = () => {
     auditReportType,
     auditPage,
     auditPageSize,
-    actionLogModule,
-    actionLogType,
-    actionLogUserQuery,
-    actionLogReference,
-    actionLogPage,
-    actionLogPageSize,
     activeTab,
   ]);
 
@@ -531,7 +552,6 @@ const ReportsPage = () => {
               type="date"
               className="rounded-lg border border-neutral-200 px-3 py-2 text-sm"
               value={fromDate}
-              max={fromDateMax}
               onChange={e => handleFromDateChange(e.target.value)}
             />
             <span className="text-sm text-neutral-500">to</span>
@@ -539,7 +559,6 @@ const ReportsPage = () => {
               type="date"
               className="rounded-lg border border-neutral-200 px-3 py-2 text-sm"
               value={toDate}
-              max={todayInput}
               min={fromDate || undefined}
               onChange={e => handleToDateChange(e.target.value)}
             />
@@ -737,36 +756,96 @@ const ReportsPage = () => {
                         <th className="px-3 py-2 text-right">UGST Amount</th>
                         <th className="px-3 py-2 text-right">Export</th>
                         <th className="px-3 py-2 text-right">Total Tax Amount</th>
+                        <th className="px-3 py-2 text-center">Details</th>
                       </tr>
                     </thead>
                     <tbody>
                       {gstData.items.length === 0 ? (
                         <tr>
-                          <td colSpan={16} className="px-4 py-6 text-center text-neutral-500">
+                          <td colSpan={17} className="px-4 py-6 text-center text-neutral-500">
                             No sales transactions found for selected filters.
                           </td>
                         </tr>
                       ) : (
-                        gstData.items.map((row) => (
-                          <tr key={`${row.sales_invoice_no}-${row.s_no}`} className="border-b border-neutral-100">
-                            <td className="px-3 py-2 text-left">{row.s_no}</td>
-                            <td className="px-3 py-2 text-left">{row.sales_invoice_date || '-'}</td>
-                            <td className="px-3 py-2 text-left">{row.sales_invoice_no}</td>
-                            <td className="px-3 py-2 text-left">{row.bill_to_party_name}</td>
-                            <td className="px-3 py-2 text-left font-mono text-xs">{row.bill_to_party_gstin_no}</td>
-                            <td className="px-3 py-2 text-left">{row.place_of_supply}</td>
-                            <td className="px-3 py-2 text-left">{row.ship_to_party_name}</td>
-                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.invoice_amount)}</td>
-                            <td className="px-3 py-2 text-center">{row.currency}</td>
-                            <td className="px-3 py-2 text-right">{formatTaxPercent(row.tax_percent)}</td>
-                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.cgst_amount)}</td>
-                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.sgst_amount)}</td>
-                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.igst_amount)}</td>
-                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.ugst_amount)}</td>
-                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.export_amount)}</td>
-                            <td className="px-3 py-2 text-right font-semibold">{formatDecimalAmount(row.total_tax_amount)}</td>
-                          </tr>
-                        ))
+                        gstData.items.map((row) => {
+                          const detailRows = gstr1DetailMap.get(row.sales_invoice_no) || [];
+                          const isExpanded = Boolean(expandedGstr1Invoices[row.sales_invoice_no]);
+                          return (
+                            <Fragment key={`${row.sales_invoice_no}-${row.s_no}`}>
+                              <tr className="border-b border-neutral-100">
+                                <td className="px-3 py-2 text-left">{row.s_no}</td>
+                                <td className="px-3 py-2 text-left">{row.sales_invoice_date || '-'}</td>
+                                <td className="px-3 py-2 text-left">{row.sales_invoice_no}</td>
+                                <td className="px-3 py-2 text-left">{row.bill_to_party_name}</td>
+                                <td className="px-3 py-2 text-left font-mono text-xs break-all">{row.bill_to_party_gstin_no}</td>
+                                <td className="px-3 py-2 text-left">{row.place_of_supply}</td>
+                                <td className="px-3 py-2 text-left">{row.ship_to_party_name}</td>
+                                <td className="px-3 py-2 text-right">{formatDecimalAmount(row.invoice_amount)}</td>
+                                <td className="px-3 py-2 text-center">{row.currency}</td>
+                                <td className="px-3 py-2 text-right">{formatTaxPercent(row.tax_percent)}</td>
+                                <td className="px-3 py-2 text-right">{formatDecimalAmount(row.cgst_amount)}</td>
+                                <td className="px-3 py-2 text-right">{formatDecimalAmount(row.sgst_amount)}</td>
+                                <td className="px-3 py-2 text-right">{formatDecimalAmount(row.igst_amount)}</td>
+                                <td className="px-3 py-2 text-right">{formatDecimalAmount(row.ugst_amount)}</td>
+                                <td className="px-3 py-2 text-right">{formatDecimalAmount(row.export_amount)}</td>
+                                <td className="px-3 py-2 text-right font-semibold">{formatDecimalAmount(row.total_tax_amount)}</td>
+                                <td className="px-3 py-2 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleGstr1Details(row.sales_invoice_no)}
+                                    className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs font-semibold text-neutral-700 hover:bg-neutral-100"
+                                  >
+                                    {isExpanded ? 'Hide Details' : 'View Details'}
+                                  </button>
+                                </td>
+                              </tr>
+                              {isExpanded && (
+                                <tr className="bg-neutral-50">
+                                  <td colSpan={17} className="px-3 py-3">
+                                    {detailRows.length === 0 ? (
+                                      <div className="text-xs text-neutral-500">No product details available for this invoice.</div>
+                                    ) : (
+                                      <div className="overflow-x-auto">
+                                        <table className="w-full text-xs">
+                                          <thead>
+                                            <tr className="border-b bg-white text-[11px] uppercase tracking-wide text-neutral-500">
+                                              <th className="px-2 py-1 text-left">Item Name & Description</th>
+                                              <th className="px-2 py-1 text-left">HSN</th>
+                                              <th className="px-2 py-1 text-right">Qty</th>
+                                              <th className="px-2 py-1 text-right">Amount</th>
+                                              <th className="px-2 py-1 text-right">Tax %</th>
+                                              <th className="px-2 py-1 text-right">CGST</th>
+                                              <th className="px-2 py-1 text-right">SGST</th>
+                                              <th className="px-2 py-1 text-right">IGST</th>
+                                              <th className="px-2 py-1 text-right">UGST</th>
+                                              <th className="px-2 py-1 text-right">Total Tax</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {detailRows.map((detail) => (
+                                              <tr key={`${detail.sales_invoice_no}-${detail.s_no}`} className="border-b border-neutral-100">
+                                                <td className="px-2 py-1 text-left">{detail.item_name_description || '-'}</td>
+                                                <td className="px-2 py-1 text-left">{detail.hsn || '-'}</td>
+                                                <td className="px-2 py-1 text-right">{formatQuantity(detail.quantity)}</td>
+                                                <td className="px-2 py-1 text-right">{formatDecimalAmount(detail.invoice_amount)}</td>
+                                                <td className="px-2 py-1 text-right">{formatTaxPercent(detail.tax_percent)}</td>
+                                                <td className="px-2 py-1 text-right">{formatDecimalAmount(detail.cgst_amount)}</td>
+                                                <td className="px-2 py-1 text-right">{formatDecimalAmount(detail.sgst_amount)}</td>
+                                                <td className="px-2 py-1 text-right">{formatDecimalAmount(detail.igst_amount)}</td>
+                                                <td className="px-2 py-1 text-right">{formatDecimalAmount(detail.ugst_amount)}</td>
+                                                <td className="px-2 py-1 text-right font-semibold">{formatDecimalAmount(detail.total_tax_amount)}</td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    )}
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          );
+                        })
                       )}
 
                       {gstData.items.length > 0 && (
@@ -781,6 +860,7 @@ const ReportsPage = () => {
                           <td className="px-3 py-3 text-right">{formatDecimalAmount(gstData.subtotal.ugst_amount)}</td>
                           <td className="px-3 py-3 text-right">{formatDecimalAmount(gstData.subtotal.export_amount)}</td>
                           <td className="px-3 py-3 text-right">{formatDecimalAmount(gstData.subtotal.total_tax_amount)}</td>
+                          <td className="px-3 py-3 text-center">-</td>
                         </tr>
                       )}
                     </tbody>
@@ -856,36 +936,96 @@ const ReportsPage = () => {
                         <th className="px-3 py-2 text-right">UGST Amount</th>
                         <th className="px-3 py-2 text-right">Import</th>
                         <th className="px-3 py-2 text-right">Total Tax Amount</th>
+                        <th className="px-3 py-2 text-center">Details</th>
                       </tr>
                     </thead>
                     <tbody>
                       {gstr2Data.items.length === 0 ? (
                         <tr>
-                          <td colSpan={16} className="px-4 py-6 text-center text-neutral-500">
+                          <td colSpan={17} className="px-4 py-6 text-center text-neutral-500">
                             No purchase transactions found for selected filters.
                           </td>
                         </tr>
                       ) : (
-                        gstr2Data.items.map((row) => (
-                          <tr key={`${row.grn_no}-${row.s_no}`} className="border-b border-neutral-100">
-                            <td className="px-3 py-2 text-left">{row.s_no}</td>
-                            <td className="px-3 py-2 text-left">{row.grn_date || '-'}</td>
-                            <td className="px-3 py-2 text-left">{row.grn_no}</td>
-                            <td className="px-3 py-2 text-left">{row.supplier_name}</td>
-                            <td className="px-3 py-2 text-left font-mono text-xs">{row.supplier_gstin_no}</td>
-                            <td className="px-3 py-2 text-left">{row.business_place}</td>
-                            <td className="px-3 py-2 text-left">{row.place_of_supply}</td>
-                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.grn_amount)}</td>
-                            <td className="px-3 py-2 text-center">{row.currency}</td>
-                            <td className="px-3 py-2 text-right">{formatTaxPercent(row.tax_percent)}</td>
-                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.cgst_amount)}</td>
-                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.sgst_amount)}</td>
-                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.igst_amount)}</td>
-                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.ugst_amount)}</td>
-                            <td className="px-3 py-2 text-right">{formatDecimalAmount(row.import_amount)}</td>
-                            <td className="px-3 py-2 text-right font-semibold">{formatDecimalAmount(row.total_tax_amount)}</td>
-                          </tr>
-                        ))
+                        gstr2Data.items.map((row) => {
+                          const detailRows = gstr2DetailMap.get(row.grn_no) || [];
+                          const isExpanded = Boolean(expandedGstr2Grns[row.grn_no]);
+                          return (
+                            <Fragment key={`${row.grn_no}-${row.s_no}`}>
+                              <tr className="border-b border-neutral-100">
+                                <td className="px-3 py-2 text-left">{row.s_no}</td>
+                                <td className="px-3 py-2 text-left">{row.grn_date || '-'}</td>
+                                <td className="px-3 py-2 text-left">{row.grn_no}</td>
+                                <td className="px-3 py-2 text-left">{row.supplier_name}</td>
+                                <td className="px-3 py-2 text-left font-mono text-xs break-all">{row.supplier_gstin_no}</td>
+                                <td className="px-3 py-2 text-left">{row.business_place}</td>
+                                <td className="px-3 py-2 text-left">{row.place_of_supply}</td>
+                                <td className="px-3 py-2 text-right">{formatDecimalAmount(row.grn_amount)}</td>
+                                <td className="px-3 py-2 text-center">{row.currency}</td>
+                                <td className="px-3 py-2 text-right">{formatTaxPercent(row.tax_percent)}</td>
+                                <td className="px-3 py-2 text-right">{formatDecimalAmount(row.cgst_amount)}</td>
+                                <td className="px-3 py-2 text-right">{formatDecimalAmount(row.sgst_amount)}</td>
+                                <td className="px-3 py-2 text-right">{formatDecimalAmount(row.igst_amount)}</td>
+                                <td className="px-3 py-2 text-right">{formatDecimalAmount(row.ugst_amount)}</td>
+                                <td className="px-3 py-2 text-right">{formatDecimalAmount(row.import_amount)}</td>
+                                <td className="px-3 py-2 text-right font-semibold">{formatDecimalAmount(row.total_tax_amount)}</td>
+                                <td className="px-3 py-2 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleGstr2Details(row.grn_no)}
+                                    className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs font-semibold text-neutral-700 hover:bg-neutral-100"
+                                  >
+                                    {isExpanded ? 'Hide Details' : 'View Details'}
+                                  </button>
+                                </td>
+                              </tr>
+                              {isExpanded && (
+                                <tr className="bg-neutral-50">
+                                  <td colSpan={17} className="px-3 py-3">
+                                    {detailRows.length === 0 ? (
+                                      <div className="text-xs text-neutral-500">No product details available for this GRN.</div>
+                                    ) : (
+                                      <div className="overflow-x-auto">
+                                        <table className="w-full text-xs">
+                                          <thead>
+                                            <tr className="border-b bg-white text-[11px] uppercase tracking-wide text-neutral-500">
+                                              <th className="px-2 py-1 text-left">Item Name & Description</th>
+                                              <th className="px-2 py-1 text-left">HSN</th>
+                                              <th className="px-2 py-1 text-right">Qty</th>
+                                              <th className="px-2 py-1 text-right">Amount</th>
+                                              <th className="px-2 py-1 text-right">Tax %</th>
+                                              <th className="px-2 py-1 text-right">CGST</th>
+                                              <th className="px-2 py-1 text-right">SGST</th>
+                                              <th className="px-2 py-1 text-right">IGST</th>
+                                              <th className="px-2 py-1 text-right">UGST</th>
+                                              <th className="px-2 py-1 text-right">Total Tax</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {detailRows.map((detail) => (
+                                              <tr key={`${detail.grn_no}-${detail.s_no}`} className="border-b border-neutral-100">
+                                                <td className="px-2 py-1 text-left">{detail.item_name_description || '-'}</td>
+                                                <td className="px-2 py-1 text-left">{detail.hsn || '-'}</td>
+                                                <td className="px-2 py-1 text-right">{formatQuantity(detail.quantity)}</td>
+                                                <td className="px-2 py-1 text-right">{formatDecimalAmount(detail.grn_amount)}</td>
+                                                <td className="px-2 py-1 text-right">{formatTaxPercent(detail.tax_percent)}</td>
+                                                <td className="px-2 py-1 text-right">{formatDecimalAmount(detail.cgst_amount)}</td>
+                                                <td className="px-2 py-1 text-right">{formatDecimalAmount(detail.sgst_amount)}</td>
+                                                <td className="px-2 py-1 text-right">{formatDecimalAmount(detail.igst_amount)}</td>
+                                                <td className="px-2 py-1 text-right">{formatDecimalAmount(detail.ugst_amount)}</td>
+                                                <td className="px-2 py-1 text-right font-semibold">{formatDecimalAmount(detail.total_tax_amount)}</td>
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    )}
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          );
+                        })
                       )}
 
                       {gstr2Data.items.length > 0 && (
@@ -900,6 +1040,7 @@ const ReportsPage = () => {
                           <td className="px-3 py-3 text-right">{formatDecimalAmount(gstr2Data.subtotal.ugst_amount)}</td>
                           <td className="px-3 py-3 text-right">{formatDecimalAmount(gstr2Data.subtotal.import_amount)}</td>
                           <td className="px-3 py-3 text-right">{formatDecimalAmount(gstr2Data.subtotal.total_tax_amount)}</td>
+                          <td className="px-3 py-3 text-center">-</td>
                         </tr>
                       )}
                     </tbody>
@@ -1003,7 +1144,7 @@ const ReportsPage = () => {
                             <td className="px-3 py-2 text-left">{row.tax_type}</td>
                             <td className="px-3 py-2 text-left">{row.date || '-'}</td>
                             <td className="px-3 py-2 text-left">{row.name_of_partner}</td>
-                            <td className="px-3 py-2 text-left font-mono text-xs">{row.partner_gstin_no}</td>
+                            <td className="px-3 py-2 text-left font-mono text-xs break-all">{row.partner_gstin_no}</td>
                             <td className="px-3 py-2 text-left">{row.business_place}</td>
                             <td className="px-3 py-2 text-left">{row.place_of_supply}</td>
                             <td className="px-3 py-2 text-right">{formatDecimalAmount(row.grn_or_invoice_amount)}</td>
@@ -1151,161 +1292,6 @@ const ReportsPage = () => {
                         type="button"
                         disabled={gstAuditTrail.page >= gstAuditTrail.total_pages}
                         onClick={() => setAuditPage((prev) => prev + 1)}
-                        className="rounded border border-neutral-300 bg-white px-3 py-1 font-semibold text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Next
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-            {actionLogsData && (
-              <div className="hms-card overflow-hidden">
-                <div className="border-b border-neutral-200 bg-neutral-50 p-4">
-                  <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                    <h3 className="text-sm font-bold text-neutral-800">{actionLogsData.report_title}</h3>
-                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-6">
-                      <select
-                        value={actionLogModule}
-                        onChange={(e) => {
-                          setActionLogModule(e.target.value);
-                          setActionLogPage(1);
-                        }}
-                        className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-700"
-                      >
-                        <option value="all">All Modules</option>
-                        <option value="auth">Auth</option>
-                        <option value="reports">Reports</option>
-                        <option value="sales">Sales</option>
-                        <option value="purchase">Purchase</option>
-                        <option value="products">Products</option>
-                        <option value="customers">Customers</option>
-                        <option value="suppliers">Suppliers</option>
-                        <option value="stock">Stock</option>
-                        <option value="payments">Payments</option>
-                        <option value="users">Users</option>
-                        <option value="audit">Audit</option>
-                        <option value="system">System</option>
-                      </select>
-                      <select
-                        value={actionLogType}
-                        onChange={(e) => {
-                          setActionLogType(e.target.value);
-                          setActionLogPage(1);
-                        }}
-                        className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-700"
-                      >
-                        <option value="all">All Actions</option>
-                        <option value="GET">GET</option>
-                        <option value="POST">POST</option>
-                        <option value="PUT">PUT</option>
-                        <option value="PATCH">PATCH</option>
-                        <option value="DELETE">DELETE</option>
-                        <option value="LOGIN">LOGIN</option>
-                        <option value="LOGOUT">LOGOUT</option>
-                        <option value="VIEW_ACTION_LOGS">VIEW_ACTION_LOGS</option>
-                      </select>
-                      <input
-                        type="text"
-                        value={actionLogUserQuery}
-                        onChange={(e) => {
-                          setActionLogUserQuery(e.target.value);
-                          setActionLogPage(1);
-                        }}
-                        placeholder="User / Email / ID"
-                        className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-700"
-                      />
-                      <input
-                        type="text"
-                        value={actionLogReference}
-                        onChange={(e) => {
-                          setActionLogReference(e.target.value);
-                          setActionLogPage(1);
-                        }}
-                        placeholder="Reference"
-                        className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-700"
-                      />
-                      <select
-                        value={actionLogPageSize}
-                        onChange={(e) => handleActionLogPageSizeChange(Number(e.target.value))}
-                        className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-700"
-                      >
-                        <option value={10}>10 rows</option>
-                        <option value={20}>20 rows</option>
-                        <option value={50}>50 rows</option>
-                      </select>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActionLogModule('all');
-                          setActionLogType('all');
-                          setActionLogUserQuery('');
-                          setActionLogReference('');
-                          setActionLogPage(1);
-                        }}
-                        className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs font-semibold text-neutral-700 hover:bg-neutral-100"
-                      >
-                        Clear
-                      </button>
-                    </div>
-                  </div>
-                  <p className="mt-2 text-xs text-neutral-600">
-                    Period: {actionLogsData.from_date_display || fromDate} to {actionLogsData.to_date_display || toDate} | Total Events: {actionLogsData.total}
-                  </p>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b bg-neutral-100 text-xs uppercase tracking-wide text-neutral-600">
-                        <th className="px-3 py-2 text-left">Timestamp</th>
-                        <th className="px-3 py-2 text-left">User</th>
-                        <th className="px-3 py-2 text-left">Module</th>
-                        <th className="px-3 py-2 text-left">Action Type</th>
-                        <th className="px-3 py-2 text-left">Reference</th>
-                        <th className="px-3 py-2 text-left">Description</th>
-                        <th className="px-3 py-2 text-left">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {actionLogsData.items.length === 0 ? (
-                        <tr>
-                          <td colSpan={7} className="px-4 py-6 text-center text-neutral-500">
-                            No action logs found for selected filters.
-                          </td>
-                        </tr>
-                      ) : (
-                        actionLogsData.items.map((item) => (
-                          <tr key={item.id} className="border-b border-neutral-100 align-top">
-                            <td className="px-3 py-2 text-left">{formatAuditTimestamp(item.timestamp)}</td>
-                            <td className="px-3 py-2 text-left">{item.user_name || item.user_id || 'System'}</td>
-                            <td className="px-3 py-2 text-left">{item.module_name || '-'}</td>
-                            <td className="px-3 py-2 text-left">{item.action_type || '-'}</td>
-                            <td className="px-3 py-2 text-left">{item.record_reference || '-'}</td>
-                            <td className="px-3 py-2 text-left">{item.description || item.action || '-'}</td>
-                            <td className="px-3 py-2 text-left">{item.status || '-'}</td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-                {actionLogsData.total_pages > 1 && (
-                  <div className="flex items-center justify-between border-t border-neutral-200 bg-white px-4 py-3 text-xs text-neutral-600">
-                    <span>Page {actionLogsData.page} of {actionLogsData.total_pages}</span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        disabled={actionLogsData.page <= 1}
-                        onClick={() => setActionLogPage((prev) => Math.max(1, prev - 1))}
-                        className="rounded border border-neutral-300 bg-white px-3 py-1 font-semibold text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        Previous
-                      </button>
-                      <button
-                        type="button"
-                        disabled={actionLogsData.page >= actionLogsData.total_pages}
-                        onClick={() => setActionLogPage((prev) => prev + 1)}
                         className="rounded border border-neutral-300 bg-white px-3 py-1 font-semibold text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         Next
