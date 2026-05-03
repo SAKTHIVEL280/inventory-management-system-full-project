@@ -244,39 +244,53 @@ def _extract_document_reference(record_reference: str | None, details: dict[str,
         if value is not None and str(value).strip():
             return str(value).strip()
     
-    # Try to extract from path if available (e.g., /api/v2/invoices/INV-2024-001 -> INV-2024-001)
+    # Extract UUID from path if available
     path = (details.get("path") or "").strip()
+    resource_uuid = None
+    
     if path:
         segments = [segment for segment in path.strip("/").split("/") if segment]
-        # Look for document reference patterns: typically last segment or second-to-last if last is an action
-        if len(segments) >= 3:
+        # Look for UUID in path segments
+        for segment in segments:
+            if _looks_like_uuid(segment):
+                resource_uuid = segment
+                break
+        
+        # If no UUID found, check for document reference patterns
+        if not resource_uuid and len(segments) >= 3:
             # Check last segment first
             candidate = segments[-1]
-            # Skip common action suffixes and numeric pagination
-            skip_suffixes = {"export", "bulk", "items", "status", "action-logs", "create", "update", "delete", "page"}
+            # Skip common action suffixes
+            skip_suffixes = {"export", "bulk", "items", "status", "action-logs", "create", "update", "delete", "page", "confirm", "issue", "send-email"}
             if candidate.lower() not in skip_suffixes and not candidate.isdigit():
-                # Document references typically have letters (e.g., INV-001, PO-002, GRN-001)
-                if candidate and any(ch.isalpha() for ch in candidate):
+                # Document references typically have letters and hyphens (e.g., INV-001, PO-002, GRN-001)
+                if candidate and any(ch.isalpha() for ch in candidate) and ("-" in candidate or any(ch.isdigit() for ch in candidate)):
                     return candidate
             
             # Try second-to-last segment (in case last is an action)
             if len(segments) >= 4:
                 candidate = segments[-2]
-                if candidate and any(ch.isalpha() for ch in candidate) and not candidate.isdigit():
-                    return candidate
+                if candidate.lower() not in skip_suffixes and not candidate.isdigit():
+                    if candidate and any(ch.isalpha() for ch in candidate) and ("-" in candidate or any(ch.isdigit() for ch in candidate)):
+                        return candidate
     
-    # Try to fetch from database if we have DB connection, module_name, and record_reference (as UUID)
-    if db and module_name and record_reference and _looks_like_uuid(record_reference):
-        try:
-            ref = _fetch_document_reference_from_db(db, module_name.strip().lower(), record_reference)
-            if ref:
-                return ref
-        except Exception as e:
-            logger.debug(f"Failed to fetch reference from DB: {e}")
+    # Try to fetch from database using UUID from path or record_reference
+    if db and module_name:
+        uuid_to_lookup = resource_uuid or (record_reference if record_reference and _looks_like_uuid(record_reference) else None)
+        if uuid_to_lookup:
+            try:
+                ref = _fetch_document_reference_from_db(db, module_name.strip().lower(), uuid_to_lookup)
+                if ref:
+                    return ref
+            except Exception as e:
+                logger.debug(f"Failed to fetch reference from DB for {module_name}:{uuid_to_lookup}: {e}")
     
-    # Fall back to record_reference stored in DB
-    if record_reference:
-        return (record_reference or "").strip()
+    # Fall back to record_reference if it's not a UUID or module name
+    if record_reference and not _looks_like_uuid(record_reference):
+        # Don't show module names as references
+        module_names = {"invoices", "purchase-orders", "grn", "payments", "stock", "customers", "suppliers", "products", "users", "quotations"}
+        if record_reference.lower() not in module_names:
+            return record_reference.strip()
     
     return ""
 
@@ -336,7 +350,7 @@ def _fetch_document_reference_from_db(db: Session, module_name: str, resource_id
         elif module in {"payments", "payment"}:
             payment = db.execute(
                 text("""
-                    SELECT p.payment_number, p.status 
+                    SELECT p.payment_number, p.status, p.payment_type, p.party_type
                     FROM payments p
                     WHERE p.id = :id AND p.is_deleted = FALSE
                     LIMIT 1
@@ -347,6 +361,8 @@ def _fetch_document_reference_from_db(db: Session, module_name: str, resource_id
             if payment:
                 payment_num = payment.get("payment_number")
                 status = (payment.get("status") or "").strip().lower()
+                payment_type = (payment.get("payment_type") or "").strip().lower()
+                party_type = (payment.get("party_type") or "").strip().lower()
                 
                 # Try to get related invoice or GRN from allocations
                 allocation = db.execute(
@@ -365,28 +381,87 @@ def _fetch_document_reference_from_db(db: Session, module_name: str, resource_id
                     invoice_num = allocation.get("invoice_number")
                     grn_num = allocation.get("grn_number")
                     
-                    # Return invoice number with status if available
+                    # Build reference with document number and status
                     if invoice_num:
                         status_label = _payment_status_label(status)
-                        return f"{invoice_num} {status_label}".strip() if status_label else str(invoice_num).strip()
+                        if status_label:
+                            return f"{invoice_num} ({status_label})"
+                        return str(invoice_num).strip()
                     
-                    # Return GRN number with status if available
                     elif grn_num:
                         status_label = _payment_status_label(status)
-                        return f"{grn_num} {status_label}".strip() if status_label else str(grn_num).strip()
+                        if status_label:
+                            return f"{grn_num} ({status_label})"
+                        return str(grn_num).strip()
                 
-                # Fallback to payment number only
+                # Fallback to payment number with type/status
                 if payment_num:
-                    return str(payment_num).strip()
+                    parts = [str(payment_num).strip()]
+                    if payment_type == "receipt":
+                        parts.append("Receipt")
+                    elif payment_type == "payment":
+                        parts.append("Payment")
+                    
+                    status_label = _payment_status_label(status)
+                    if status_label:
+                        parts.append(f"({status_label})")
+                    
+                    return " ".join(parts)
         
-        # Stock/Inventory adjustments
+        # Stock/Inventory adjustments - show count number or product code with reason
         elif module in {"stock", "inventory-count", "inventory_count", "inventory_counts"}:
+            # First try to get inventory count number
             result = db.execute(
                 text("SELECT count_number FROM inventory_counts WHERE id = :id AND is_deleted = FALSE LIMIT 1"),
                 {"id": resource_id}
             ).scalar()
             if result:
                 return str(result).strip()
+            
+            # Try to get from inventory count difference audit (for stock adjustments)
+            audit = db.execute(
+                text("""
+                    SELECT icda.count_number, icda.reason_label, p.product_code
+                    FROM inventory_count_difference_audits icda
+                    LEFT JOIN products p ON icda.product_id = p.id
+                    WHERE icda.id = :id
+                    LIMIT 1
+                """),
+                {"id": resource_id}
+            ).mappings().first()
+            
+            if audit:
+                product_code = audit.get("product_code")
+                reason = audit.get("reason_label")
+                count_num = audit.get("count_number")
+                
+                if product_code and reason:
+                    return f"{product_code} - {reason}"
+                elif count_num:
+                    return str(count_num).strip()
+            
+            # Fallback: try to get product code from stock ledger
+            ledger = db.execute(
+                text("""
+                    SELECT p.product_code, sl.transaction_type, sl.reference_number
+                    FROM stock_ledger sl
+                    LEFT JOIN products p ON sl.product_id = p.id
+                    WHERE sl.id = :id AND sl.is_deleted = FALSE
+                    LIMIT 1
+                """),
+                {"id": resource_id}
+            ).mappings().first()
+            
+            if ledger:
+                product_code = ledger.get("product_code")
+                ref_num = ledger.get("reference_number")
+                txn_type = (ledger.get("transaction_type") or "").strip().lower()
+                
+                if ref_num:
+                    return str(ref_num).strip()
+                elif product_code:
+                    type_label = txn_type.replace("_", " ").title() if txn_type else "Adjustment"
+                    return f"{product_code} - {type_label}"
         
         # Customers
         elif module in {"customers", "customer"}:
@@ -400,7 +475,7 @@ def _fetch_document_reference_from_db(db: Session, module_name: str, resource_id
         # Suppliers
         elif module in {"suppliers", "supplier"}:
             result = db.execute(
-                text("SELECT supplier_name FROM suppliers WHERE id = :id AND is_deleted = FALSE LIMIT 1"),
+                text("SELECT company_name FROM suppliers WHERE id = :id AND is_deleted = FALSE LIMIT 1"),
                 {"id": resource_id}
             ).scalar()
             if result:
@@ -435,15 +510,13 @@ def _payment_status_label(status: str) -> str:
     status_lower = (status or "").strip().lower()
     
     if status_lower in {"pending", "draft"}:
-        return ""
-    elif status_lower == "partial":
-        return "Partially Received"
-    elif status_lower == "completed":
-        return "Fully Received"
-    elif status_lower == "full_payment_cleared":
-        return "Full Payment Cleared"
-    elif status_lower == "partial_payment_cleared":
-        return "Partial Payment Cleared"
+        return "Pending"
+    elif status_lower == "cleared":
+        return "Cleared"
+    elif status_lower == "bounced":
+        return "Bounced"
+    elif status_lower == "cancelled":
+        return "Cancelled"
     
     return ""
 
@@ -469,8 +542,28 @@ def _build_human_readable_description(
     if token == "CHANGE_PASSWORD":
         return "Changed password"
 
+    # Check for specific actions in the path
+    path = (details.get("path") or "").strip().lower()
+    
+    # GRN confirm action
+    if "grn" in module_name.lower() and "/confirm" in path:
+        return f"Confirmed {entity}"
+    
+    # Invoice issue action
+    if "invoice" in module_name.lower() and "/issue" in path:
+        return f"Issued {entity}"
+    
+    # Payment status update
+    if "payment" in module_name.lower() and "/status" in path:
+        return f"Updated {entity} status"
+    
+    # Stock adjustment accept
+    if "stock" in module_name.lower() and "/accept" in path:
+        return f"Accepted stock adjustment"
+    
+    # Generic action descriptions
     if token == "POST":
-        base = f"Created a new {entity}"
+        base = f"Created {entity}"
     elif token in {"REPORT", "GENERATE_REPORT"} or "REPORT" in token:
         base = f"Generated {entity}"
     else:

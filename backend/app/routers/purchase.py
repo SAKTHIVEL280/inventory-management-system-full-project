@@ -14,7 +14,7 @@ Production-ready with fixes for:
 """
 from datetime import datetime, date
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
@@ -44,6 +44,7 @@ from app.services.order_number_service import (
 )
 from app.services.gst_service import determine_tax_mode, calc_line_item, split_tax
 from app.services.stock_service import add_stock_entry, refresh_materialized_view, get_product_batch_snapshot, get_current_stock
+from app.services.audit_service import log_audit_event
 from app.utils.input_validation import validate_optional_token
 
 router = APIRouter(tags=["purchase"])
@@ -148,6 +149,7 @@ async def list_purchase_orders(
 
 @router.post("/api/v1/purchase-orders")
 async def create_purchase_order(
+    request: Request,
     payload: PurchaseOrderCreateRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("purchase_orders_write")),
@@ -232,6 +234,26 @@ async def create_purchase_order(
     po.total_amount = total_taxable + po.total_gst
     db.commit()
     db.refresh(po)
+    
+    # Log audit event with PO number
+    log_audit_event(
+        db,
+        action=f"POST:/api/v1/purchase-orders",
+        resource_type="purchase-orders",
+        status="success",
+        user_id=current_user.id,
+        resource_id=po.id,
+        details={
+            "po_number": po.po_number,
+            "supplier_id": str(po.supplier_id),
+            "total_amount": po.total_amount,
+            "status": po.status,
+            "method": "POST",
+            "path": "/api/v1/purchase-orders",
+        },
+        ip_address=request.client.host if request.client else None,
+    )
+    
     return po
 
 
@@ -480,6 +502,7 @@ async def list_grn(
 
 @router.post("/api/v1/grn")
 async def create_grn(
+    request: Request,
     payload: GRNCreateRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("grn_write")),
@@ -657,6 +680,27 @@ async def create_grn(
 
     db.commit()
     db.refresh(grn)
+    
+    # Log audit event with GRN number
+    log_audit_event(
+        db,
+        action=f"POST:/api/v1/grn",
+        resource_type="grn",
+        status="success",
+        user_id=current_user.id,
+        resource_id=grn.id,
+        details={
+            "grn_number": grn.grn_number,
+            "supplier_id": str(grn.supplier_id),
+            "total_amount": grn.total_amount,
+            "status": grn.status,
+            "purchase_order_id": str(grn.purchase_order_id) if grn.purchase_order_id else None,
+            "method": "POST",
+            "path": "/api/v1/grn",
+        },
+        ip_address=request.client.host if request.client else None,
+    )
+    
     return grn
 
 
@@ -876,6 +920,7 @@ async def update_grn(
 
 @router.post("/api/v1/grn/{grn_id}/confirm")
 async def confirm_grn(
+    request: Request,
     grn_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("grn_write")),
@@ -952,6 +997,29 @@ async def confirm_grn(
 
     db.commit()
     db.refresh(grn)
+    
+    # Log audit event with GRN number
+    log_audit_event(
+        db,
+        action=f"POST:/api/v1/grn/{grn.id}/confirm",
+        resource_type="grn",
+        status="success",
+        user_id=current_user.id,
+        resource_id=grn.id,
+        details={
+            "grn_number": grn.grn_number,
+            "action": "confirm",
+            "previous_status": "draft",
+            "new_status": "confirmed",
+            "supplier_id": str(grn.supplier_id),
+            "total_amount": grn.total_amount,
+            "purchase_order_id": str(grn.purchase_order_id) if grn.purchase_order_id else None,
+            "method": "POST",
+            "path": f"/api/v1/grn/{grn.id}/confirm",
+        },
+        ip_address=request.client.host if request.client else None,
+    )
+    
     return grn
 
 

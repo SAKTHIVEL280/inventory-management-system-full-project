@@ -2,6 +2,9 @@
 
 ---
 
+## BE-123: Action Logs Reference field enhanced with business document numbers
+**Update**: Fixed Reference field to show business document numbers by extracting UUIDs from audit log paths and querying actual document numbers from database. Enhanced `_extract_document_reference()` to parse path segments for UUIDs, skip action suffixes (confirm/issue/status), and filter out module names. Updated `_build_human_readable_description()` to detect specific actions (GRN confirm, invoice issue, payment status) from path and generate accurate descriptions like "Confirmed GRN" instead of generic "Created GRN". Fixed supplier query column name and payment status labels.
+
 ## BE-121: Action Logs - Fixed Reference field to display actual document numbers
 **Update**: Enhanced `_extract_document_reference()` in audit_service.py to query the database based on module_name and resource_id (UUID), extracting the correct document reference numbers:
 - Sales Invoices → invoice_number (e.g., INV-00002)

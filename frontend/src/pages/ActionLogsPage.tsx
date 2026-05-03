@@ -189,6 +189,14 @@ const ActionLogsPage = () => {
     };
 
     fetchActionLogs();
+    
+    // Auto-refresh every 10 seconds for real-time updates
+    const intervalId = setInterval(() => {
+      fetchActionLogs();
+    }, 10000);
+    
+    // Cleanup interval on unmount or when dependencies change
+    return () => clearInterval(intervalId);
   }, [fromDate, toDate, actionLogModule, actionLogType, actionLogUserQuery, actionLogReference, actionLogPage, actionLogPageSize]);
 
   return (
@@ -260,6 +268,7 @@ const ActionLogsPage = () => {
                   >
                     <option value="all">All Modules</option>
                     <option value="invoices">Invoices</option>
+                    <option value="quotations">Quotations</option>
                     <option value="purchase-orders">Purchase Orders</option>
                     <option value="grn">GRN</option>
                     <option value="payments">Payments</option>

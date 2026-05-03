@@ -10,7 +10,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import re
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
@@ -25,6 +25,7 @@ from app.models.sales import SalesInvoice
 from app.models.purchase import GoodsReceiptNote, PurchaseOrder
 from app.schemas.payment import PaymentCreateRequest, PaymentStatusRequest
 from app.services.order_number_service import generate_payment_number
+from app.services.audit_service import log_audit_event
 from app.utils.input_validation import validate_optional_token
 
 router = APIRouter(prefix="/api/v1/payments", tags=["payments"])
@@ -437,6 +438,7 @@ async def list_payments(
 
 @router.post("")
 async def create_payment(
+    request: Request,
     payload: PaymentCreateRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("payments_write", "receipts_write")),
@@ -582,6 +584,29 @@ async def create_payment(
 
     db.commit()
     db.refresh(payment)
+    
+    # Log audit event with payment number
+    log_audit_event(
+        db,
+        action=f"POST:/api/v1/payments",
+        resource_type="payments",
+        status="success",
+        user_id=current_user.id,
+        resource_id=payment.id,
+        details={
+            "payment_number": payment.payment_number,
+            "payment_type": payment.payment_type,
+            "party_type": payment.party_type,
+            "amount": payment.amount,
+            "status": payment.status,
+            "customer_id": str(payment.customer_id) if payment.customer_id else None,
+            "supplier_id": str(payment.supplier_id) if payment.supplier_id else None,
+            "method": "POST",
+            "path": "/api/v1/payments",
+        },
+        ip_address=request.client.host if request.client else None,
+    )
+    
     return payment
 
 
@@ -601,6 +626,7 @@ async def get_payment(
 
 @router.patch("/{payment_id}/status")
 async def update_payment_status(
+    request: Request,
     payment_id: UUID,
     payload: PaymentStatusRequest,
     db: Session = Depends(get_db),
@@ -633,6 +659,28 @@ async def update_payment_status(
     payment.status = requested_status
     db.commit()
     db.refresh(payment)
+    
+    # Log audit event with payment number
+    log_audit_event(
+        db,
+        action=f"PATCH:/api/v1/payments/{payment.id}/status",
+        resource_type="payments",
+        status="success",
+        user_id=current_user.id,
+        resource_id=payment.id,
+        details={
+            "payment_number": payment.payment_number,
+            "action": "status_update",
+            "new_status": requested_status,
+            "payment_type": payment.payment_type,
+            "party_type": payment.party_type,
+            "amount": payment.amount,
+            "method": "PATCH",
+            "path": f"/api/v1/payments/{payment.id}/status",
+        },
+        ip_address=request.client.host if request.client else None,
+    )
+    
     return payment
 
 

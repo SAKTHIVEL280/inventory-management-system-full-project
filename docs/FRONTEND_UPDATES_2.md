@@ -1,5 +1,8 @@
 # Frontend Updates Log
 
+## FE-123: Action Logs real-time auto-refresh with quotations filter
+**Update**: Implemented 10-second auto-refresh polling in ActionLogsPage.tsx for real-time updates without manual page refresh. Added quotations to module filter dropdown. Action Logs now automatically show new financial actions as they occur.
+
 ## FE-122: Action Logs - Reference field handling with empty string trim and fallback
 **Update**: Enhanced ActionLogsPage.tsx Reference column display to properly handle empty strings by trimming whitespace before applying fallbacks: `(item.reference && item.reference.trim()) || (item.record_reference && item.record_reference.trim()) || '-'`. Now correctly displays invoice numbers, PO numbers, GRN numbers, and payment references from backend, with "-" shown when no reference is available.
 
