@@ -150,14 +150,14 @@ venv.bak/
 !.vscode/*.code-snippets
 .vscode/.env
 .vscode/.history/
-
+.vscode
 # IntelliJ IDEA
 .idea/
 *.iml
 *.ipr
 *.iws
 .idea_modules/
-
+temp-doc/
 # Sublime Text
 *.sublime-project
 *.sublime-workspace

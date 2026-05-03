@@ -2,6 +2,9 @@
 
 ---
 
+## BE-128: 15-day data retention for audit logs
+**Update**: Implemented automatic cleanup of audit logs and GST audit trail records older than 15 days. Created retention_cleanup service with cleanup_old_audit_logs() function, CLI script (run_retention_cleanup.py) with --dry-run and --status options, and API endpoints for monitoring (/retention-status) and manual triggering (/retention-cleanup). Includes cron job setup instructions for Linux/Windows servers. Fixed column name issue: audit_logs uses created_at, gst_report_audit_logs uses timestamp.
+
 ## BE-127: Company details in GST reports (PDF & Excel)
 **Update**: Added company details (logo, name, address, GSTIN, phone) to all GST report exports. PDF reports now include company header with logo and ambassador logo watermark (15% opacity). Excel reports include company details at the top. Applied to GSTR-1, GSTR-2, and GST Reconciliation reports in both PDF and Excel formats.
 

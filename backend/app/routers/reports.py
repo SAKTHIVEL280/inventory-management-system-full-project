@@ -4060,6 +4060,81 @@ async def action_logs_report(
     }
 
 
+@router.get("/retention-status")
+async def retention_status_report(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("reports_read")),
+):
+    """
+    Get retention status for audit logs and GST audit trail.
+    
+    Shows:
+    - Current retention policy (15 days)
+    - Total records in each table
+    - Number of old records (>15 days)
+    - Oldest record date in each table
+    """
+    from app.services.retention_cleanup import get_retention_status
+    
+    try:
+        status = get_retention_status(db)
+        return status
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting retention status: {str(e)}")
+
+
+@router.post("/retention-cleanup")
+async def run_retention_cleanup_endpoint(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("admin")),
+):
+    """
+    Manually trigger retention cleanup.
+    
+    Deletes audit logs and GST audit trail records older than 15 days.
+    Requires admin permissions.
+    """
+    from app.services.retention_cleanup import run_retention_cleanup
+    
+    try:
+        stats = run_retention_cleanup(db)
+        
+        log_audit_event(
+            db,
+            action="RETENTION:CLEANUP_EXECUTED",
+            resource_type="system",
+            status="success",
+            user_id=current_user.id,
+            details={
+                "action_logs_deleted": stats["action_logs_deleted"],
+                "gst_audit_logs_deleted": stats["gst_audit_logs_deleted"],
+                "cutoff_date": stats["cutoff_date"],
+                "executed_at": datetime.utcnow().isoformat(),
+            },
+        )
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": "Retention cleanup completed successfully",
+            "stats": stats,
+        }
+    except Exception as e:
+        log_audit_event(
+            db,
+            action="RETENTION:CLEANUP_FAILED",
+            resource_type="system",
+            status="error",
+            user_id=current_user.id,
+            details={
+                "error": str(e),
+                "executed_at": datetime.utcnow().isoformat(),
+            },
+        )
+        db.commit()
+        raise HTTPException(status_code=500, detail=f"Retention cleanup failed: {str(e)}")
+
+
 @router.get("/pl")
 async def profit_and_loss_report(
     from_date: date,
