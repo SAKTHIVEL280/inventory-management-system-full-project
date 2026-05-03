@@ -257,7 +257,7 @@ const ActionLogsPage = () => {
             <div className="border-b border-neutral-200 bg-neutral-50 p-4">
               <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                 <h3 className="text-sm font-bold text-neutral-800">{actionLogsData.report_title}</h3>
-                <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-6">
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-5">
                   <select
                     value={actionLogModule}
                     onChange={(e) => {
@@ -323,19 +323,6 @@ const ActionLogsPage = () => {
                     <option value={20}>20 rows</option>
                     <option value={50}>50 rows</option>
                   </select>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActionLogModule('all');
-                      setActionLogType('all');
-                      setActionLogUserQuery('');
-                      setActionLogReference('');
-                      setActionLogPage(1);
-                    }}
-                    className="rounded border border-neutral-300 bg-white px-2 py-1 text-xs font-semibold text-neutral-700 hover:bg-neutral-100"
-                  >
-                    Clear
-                  </button>
                 </div>
               </div>
               <p className="mt-2 text-xs text-neutral-600">

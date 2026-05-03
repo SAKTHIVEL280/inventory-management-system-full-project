@@ -2,6 +2,18 @@
 
 ---
 
+## BE-127: Company details in GST reports (PDF & Excel)
+**Update**: Added company details (logo, name, address, GSTIN, phone) to all GST report exports. PDF reports now include company header with logo and ambassador logo watermark (15% opacity). Excel reports include company details at the top. Applied to GSTR-1, GSTR-2, and GST Reconciliation reports in both PDF and Excel formats.
+
+## BE-126: Quotations added to financial modules audit logging
+**Update**: Added "quotations" to `_FINANCIAL_MODULES` list in audit_service.py to ensure quotation creation/updates are properly logged in Action Logs.
+
+## BE-125: Explicit audit logging for all financial endpoints
+**Update**: Added explicit audit logging calls to all financial transaction endpoints (invoices, quotations, purchase orders, GRNs, payments) with proper document numbers in details. Updated middleware to skip these endpoints since they now log explicitly with richer context.
+
+## BE-124: Action Logs missing financial references fixed
+**Update**: Enhanced audit service to extract document references from financial modules by querying database for actual document numbers (invoice_number, po_number, grn_number, etc.) instead of showing UUIDs or module names.
+
 ## BE-123: Action Logs Reference field enhanced with business document numbers
 **Update**: Fixed Reference field to show business document numbers by extracting UUIDs from audit log paths and querying actual document numbers from database. Enhanced `_extract_document_reference()` to parse path segments for UUIDs, skip action suffixes (confirm/issue/status), and filter out module names. Updated `_build_human_readable_description()` to detect specific actions (GRN confirm, invoice issue, payment status) from path and generate accurate descriptions like "Confirmed GRN" instead of generic "Created GRN". Fixed supplier query column name and payment status labels.
 

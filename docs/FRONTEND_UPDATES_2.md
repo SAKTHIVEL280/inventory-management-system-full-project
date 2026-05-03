@@ -1,5 +1,8 @@
 # Frontend Updates Log
 
+## FE-124: Action Logs Clear button removed
+**Update**: Removed Clear button from Action Logs filter controls and adjusted grid layout from 6 to 5 columns for cleaner UI.
+
 ## FE-123: Action Logs real-time auto-refresh with quotations filter
 **Update**: Implemented 10-second auto-refresh polling in ActionLogsPage.tsx for real-time updates without manual page refresh. Added quotations to module filter dropdown. Action Logs now automatically show new financial actions as they occur.
 

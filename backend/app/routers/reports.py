@@ -332,6 +332,174 @@ def _ensure_finance_tax_user(current_user: User) -> None:
         )
 
 
+def _get_company_details_for_gst_reports(db: Session) -> dict:
+    """Fetch company details for GST report headers (PDF & Excel)."""
+    import base64
+    import io
+    from pathlib import Path
+    from PIL import Image, ImageFile
+    
+    company = db.query(Company).first()
+    
+    if not company:
+        return {
+            "name": "N/A",
+            "address": "N/A",
+            "gstin": "N/A",
+            "phone": "N/A",
+            "logo_data_uri": None,
+            "ambassador_logo_bytes": None,
+        }
+    
+    # Build address
+    address_parts = [
+        getattr(company, "address_line1", ""),
+        getattr(company, "address_line2", ""),
+        getattr(company, "city", ""),
+        getattr(company, "state", ""),
+        getattr(company, "country", ""),
+        getattr(company, "pincode", ""),
+    ]
+    address = ", ".join([p.strip() for p in address_parts if p and p.strip()])
+    
+    # Resolve logo to data URI for PDF embedding
+    logo_data_uri = None
+    logo_url = getattr(company, "logo_url", None)
+    if logo_url:
+        logo_path = None
+        if logo_url.startswith("/static/"):
+            from pathlib import Path
+            static_dir = Path(__file__).resolve().parents[2] / "static"
+            logo_path = static_dir / logo_url.replace("/static/", "")
+        else:
+            p = Path(logo_url)
+            if p.exists():
+                logo_path = p
+        
+        if logo_path and logo_path.exists():
+            try:
+                raw = logo_path.read_bytes()
+                ImageFile.LOAD_TRUNCATED_IMAGES = True
+                with Image.open(io.BytesIO(raw)) as img:
+                    normalized = img.convert("RGBA") if img.mode in {"RGBA", "LA", "P"} else img.convert("RGB")
+                    out = io.BytesIO()
+                    normalized.save(out, format="PNG")
+                    data = base64.b64encode(out.getvalue()).decode("ascii")
+                logo_data_uri = f"data:image/png;base64,{data}"
+            except Exception:
+                pass
+    
+    # Resolve ambassador logo bytes for watermark
+    ambassador_logo_bytes = None
+    ambassador_logo_url = getattr(company, "ambassador_logo_url", None)
+    if ambassador_logo_url:
+        ambassador_path = None
+        if ambassador_logo_url.startswith("/static/"):
+            from pathlib import Path
+            static_dir = Path(__file__).resolve().parents[2] / "static"
+            ambassador_path = static_dir / ambassador_logo_url.replace("/static/", "")
+        else:
+            p = Path(ambassador_logo_url)
+            if p.exists():
+                ambassador_path = p
+        
+        if ambassador_path and ambassador_path.exists():
+            try:
+                ambassador_logo_bytes = ambassador_path.read_bytes()
+            except Exception:
+                pass
+    
+    return {
+        "name": getattr(company, "name", "N/A") or "N/A",
+        "address": address or "N/A",
+        "gstin": getattr(company, "gstin", "N/A") or "N/A",
+        "phone": getattr(company, "phone", "N/A") or "N/A",
+        "logo_data_uri": logo_data_uri,
+        "ambassador_logo_bytes": ambassador_logo_bytes,
+    }
+
+
+def _add_ambassador_watermark_to_pdf(pdf_bytes: bytes, ambassador_logo_bytes: bytes | None) -> bytes:
+    """Add ambassador logo as watermark to all pages of a PDF."""
+    if not ambassador_logo_bytes:
+        return pdf_bytes
+    
+    try:
+        from PyPDF2 import PdfReader, PdfWriter
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.utils import ImageReader
+        import io
+        
+        # Constants for watermark
+        WATERMARK_OPACITY = 0.15
+        WATERMARK_MAX_WIDTH_PT = 300
+        WATERMARK_PAGE_WIDTH_RATIO = 0.4
+        
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        writer = PdfWriter()
+        
+        for page in reader.pages:
+            page_width = float(page.mediabox.width)
+            page_height = float(page.mediabox.height)
+            
+            # Create watermark for this page
+            watermark_buffer = io.BytesIO()
+            c = canvas.Canvas(watermark_buffer, pagesize=(page_width, page_height))
+            
+            try:
+                image_reader = ImageReader(io.BytesIO(ambassador_logo_bytes))
+                image_width, image_height = image_reader.getSize()
+                
+                if image_width and image_height:
+                    # Calculate target size
+                    target_width = min(WATERMARK_MAX_WIDTH_PT, page_width * WATERMARK_PAGE_WIDTH_RATIO)
+                    target_height = target_width * (float(image_height) / float(image_width))
+                    
+                    max_height = page_height * 0.55
+                    if target_height > max_height:
+                        target_height = max_height
+                        target_width = target_height * (float(image_width) / float(image_height))
+                    
+                    # Center the watermark
+                    x = (page_width - target_width) / 2
+                    y = (page_height - target_height) / 2
+                    
+                    # Set opacity
+                    c.saveState()
+                    c.setFillAlpha(WATERMARK_OPACITY)
+                    c.setStrokeAlpha(WATERMARK_OPACITY)
+                    
+                    # Draw the image
+                    c.drawImage(
+                        image_reader,
+                        x, y,
+                        width=target_width,
+                        height=target_height,
+                        preserveAspectRatio=True,
+                        mask='auto'
+                    )
+                    c.restoreState()
+            except Exception:
+                pass
+            
+            c.save()
+            watermark_buffer.seek(0)
+            
+            # Merge watermark with page
+            watermark_page = PdfReader(watermark_buffer).pages[0]
+            watermark_page.merge_page(page)
+            writer.add_page(watermark_page)
+        
+        # Write to output
+        output_buffer = io.BytesIO()
+        writer.write(output_buffer)
+        output_buffer.seek(0)
+        return output_buffer.read()
+    except Exception:
+        # If watermarking fails, return original PDF
+        return pdf_bytes
+
+
 def _ensure_action_log_view_user(current_user: User) -> None:
     if current_user.role not in {"admin", "accounting", "auditor"}:
         raise HTTPException(
@@ -1663,13 +1831,12 @@ async def gstr1_export(
     report_items = payload.get("detail_items") or payload.get("items", [])
     subtotal = payload.get("detail_subtotal") or payload.get("subtotal", {})
     filename_base = f"gstr1_{from_date.isoformat()}_{to_date.isoformat()}"
+    
+    # Fetch company details
+    company_details = _get_company_details_for_gst_reports(db)
 
     if format_token == "xlsx":
         from openpyxl import Workbook
-        from openpyxl.styles import Alignment, Font
-        from openpyxl.utils import get_column_letter
-        from openpyxl.styles import Alignment, Font
-        from openpyxl.utils import get_column_letter
         from openpyxl.styles import Alignment, Font
         from openpyxl.utils import get_column_letter
 
@@ -1677,7 +1844,19 @@ async def gstr1_export(
         ws = wb.active
         ws.title = "GSTR-1"
 
+        # Add company details at the top
+        ws.append([company_details["name"]])
+        ws.cell(row=1, column=1).font = Font(bold=True, size=14)
+        
+        ws.append([company_details["address"]])
+        ws.append([f"GSTIN: {company_details['gstin']}"])
+        ws.append([f"Phone: {company_details['phone']}"])
+        ws.append([])  # Empty row
+        
+        # Add report title and period
         ws.append([payload.get("report_title", "GSTR-1 (Sales / Output Tax Report)")])
+        ws.cell(row=ws.max_row, column=1).font = Font(bold=True, size=12)
+        
         ws.append([
             f"Period: {payload.get('from_date_display') or from_date.isoformat()} to {payload.get('to_date_display') or to_date.isoformat()} | Frequency: {payload.get('frequency_label', '')}"
         ])
@@ -1890,7 +2069,7 @@ async def gstr1_export(
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle, Image as RLImage
     from xml.sax.saxutils import escape as xml_escape
 
     stream = BytesIO()
@@ -1910,14 +2089,42 @@ async def gstr1_export(
         text = "" if value is None else str(value)
         return Paragraph(xml_escape(text), table_cell_style)
 
-    story = [
-        Paragraph(payload.get("report_title", "GSTR-1 (Sales / Output Tax Report)"), styles["Heading2"]),
-        Paragraph(
-            f"Period: {payload.get('from_date_display') or from_date.isoformat()} to {payload.get('to_date_display') or to_date.isoformat()} | Frequency: {payload.get('frequency_label', '')}",
-            styles["Normal"],
-        ),
-        Spacer(1, 8),
-    ]
+    # Build company header
+    story = []
+    if company_details["logo_data_uri"]:
+        try:
+            logo_img = RLImage(company_details["logo_data_uri"], width=50, height=50)
+        except Exception:
+            logo_img = Paragraph("<b>LOGO</b>", styles["Normal"])
+    else:
+        logo_img = Paragraph("<b>LOGO</b>", styles["Normal"])
+    
+    company_info_text = f"""
+        <b>{xml_escape(company_details['name'])}</b><br/>
+        {xml_escape(company_details['address'])}<br/>
+        <b>GSTIN:</b> {xml_escape(company_details['gstin'])}<br/>
+        <b>Phone:</b> {xml_escape(company_details['phone'])}
+    """
+    company_info = Paragraph(company_info_text, styles["Normal"])
+    
+    header_table = Table([[logo_img, company_info]], colWidths=[60, doc.width - 60])
+    header_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(header_table)
+    story.append(Spacer(1, 12))
+    
+    # Add report title and period
+    story.append(Paragraph(payload.get("report_title", "GSTR-1 (Sales / Output Tax Report)"), styles["Heading2"]))
+    story.append(Paragraph(
+        f"Period: {payload.get('from_date_display') or from_date.isoformat()} to {payload.get('to_date_display') or to_date.isoformat()} | Frequency: {payload.get('frequency_label', '')}",
+        styles["Normal"],
+    ))
+    story.append(Spacer(1, 8))
 
     table_data = [[
         to_table_paragraph("S.No"),
@@ -2019,6 +2226,12 @@ async def gstr1_export(
 
     doc.build(story)
     stream.seek(0)
+    pdf_bytes = stream.read()
+    
+    # Add ambassador watermark
+    pdf_with_watermark = _add_ambassador_watermark_to_pdf(pdf_bytes, company_details["ambassador_logo_bytes"])
+    stream = BytesIO(pdf_with_watermark)
+
 
     log_audit_event(
         db,
@@ -2580,15 +2793,32 @@ async def gstr2_export(
     report_items = payload.get("detail_items") or payload.get("items", [])
     subtotal = payload.get("detail_subtotal") or payload.get("subtotal", {})
     filename_base = f"gstr2_{from_date.isoformat()}_{to_date.isoformat()}"
+    
+    # Fetch company details
+    company_details = _get_company_details_for_gst_reports(db)
 
     if format_token == "xlsx":
         from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font
+        from openpyxl.utils import get_column_letter
 
         wb = Workbook()
         ws = wb.active
         ws.title = "GSTR-2"
 
+        # Add company details at the top
+        ws.append([company_details["name"]])
+        ws.cell(row=1, column=1).font = Font(bold=True, size=14)
+        
+        ws.append([company_details["address"]])
+        ws.append([f"GSTIN: {company_details['gstin']}"])
+        ws.append([f"Phone: {company_details['phone']}"])
+        ws.append([])  # Empty row
+        
+        # Add report title and period
         ws.append([payload.get("report_title", "GSTR-2 (Purchase / Input Tax Report)")])
+        ws.cell(row=ws.max_row, column=1).font = Font(bold=True, size=12)
+        
         ws.append([
             f"Period: {payload.get('from_date_display') or from_date.isoformat()} to {payload.get('to_date_display') or to_date.isoformat()} | Frequency: {payload.get('frequency_label', '')}"
         ])
@@ -2702,7 +2932,7 @@ async def gstr2_export(
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle, Image as RLImage
     from xml.sax.saxutils import escape as xml_escape
 
     stream = BytesIO()
@@ -2722,14 +2952,42 @@ async def gstr2_export(
         text = "" if value is None else str(value)
         return Paragraph(xml_escape(text), table_cell_style)
 
-    story = [
-        Paragraph(payload.get("report_title", "GSTR-2 (Purchase / Input Tax Report)"), styles["Heading2"]),
-        Paragraph(
-            f"Period: {payload.get('from_date_display') or from_date.isoformat()} to {payload.get('to_date_display') or to_date.isoformat()} | Frequency: {payload.get('frequency_label', '')}",
-            styles["Normal"],
-        ),
-        Spacer(1, 8),
-    ]
+    # Build company header
+    story = []
+    if company_details["logo_data_uri"]:
+        try:
+            logo_img = RLImage(company_details["logo_data_uri"], width=50, height=50)
+        except Exception:
+            logo_img = Paragraph("<b>LOGO</b>", styles["Normal"])
+    else:
+        logo_img = Paragraph("<b>LOGO</b>", styles["Normal"])
+    
+    company_info_text = f"""
+        <b>{xml_escape(company_details['name'])}</b><br/>
+        {xml_escape(company_details['address'])}<br/>
+        <b>GSTIN:</b> {xml_escape(company_details['gstin'])}<br/>
+        <b>Phone:</b> {xml_escape(company_details['phone'])}
+    """
+    company_info = Paragraph(company_info_text, styles["Normal"])
+    
+    header_table = Table([[logo_img, company_info]], colWidths=[60, doc.width - 60])
+    header_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(header_table)
+    story.append(Spacer(1, 12))
+    
+    # Add report title and period
+    story.append(Paragraph(payload.get("report_title", "GSTR-2 (Purchase / Input Tax Report)"), styles["Heading2"]))
+    story.append(Paragraph(
+        f"Period: {payload.get('from_date_display') or from_date.isoformat()} to {payload.get('to_date_display') or to_date.isoformat()} | Frequency: {payload.get('frequency_label', '')}",
+        styles["Normal"],
+    ))
+    story.append(Spacer(1, 8))
 
     table_data = [[
         to_table_paragraph("S.No"),
@@ -2830,6 +3088,11 @@ async def gstr2_export(
 
     doc.build(story)
     stream.seek(0)
+    pdf_bytes = stream.read()
+    
+    # Add ambassador watermark
+    pdf_with_watermark = _add_ambassador_watermark_to_pdf(pdf_bytes, company_details["ambassador_logo_bytes"])
+    stream = BytesIO(pdf_with_watermark)
 
     log_audit_event(
         db,
@@ -3155,15 +3418,31 @@ async def gst_reconciliation_export(
     difference_amount = payload.get("difference_amount", {})
 
     filename_base = f"gst_reconciliation_{from_date.isoformat()}_{to_date.isoformat()}"
+    
+    # Fetch company details
+    company_details = _get_company_details_for_gst_reports(db)
 
     if format_token == "xlsx":
         from openpyxl import Workbook
+        from openpyxl.styles import Font
 
         wb = Workbook()
         ws = wb.active
         ws.title = "GST Reconciliation"
 
+        # Add company details at the top
+        ws.append([company_details["name"]])
+        ws.cell(row=1, column=1).font = Font(bold=True, size=14)
+        
+        ws.append([company_details["address"]])
+        ws.append([f"GSTIN: {company_details['gstin']}"])
+        ws.append([f"Phone: {company_details['phone']}"])
+        ws.append([])  # Empty row
+        
+        # Add report title and period
         ws.append([payload.get("report_title", "GST Reconciliation Report")])
+        ws.cell(row=ws.max_row, column=1).font = Font(bold=True, size=12)
+        
         ws.append([
             f"Period: {payload.get('from_date_display') or from_date.isoformat()} to {payload.get('to_date_display') or to_date.isoformat()} | Frequency: {payload.get('frequency_label', '')}"
         ])
@@ -3265,7 +3544,7 @@ async def gst_reconciliation_export(
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle, Image as RLImage
     from xml.sax.saxutils import escape as xml_escape
 
     stream = BytesIO()
@@ -3285,14 +3564,42 @@ async def gst_reconciliation_export(
         text = "" if value is None else str(value)
         return Paragraph(xml_escape(text), table_cell_style)
 
-    story = [
-        Paragraph(payload.get("report_title", "GST Reconciliation Report"), styles["Heading2"]),
-        Paragraph(
-            f"Period: {payload.get('from_date_display') or from_date.isoformat()} to {payload.get('to_date_display') or to_date.isoformat()} | Frequency: {payload.get('frequency_label', '')}",
-            styles["Normal"],
-        ),
-        Spacer(1, 8),
-    ]
+    # Build company header
+    story = []
+    if company_details["logo_data_uri"]:
+        try:
+            logo_img = RLImage(company_details["logo_data_uri"], width=50, height=50)
+        except Exception:
+            logo_img = Paragraph("<b>LOGO</b>", styles["Normal"])
+    else:
+        logo_img = Paragraph("<b>LOGO</b>", styles["Normal"])
+    
+    company_info_text = f"""
+        <b>{xml_escape(company_details['name'])}</b><br/>
+        {xml_escape(company_details['address'])}<br/>
+        <b>GSTIN:</b> {xml_escape(company_details['gstin'])}<br/>
+        <b>Phone:</b> {xml_escape(company_details['phone'])}
+    """
+    company_info = Paragraph(company_info_text, styles["Normal"])
+    
+    header_table = Table([[logo_img, company_info]], colWidths=[60, doc.width - 60])
+    header_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    story.append(header_table)
+    story.append(Spacer(1, 12))
+    
+    # Add report title and period
+    story.append(Paragraph(payload.get("report_title", "GST Reconciliation Report"), styles["Heading2"]))
+    story.append(Paragraph(
+        f"Period: {payload.get('from_date_display') or from_date.isoformat()} to {payload.get('to_date_display') or to_date.isoformat()} | Frequency: {payload.get('frequency_label', '')}",
+        styles["Normal"],
+    ))
+    story.append(Spacer(1, 8))
 
     table_data = [[
         to_table_paragraph("S.No"),
@@ -3384,6 +3691,11 @@ async def gst_reconciliation_export(
 
     doc.build(story)
     stream.seek(0)
+    pdf_bytes = stream.read()
+    
+    # Add ambassador watermark
+    pdf_with_watermark = _add_ambassador_watermark_to_pdf(pdf_bytes, company_details["ambassador_logo_bytes"])
+    stream = BytesIO(pdf_with_watermark)
 
     log_audit_event(
         db,
