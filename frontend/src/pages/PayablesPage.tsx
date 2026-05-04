@@ -180,6 +180,10 @@ const PayablesPage = () => {
     .split(' ')
     .map((part) => part ? part.charAt(0).toUpperCase() + part.slice(1) : part)
     .join(' ');
+  const cleanNotes = (notes?: string | null) => {
+    if (!notes) return '';
+    return notes.replace(/\[PO_ID:[^\]]+\]/g, '').trim();
+  };
   const formatStatusLabel = (status?: string, display?: string) => {
     if (display && display.trim()) return display;
     if (!status) return '-';
@@ -695,7 +699,7 @@ const PayablesPage = () => {
                     <div><p className="text-xs text-neutral-600">Amount</p><p className="font-medium">{formatAmount(viewPayment.amount)}</p></div>
                     <div><p className="text-xs text-neutral-600">Status</p><p className="font-medium">{formatStatusLabel(viewPayment.status, viewPayment.status_display)}</p></div>
                     <div><p className="text-xs text-neutral-600">Reference #</p><p className="font-medium">{viewPayment.reference_number || '—'}</p></div>
-                    <div className="md:col-span-2"><p className="text-xs text-neutral-600">Notes</p><p className="font-medium">{viewPayment.notes_display || viewPayment.notes || '—'}</p></div>
+                    <div className="md:col-span-2"><p className="text-xs text-neutral-600">Notes</p><p className="font-medium">{cleanNotes(viewPayment.notes_display || viewPayment.notes) || '—'}</p></div>
                   </div>
 
                   <div>

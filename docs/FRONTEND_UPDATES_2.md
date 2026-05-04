@@ -15,6 +15,9 @@
 ## FE-131: Payment view readability
 **Update**: Normalized mode/status labels, cleaned PO meta from notes, and clarified allocation labels in the payment view modals.
 
+## FE-132: Notes cleanup in payment views
+**Update**: Stripped PO metadata tokens from notes in receivables/payables view modals for readability.
+
 ## FE-126: Role-based navigation and gating updates
 **Update**: Updated role definitions to `admin`, `inventory manager`, and `general manager`. Restricted master pages to write access, added action-log permission gating, refreshed inventory count difference controls, and aligned UI badges/colors with the new roles.
 
