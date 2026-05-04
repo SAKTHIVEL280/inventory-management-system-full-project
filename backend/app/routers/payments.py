@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
 from app.database import get_db
-from app.dependencies import enforce_resource_ownership, require_permissions
+from app.dependencies import enforce_resource_ownership, require_permissions, require_role
 from app.models.user import User
 from app.models.company import Company
 from app.models.customer import Customer
@@ -78,6 +78,13 @@ def _attach_po_meta_to_notes(notes: str | None, po_id: UUID | None) -> str | Non
     if token in current:
         return current
     return f"{token} {current}".strip()
+
+
+def _strip_po_meta_from_notes(notes: str | None) -> str | None:
+    if not notes:
+        return notes
+    cleaned = PO_ID_META_REGEX.sub("", notes).strip()
+    return cleaned or None
 
 
 def _is_cleared_like_status(status: str | None) -> bool:
@@ -144,6 +151,23 @@ def _derive_payment_status_token(db: Session, payment: Payment) -> str:
                 return "full_payment_cleared"
 
     return "cleared"
+
+
+def _derive_customer_receipt_status_display(db: Session, payment: Payment) -> str | None:
+    has_invoice = False
+    all_settled = True
+    for allocation in payment.allocations or []:
+        if allocation.is_deleted or not allocation.invoice_id:
+            continue
+        has_invoice = True
+        invoice = allocation.invoice or db.query(SalesInvoice).filter(SalesInvoice.id == allocation.invoice_id).first()
+        if not invoice:
+            continue
+        if (invoice.amount_due or 0) > 0:
+            all_settled = False
+    if not has_invoice:
+        return None
+    return "Fully Received" if all_settled else "Partially Received"
 
 
 def _build_supplier_payable_snapshot(
@@ -383,6 +407,14 @@ async def list_payments(
         allocation_po_numbers: set[str] = set()
         allocation_grn_totals: dict[str, int] = {}
         status_token = _derive_payment_status_token(db, p)
+        status_display = _payment_status_display(status_token)
+        if status_token == "cleared":
+            if p.party_type == "customer":
+                derived_display = _derive_customer_receipt_status_display(db, p)
+                if derived_display:
+                    status_display = derived_display
+            elif p.party_type == "supplier" and _payment_has_grn_allocations(p):
+                status_display = "Partially Paid"
 
         p_dict = {
             "id": str(p.id),
@@ -397,7 +429,7 @@ async def list_payments(
             "reference_number": p.reference_number,
             "cheque_date": str(p.cheque_date) if p.cheque_date else None,
             "status": status_token,
-            "status_display": _payment_status_display(status_token),
+            "status_display": status_display,
             "purchase_order_id": str(po_id_from_notes) if po_id_from_notes else None,
             "po_number": po_number_from_notes,
             "grn_value": None,
@@ -622,7 +654,63 @@ async def get_payment(
         raise HTTPException(status_code=404, detail="Payment not found")
     _enforce_owner(payment, current_user)
     allocations = db.query(PaymentAllocation).filter(PaymentAllocation.payment_id == payment_id).all()
-    return {"payment": payment, "allocations": allocations}
+
+    po_id_from_notes = _extract_po_id_from_notes(payment.notes)
+    po_number_from_notes = None
+    if po_id_from_notes:
+        po_row = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id_from_notes).first()
+        po_number_from_notes = po_row.po_number if po_row else None
+
+    status_token = _derive_payment_status_token(db, payment)
+    status_display = _payment_status_display(status_token)
+    if status_token == "cleared":
+        if payment.party_type == "customer":
+            derived_display = _derive_customer_receipt_status_display(db, payment)
+            if derived_display:
+                status_display = derived_display
+        elif payment.party_type == "supplier" and _payment_has_grn_allocations(payment):
+            status_display = "Partially Paid"
+
+    payment_dict = {
+        "id": str(payment.id),
+        "payment_number": payment.payment_number,
+        "payment_type": payment.payment_type,
+        "party_type": payment.party_type,
+        "customer_id": str(payment.customer_id) if payment.customer_id else None,
+        "supplier_id": str(payment.supplier_id) if payment.supplier_id else None,
+        "payment_date": str(payment.payment_date),
+        "amount": payment.amount,
+        "payment_mode": payment.payment_mode,
+        "reference_number": payment.reference_number,
+        "cheque_date": str(payment.cheque_date) if payment.cheque_date else None,
+        "status": status_token,
+        "status_display": status_display,
+        "purchase_order_id": str(po_id_from_notes) if po_id_from_notes else None,
+        "po_number": po_number_from_notes,
+        "notes": payment.notes,
+        "notes_display": _strip_po_meta_from_notes(payment.notes),
+        "created_at": str(payment.created_at) if payment.created_at else None,
+    }
+
+    allocations_out = []
+    for a in allocations:
+        if a.is_deleted:
+            continue
+        alloc_dict = {
+            "allocated_amount": a.allocated_amount,
+        }
+        if a.invoice:
+            alloc_dict["invoice_number"] = a.invoice.invoice_number
+        if a.grn:
+            alloc_dict["grn_number"] = a.grn.grn_number
+            if a.grn.purchase_order_id:
+                po_row = db.query(PurchaseOrder).filter(PurchaseOrder.id == a.grn.purchase_order_id).first()
+                if po_row:
+                    alloc_dict["po_number"] = po_row.po_number
+                    alloc_dict["purchase_order_id"] = str(po_row.id)
+        allocations_out.append(alloc_dict)
+
+    return {"payment": payment_dict, "allocations": allocations_out}
 
 
 @router.patch("/{payment_id}/status")
@@ -631,7 +719,7 @@ async def update_payment_status(
     payment_id: UUID,
     payload: PaymentStatusRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("payments_write", "receipts_write")),
+    current_user: User = Depends(require_role("admin")),
 ):
     payment = db.query(Payment).filter(Payment.id == payment_id, Payment.is_deleted == False).first()
     if not payment:

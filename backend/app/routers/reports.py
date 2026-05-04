@@ -326,10 +326,10 @@ def _customer_country_for_gstr(customer: Customer | None) -> str | None:
 
 
 def _ensure_finance_tax_user(current_user: User) -> None:
-    if current_user.role not in {"admin", "accounting"}:
+    if normalize_role(current_user.role) not in {"admin", "general manager"}:
         raise HTTPException(
             status_code=403,
-            detail="Only Finance/Tax users are allowed to generate GST reports",
+            detail="Only admin or general manager users are allowed to generate GST reports",
         )
 
 
@@ -1229,7 +1229,7 @@ async def sales_report(
     from_date: date,
     to_date: date,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("action_logs_read")),
+    current_user: User = Depends(require_permissions("reports_read")),
 ):
     _ensure_valid_date_range(from_date, to_date)
     rows = db.query(SalesInvoice).filter(
@@ -1260,7 +1260,7 @@ async def purchase_report(
     from_date: date,
     to_date: date,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("action_logs_read")),
+    current_user: User = Depends(require_permissions("reports_read")),
 ):
     _ensure_valid_date_range(from_date, to_date)
     rows = db.query(GoodsReceiptNote).filter(

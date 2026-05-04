@@ -14,11 +14,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { AppLayout } from '../components/AppLayout';
-import { paymentsApi, type Payment, type CreatePaymentPayload, type PaymentAllocationRequest } from '../api/payments';
+import { paymentsApi, type Payment, type CreatePaymentPayload, type PaymentAllocationRequest, type PaymentAllocation } from '../api/payments';
 import { purchaseApi, type GoodsReceiptNote, type PurchaseOrder } from '../api/purchase';
 import { apiClient } from '../api/client';
 import { todayLocalDateInputValue } from '../utils/date';
 import { showError, showSuccess, confirmWithToast } from '../utils/toastHelper';
+import { usePermissions } from '../hooks/usePermissions';
 
 interface SupplierOption { id: string; company_name: string; }
 
@@ -27,6 +28,7 @@ const CLEARED_STATUSES = new Set(['cleared', 'advance_payment_cleared', 'advance
 const normalizePaise = (value: number): number => Math.max(0, Math.round(Number(value || 0)));
 
 const PayablesPage = () => {
+  const { isAdmin } = usePermissions();
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -38,6 +40,9 @@ const PayablesPage = () => {
   const [statusFilter, setStatusFilter] = useState('');
   const [modeFilter, setModeFilter] = useState('');
   const [archiveView, setArchiveView] = useState<'active' | 'archived'>('active');
+  const [viewPayment, setViewPayment] = useState<Payment | null>(null);
+  const [viewAllocations, setViewAllocations] = useState<PaymentAllocation[]>([]);
+  const [viewLoading, setViewLoading] = useState(false);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
 
@@ -170,6 +175,20 @@ const PayablesPage = () => {
     return Number.isFinite(num) ? Math.round(num * 100) : 0;
   };
   const formatAmount = (p: number) => `₹${(p / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+  const formatModeLabel = (mode: string) => mode
+    .replace('_', ' ')
+    .split(' ')
+    .map((part) => part ? part.charAt(0).toUpperCase() + part.slice(1) : part)
+    .join(' ');
+  const formatStatusLabel = (status?: string, display?: string) => {
+    if (display && display.trim()) return display;
+    if (!status) return '-';
+    return status
+      .replace('_', ' ')
+      .split(' ')
+      .map((part) => part ? part.charAt(0).toUpperCase() + part.slice(1) : part)
+      .join(' ');
+  };
   const supplierNameById = (id?: string | null) => suppliers.find((s) => s.id === id)?.company_name || '-';
 
   const handleDateFromChange = (value: string) => {
@@ -423,6 +442,21 @@ const PayablesPage = () => {
     setShowForm(true);
   };
 
+  const handleViewPayment = async (p: Payment) => {
+    setViewPayment(p);
+    setViewAllocations(p.allocations || []);
+    setViewLoading(true);
+    try {
+      const res = await paymentsApi.getPayment(p.id);
+      setViewPayment(res.data.payment);
+      setViewAllocations(res.data.allocations || []);
+    } catch {
+      // Keep list data fallback for view.
+    } finally {
+      setViewLoading(false);
+    }
+  };
+
   const sc: Record<string, string> = {
     pending: 'bg-amber-100 text-amber-700',
     cleared: 'bg-green-100 text-green-700',
@@ -523,12 +557,17 @@ const PayablesPage = () => {
                     <td className="px-4 py-3 text-center"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${sc[p.status] || 'bg-gray-100 text-gray-700'}`}>{p.status_display || p.status}</span></td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1">
+                        <button onClick={() => handleViewPayment(p)} className="rounded px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100">View</button>
                         {archiveView === 'active' && p.status === 'pending' && (
                           <>
                             {/* PAY-007: Edit button */}
                             <button onClick={() => handleEditPayment(p)} className="rounded px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10">Edit</button>
-                            <button onClick={() => handleStatusChange(p.id, 'cleared')} className="rounded px-2 py-1 text-xs font-medium text-green-600 hover:bg-green-50">Clear</button>
-                            <button onClick={() => handleStatusChange(p.id, 'cancelled')} className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">Cancel</button>
+                            {isAdmin && (
+                              <>
+                                <button onClick={() => handleStatusChange(p.id, 'cleared')} className="rounded px-2 py-1 text-xs font-medium text-green-600 hover:bg-green-50">Clear</button>
+                                <button onClick={() => handleStatusChange(p.id, 'cancelled')} className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">Cancel</button>
+                              </>
+                            )}
                           </>
                         )}
                         <button onClick={() => handleArchiveToggle(p.id, archiveView === 'archived')} className={`rounded px-2 py-1 text-xs font-medium ${archiveView === 'archived' ? 'text-emerald-700 hover:bg-emerald-50' : 'text-red-600 hover:bg-red-50'}`}>{archiveView === 'archived' ? 'Restore' : 'Archive'}</button>
@@ -629,6 +668,59 @@ const PayablesPage = () => {
                 <button onClick={() => { setShowForm(false); resetForm(); }} className="rounded-lg border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-600">Cancel</button>
                 <button onClick={handleSubmit} disabled={submitting} className="rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/20 disabled:opacity-50">{submitting ? 'Recording...' : (isAdvancePayment ? 'Record Advance' : 'Record Payment')}</button>
               </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+        {viewPayment && createPortal(
+          <div className="fixed inset-0 z-[110] m-0 flex min-h-screen w-screen items-start justify-center overflow-y-auto bg-black/45 p-4 pt-6 backdrop-blur-sm" onClick={() => { setViewPayment(null); setViewAllocations([]); }}>
+            <div className="hms-card my-8 w-full max-w-3xl space-y-6 p-6" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-start justify-between">
+                <div>
+                  <h2 className="font-display text-xl font-bold">Supplier Payment</h2>
+                  <p className="text-sm text-neutral-600">{viewPayment.payment_number}</p>
+                </div>
+                <button onClick={() => { setViewPayment(null); setViewAllocations([]); }} className="text-neutral-400 hover:text-neutral-600 text-2xl">&times;</button>
+              </div>
+
+              {viewLoading ? (
+                <p className="text-sm text-neutral-500">Loading details...</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div><p className="text-xs text-neutral-600">Supplier</p><p className="font-medium">{supplierNameById(viewPayment.supplier_id)}</p></div>
+                    <div><p className="text-xs text-neutral-600">Date</p><p className="font-medium">{viewPayment.payment_date}</p></div>
+                    <div><p className="text-xs text-neutral-600">Mode</p><p className="font-medium">{formatModeLabel(viewPayment.payment_mode)}</p></div>
+                    <div><p className="text-xs text-neutral-600">Amount</p><p className="font-medium">{formatAmount(viewPayment.amount)}</p></div>
+                    <div><p className="text-xs text-neutral-600">Status</p><p className="font-medium">{formatStatusLabel(viewPayment.status, viewPayment.status_display)}</p></div>
+                    <div><p className="text-xs text-neutral-600">Reference #</p><p className="font-medium">{viewPayment.reference_number || '—'}</p></div>
+                    <div className="md:col-span-2"><p className="text-xs text-neutral-600">Notes</p><p className="font-medium">{viewPayment.notes_display || viewPayment.notes || '—'}</p></div>
+                  </div>
+
+                  <div>
+                    <h3 className="mb-2 text-sm font-semibold text-neutral-700">Allocations</h3>
+                    {viewAllocations.length === 0 ? (
+                      <p className="text-sm text-neutral-500">No allocations.</p>
+                    ) : (
+                      <div className="overflow-x-auto rounded-lg border border-neutral-200">
+                        <table className="w-full text-sm">
+                          <thead><tr className="bg-neutral-50"><th className="px-3 py-2 text-left">GRN</th><th className="px-3 py-2 text-left">PO</th><th className="px-3 py-2 text-right">Allocated</th></tr></thead>
+                          <tbody>
+                            {viewAllocations.map((a, idx) => (
+                              <tr key={`${a.purchase_grn_id || 'grn'}-${idx}`} className="border-t border-neutral-100">
+                                <td className="px-3 py-2">{a.grn_number || 'Advance payment'}</td>
+                                <td className="px-3 py-2">{a.po_number || viewPayment.po_number || '—'}</td>
+                                <td className="px-3 py-2 text-right">{formatAmount(a.allocated_amount)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </div>,
           document.body

@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 
 from app.database import get_db
-from app.dependencies import enforce_resource_ownership, require_permissions
+from app.dependencies import enforce_resource_ownership, require_permissions, require_role
 from app.models.user import User
 from app.models.product import Product
 from app.models.customer import Customer
@@ -824,7 +824,7 @@ async def quotation_status(
     quotation_id: UUID,
     payload: QuotationStatusRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("quotations_write")),
+    current_user: User = Depends(require_role("admin")),
 ):
     q = db.query(Quotation).filter(Quotation.id == quotation_id, Quotation.is_deleted == False).first()
     if not q:
@@ -1703,7 +1703,7 @@ async def update_invoice(
 async def issue_invoice(
     invoice_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("sales_invoices_write")),
+    current_user: User = Depends(require_role("admin")),
 ):
     invoice = db.query(SalesInvoice).filter(SalesInvoice.id == invoice_id, SalesInvoice.is_deleted == False).first()
     if not invoice:

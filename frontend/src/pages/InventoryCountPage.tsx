@@ -194,36 +194,25 @@ const InventoryCountPage = () => {
 
       if (batchOptions.length > 1) {
         const selectedBatch = findBatchOptionByNo(batchOptions, prev.batch_no);
-        const nextBatchNo = selectedBatch ? prev.batch_no : '';
-        const nextMfg = selectedBatch?.manufacture_date || '';
-        const nextExp = selectedBatch?.expiry_date || '';
+        if (!selectedBatch) {
+          return prev;
+        }
 
-        if (
-          prev.batch_no === nextBatchNo &&
-          prev.manufacture_date === nextMfg &&
-          prev.expiry_date === nextExp
-        ) {
+        const nextMfg = selectedBatch.manufacture_date || '';
+        const nextExp = selectedBatch.expiry_date || '';
+
+        if (prev.manufacture_date === nextMfg && prev.expiry_date === nextExp) {
           return prev;
         }
 
         return {
           ...prev,
-          batch_no: nextBatchNo,
           manufacture_date: nextMfg,
           expiry_date: nextExp,
         };
       }
 
-      if (!prev.batch_no && !prev.manufacture_date && !prev.expiry_date) {
-        return prev;
-      }
-
-      return {
-        ...prev,
-        batch_no: '',
-        manufacture_date: '',
-        expiry_date: '',
-      };
+      return prev;
     });
   }, [entry.product_id, batchOptions, isBatchOptionsLoading]);
 
@@ -441,19 +430,37 @@ const InventoryCountPage = () => {
             <div>
               <label className="hms-label">Batch Number</label>
               {hasMultipleBatchOptions ? (
-                <select
-                  className="hms-input"
-                  value={entry.batch_no}
-                  disabled={isBatchOptionsLoading}
-                  onChange={(e) => handleBatchChange(e.target.value)}
-                >
-                  <option value="">Select Batch</option>
-                  {batchOptions.map((option) => (
-                    <option key={option.batch_no} value={option.batch_no}>
-                      {option.batch_no} ({option.available_qty})
-                    </option>
-                  ))}
-                </select>
+                <>
+                  <select
+                    className="hms-input"
+                    value={findBatchOptionByNo(batchOptions, entry.batch_no) ? entry.batch_no : ''}
+                    disabled={isBatchOptionsLoading}
+                    onChange={(e) => handleBatchChange(e.target.value)}
+                  >
+                    <option value="">Select Batch</option>
+                    {batchOptions.map((option) => (
+                      <option key={option.batch_no} value={option.batch_no}>
+                        {option.batch_no} ({option.available_qty})
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    className="hms-input mt-2"
+                    value={entry.batch_no}
+                    onChange={(e) => {
+                      const nextBatchNo = e.target.value;
+                      const matched = findBatchOptionByNo(batchOptions, nextBatchNo);
+                      setEntry((prev) => ({
+                        ...prev,
+                        batch_no: nextBatchNo,
+                        manufacture_date: matched ? (matched.manufacture_date || '') : (nextBatchNo ? prev.manufacture_date : ''),
+                        expiry_date: matched ? (matched.expiry_date || '') : (nextBatchNo ? prev.expiry_date : ''),
+                      }));
+                    }}
+                    placeholder="Enter batch number manually"
+                  />
+                </>
               ) : (
                 <input
                   type="text"

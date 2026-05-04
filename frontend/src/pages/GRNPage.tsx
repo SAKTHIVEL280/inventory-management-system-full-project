@@ -21,6 +21,7 @@ import { toast } from 'sonner';
 import { confirmWithToast } from '../utils/toastHelper';
 import { addDaysToDateInputValue, todayLocalDateInputValue } from '../utils/date';
 import { emptyWhenZero } from '../utils/numberInput';
+import { usePermissions } from '../hooks/usePermissions';
 
 interface ProductOption { id: string; name: string; product_code: string; purchase_price: number; gst_rate: number; }
 interface SupplierOption { id: string; company_name: string; supplier_code: string; payment_terms_days: number; }
@@ -67,6 +68,7 @@ interface TolerancePopupData {
 
 const GRNPage = () => {
   const [searchParams] = useSearchParams();
+  const { isAdmin } = usePermissions();
   const [grns, setGRNs] = useState<GoodsReceiptNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -771,7 +773,9 @@ const GRNPage = () => {
                       <div className="flex items-center justify-center gap-1">
                         {archiveView === 'active' && g.status === 'draft' && (
                           <>
-                            <button onClick={(e) => { e.stopPropagation(); handleConfirm(g.id); }} className="rounded px-2 py-1 text-xs font-medium text-green-600 hover:bg-green-50">Confirm</button>
+                            {isAdmin && (
+                              <button onClick={(e) => { e.stopPropagation(); handleConfirm(g.id); }} className="rounded px-2 py-1 text-xs font-medium text-green-600 hover:bg-green-50">Confirm</button>
+                            )}
                             <button onClick={(e) => { e.stopPropagation(); handleCancel(g.id); }} className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">Cancel</button>
                           </>
                         )}
@@ -875,7 +879,9 @@ const GRNPage = () => {
               <div className="flex gap-3">
                 {detailGRN.status === 'draft' && (
                   <>
-                    <button onClick={() => handleConfirm(detailGRN.id)} className="inline-flex items-center gap-1 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700"><span className="material-icons text-sm" aria-hidden="true">task_alt</span>Confirm & Add Stock</button>
+                    {isAdmin && (
+                      <button onClick={() => handleConfirm(detailGRN.id)} className="inline-flex items-center gap-1 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700"><span className="material-icons text-sm" aria-hidden="true">task_alt</span>Confirm & Add Stock</button>
+                    )}
                     <button onClick={() => handleCancel(detailGRN.id)} className="bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-red-100">Cancel GRN</button>
                   </>
                 )}

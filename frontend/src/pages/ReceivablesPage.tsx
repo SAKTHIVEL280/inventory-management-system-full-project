@@ -14,15 +14,17 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AppLayout } from '../components/AppLayout';
-import { paymentsApi, type Payment, type CreatePaymentPayload, type PaymentAllocationRequest } from '../api/payments';
+import { paymentsApi, type Payment, type CreatePaymentPayload, type PaymentAllocationRequest, type PaymentAllocation } from '../api/payments';
 import { salesApi, type SalesInvoice } from '../api/sales';
 import { apiClient } from '../api/client';
 import { todayLocalDateInputValue } from '../utils/date';
 import { showError, showSuccess, confirmWithToast } from '../utils/toastHelper';
+import { usePermissions } from '../hooks/usePermissions';
 
 interface CustomerOption { id: string; company_name: string; }
 
 const ReceivablesPage = () => {
+  const { isAdmin } = usePermissions();
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -35,6 +37,9 @@ const ReceivablesPage = () => {
   const [archiveView, setArchiveView] = useState<'active' | 'archived'>('active');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [viewPayment, setViewPayment] = useState<Payment | null>(null);
+  const [viewAllocations, setViewAllocations] = useState<PaymentAllocation[]>([]);
+  const [viewLoading, setViewLoading] = useState(false);
 
   // Outstanding invoices for selected customer
   const [outstandingInvoices, setOutstandingInvoices] = useState<SalesInvoice[]>([]);
@@ -90,6 +95,11 @@ const ReceivablesPage = () => {
     return Number.isFinite(num) ? Math.round(num * 100) : 0;
   };
   const formatAmount = (p: number) => `₹${(p / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+  const formatModeLabel = (mode: string) => mode
+    .replace('_', ' ')
+    .split(' ')
+    .map((part) => part ? part.charAt(0).toUpperCase() + part.slice(1) : part)
+    .join(' ');
   const customerNameById = (id?: string | null) => customers.find((c) => c.id === id)?.company_name || '-';
 
   const handleDateFromChange = (value: string) => {
@@ -107,10 +117,13 @@ const ReceivablesPage = () => {
   };
 
   // REC-003/004: Map backend status to display labels
-  const statusDisplayLabel = (status: string) => {
+  const statusDisplayLabel = (status: string, display?: string) => {
+    if (display && display.trim()) {
+      return display;
+    }
     switch (status) {
       case 'cleared': return 'Fully Received';
-      case 'pending': return 'Partially Received';
+      case 'pending': return 'Pending';
       case 'bounced': return 'Bounced';
       case 'cancelled': return 'Cancelled';
       default: return status;
@@ -232,6 +245,21 @@ const ReceivablesPage = () => {
     setShowForm(true);
   };
 
+  const handleViewPayment = async (p: Payment) => {
+    setViewPayment(p);
+    setViewAllocations(p.allocations || []);
+    setViewLoading(true);
+    try {
+      const res = await paymentsApi.getPayment(p.id);
+      setViewPayment(res.data.payment);
+      setViewAllocations(res.data.allocations || []);
+    } catch {
+      // Keep list data fallback for view.
+    } finally {
+      setViewLoading(false);
+    }
+  };
+
   const sc: Record<string, string> = { pending: 'bg-amber-100 text-amber-700', cleared: 'bg-green-100 text-green-700', bounced: 'bg-red-100 text-red-700', cancelled: 'bg-gray-100 text-gray-700' };
 
   return (
@@ -301,15 +329,20 @@ const ReceivablesPage = () => {
                     <td className="px-4 py-3">{p.payment_date}</td>
                     <td className="px-4 py-3 capitalize">{p.payment_mode.replace('_', ' ')}</td>
                     <td className="px-4 py-3 text-right font-medium">{formatAmount(p.amount)}</td>
-                    <td className="px-4 py-3 text-center"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${sc[p.status]}`}>{statusDisplayLabel(p.status)}</span></td>
+                    <td className="px-4 py-3 text-center"><span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold ${sc[p.status]}`}>{statusDisplayLabel(p.status, p.status_display)}</span></td>
                     <td className="px-4 py-3 text-center">
                       <div className="flex items-center justify-center gap-1">
+                        <button onClick={() => handleViewPayment(p)} className="rounded px-2 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-100">View</button>
                         {/* REC-008: Edit button for pending payments */}
                         {archiveView === 'active' && p.status === 'pending' && (
                           <>
                             <button onClick={() => handleEditPayment(p)} className="rounded px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10">Edit</button>
-                            <button onClick={() => handleStatusChange(p.id, 'cleared')} className="rounded px-2 py-1 text-xs font-medium text-green-600 hover:bg-green-50">Clear</button>
-                            <button onClick={() => handleStatusChange(p.id, 'bounced')} className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">Bounced</button>
+                            {isAdmin && (
+                              <>
+                                <button onClick={() => handleStatusChange(p.id, 'cleared')} className="rounded px-2 py-1 text-xs font-medium text-green-600 hover:bg-green-50">Clear</button>
+                                <button onClick={() => handleStatusChange(p.id, 'bounced')} className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">Bounced</button>
+                              </>
+                            )}
                           </>
                         )}
                         <button onClick={() => handleArchiveToggle(p.id, archiveView === 'archived')} className={`rounded px-2 py-1 text-xs font-medium ${archiveView === 'archived' ? 'text-emerald-700 hover:bg-emerald-50' : 'text-red-600 hover:bg-red-50'}`}>{archiveView === 'archived' ? 'Restore' : 'Archive'}</button>
@@ -373,6 +406,58 @@ const ReceivablesPage = () => {
                 <button onClick={() => { setShowForm(false); resetForm(); }} className="rounded-lg border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-600">Cancel</button>
                 <button onClick={handleSubmit} disabled={submitting || (customerId !== '' && outstandingInvoices.length === 0)} className="rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/20 disabled:opacity-50">{submitting ? 'Recording...' : 'Record Payment'}</button>
               </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+        {viewPayment && createPortal(
+          <div className="fixed inset-0 z-[110] m-0 flex min-h-screen w-screen items-start justify-center overflow-y-auto bg-black/45 p-4 pt-6 backdrop-blur-sm" onClick={() => { setViewPayment(null); setViewAllocations([]); }}>
+            <div className="hms-card my-8 w-full max-w-3xl space-y-6 p-6" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-start justify-between">
+                <div>
+                  <h2 className="font-display text-xl font-bold">Customer Payment</h2>
+                  <p className="text-sm text-neutral-600">{viewPayment.payment_number}</p>
+                </div>
+                <button onClick={() => { setViewPayment(null); setViewAllocations([]); }} className="text-neutral-400 hover:text-neutral-600 text-2xl">&times;</button>
+              </div>
+
+              {viewLoading ? (
+                <p className="text-sm text-neutral-500">Loading details...</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div><p className="text-xs text-neutral-600">Customer</p><p className="font-medium">{customerNameById(viewPayment.customer_id)}</p></div>
+                    <div><p className="text-xs text-neutral-600">Date</p><p className="font-medium">{viewPayment.payment_date}</p></div>
+                    <div><p className="text-xs text-neutral-600">Mode</p><p className="font-medium">{formatModeLabel(viewPayment.payment_mode)}</p></div>
+                    <div><p className="text-xs text-neutral-600">Amount</p><p className="font-medium">{formatAmount(viewPayment.amount)}</p></div>
+                    <div><p className="text-xs text-neutral-600">Status</p><p className="font-medium">{statusDisplayLabel(viewPayment.status, viewPayment.status_display)}</p></div>
+                    <div><p className="text-xs text-neutral-600">Reference #</p><p className="font-medium">{viewPayment.reference_number || '—'}</p></div>
+                    <div className="md:col-span-2"><p className="text-xs text-neutral-600">Notes</p><p className="font-medium">{viewPayment.notes_display || viewPayment.notes || '—'}</p></div>
+                  </div>
+
+                  <div>
+                    <h3 className="mb-2 text-sm font-semibold text-neutral-700">Allocations</h3>
+                    {viewAllocations.length === 0 ? (
+                      <p className="text-sm text-neutral-500">No allocations.</p>
+                    ) : (
+                      <div className="overflow-x-auto rounded-lg border border-neutral-200">
+                        <table className="w-full text-sm">
+                          <thead><tr className="bg-neutral-50"><th className="px-3 py-2 text-left">Invoice</th><th className="px-3 py-2 text-right">Allocated</th></tr></thead>
+                          <tbody>
+                            {viewAllocations.map((a, idx) => (
+                              <tr key={`${a.invoice_id || 'invoice'}-${idx}`} className="border-t border-neutral-100">
+                                <td className="px-3 py-2">{a.invoice_number || 'Unallocated'}</td>
+                                <td className="px-3 py-2 text-right">{formatAmount(a.allocated_amount)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </div>,
           document.body

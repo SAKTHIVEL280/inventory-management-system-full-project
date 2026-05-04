@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { confirmToast } from '../utils/toast';
 import { todayLocalDateInputValue } from '../utils/date';
 import { emptyWhenZero } from '../utils/numberInput';
+import { usePermissions } from '../hooks/usePermissions';
 
 const poSchema = z.object({
   supplier_id: z.string().min(1, 'Supplier required'),
@@ -95,6 +96,7 @@ const poStatusLabel = (status?: string): string => {
 };
 
 const PurchaseOrderPage = () => {
+  const { isAdmin } = usePermissions();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [formError, setFormError] = useState('');
@@ -769,14 +771,16 @@ const PurchaseOrderPage = () => {
               >
                 {createMutation.isPending ? 'Saving...' : 'Save as Draft'}
               </button>
-              <button
-                type="submit"
-                onClick={() => setSubmitMode('sent')}
-                disabled={createMutation.isPending}
-                className="bg-secondary text-white px-5 py-2.5 rounded font-semibold hover:bg-secondary/90 disabled:opacity-60"
-              >
-                {createMutation.isPending ? 'Saving...' : 'Save and Send'}
-              </button>
+              {isAdmin && (
+                <button
+                  type="submit"
+                  onClick={() => setSubmitMode('sent')}
+                  disabled={createMutation.isPending}
+                  className="bg-secondary text-white px-5 py-2.5 rounded font-semibold hover:bg-secondary/90 disabled:opacity-60"
+                >
+                  {createMutation.isPending ? 'Saving...' : 'Save and Send'}
+                </button>
+              )}
             </div>
           </form>
           )}
@@ -1026,7 +1030,7 @@ const PurchaseOrderPage = () => {
 
               {/* Actions */}
               <div className="flex gap-3">
-                {selectedPO.status === 'draft' && (
+                {selectedPO.status === 'draft' && isAdmin && (
                   <>
                     <button
                       onClick={handleSendPO}

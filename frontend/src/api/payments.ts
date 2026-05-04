@@ -67,6 +67,7 @@ export interface Payment {
   notes?: string;
   status: 'pending' | 'cleared' | 'bounced' | 'cancelled' | 'advance_payment_cleared' | 'full_payment_cleared';
   status_display?: string;
+  notes_display?: string;
   purchase_order_id?: string;
   po_number?: string;
   created_at: string;

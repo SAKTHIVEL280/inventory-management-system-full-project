@@ -21,6 +21,7 @@ import { apiClient } from '../api/client';
 import { toast } from 'sonner';
 import { dateInputValueAfterDays, todayLocalDateInputValue } from '../utils/date';
 import { emptyWhenZero } from '../utils/numberInput';
+import { usePermissions } from '../hooks/usePermissions';
 
 interface ProductOption {
   id: string;
@@ -53,6 +54,7 @@ const QuotationsPage = () => {
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const { isAdmin } = usePermissions();
 
   // Form state
   const [customerId, setCustomerId] = useState('');
@@ -412,10 +414,10 @@ const QuotationsPage = () => {
                           <button onClick={() => handleEdit(q)} className="rounded px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10">Edit</button>
                         )}
                         {/* SAL-008: Renamed Send â†’ Approve */}
-                        {archiveView === 'active' && q.status === 'draft' && (
+                        {isAdmin && archiveView === 'active' && q.status === 'draft' && (
                           <button onClick={() => handleStatusChange(q.id, 'sent')} className="rounded px-2 py-1 text-xs font-medium text-blue-600 hover:bg-blue-50">Approve</button>
                         )}
-                        {archiveView === 'active' && q.status === 'sent' && (
+                        {isAdmin && archiveView === 'active' && q.status === 'sent' && (
                           <>
                             <button onClick={() => handleStatusChange(q.id, 'accepted')} className="rounded px-2 py-1 text-xs font-medium text-green-600 hover:bg-green-50">Accept</button>
                             <button onClick={() => handleStatusChange(q.id, 'rejected')} className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">Reject</button>

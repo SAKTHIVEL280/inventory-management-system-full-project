@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
 from app.database import get_db
-from app.dependencies import enforce_resource_ownership, require_permissions
+from app.dependencies import enforce_resource_ownership, require_permissions, require_role
 from app.models.user import User
 from app.models.product import Product
 from app.models.supplier import Supplier
@@ -366,7 +366,7 @@ async def update_purchase_order_status(
     po_id: UUID,
     payload: PurchaseOrderStatusRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("purchase_orders_write")),
+    current_user: User = Depends(require_role("admin")),
 ):
     po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id, PurchaseOrder.is_deleted == False).first()
     if not po:
@@ -924,7 +924,7 @@ async def confirm_grn(
     request: Request,
     grn_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("grn_write")),
+    current_user: User = Depends(require_role("admin")),
 ):
     grn = db.query(GoodsReceiptNote).filter(GoodsReceiptNote.id == grn_id, GoodsReceiptNote.is_deleted == False).first()
     if not grn:

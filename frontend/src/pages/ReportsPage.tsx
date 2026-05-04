@@ -179,7 +179,8 @@ const ReportsPage = () => {
   const [auditPageSize, setAuditPageSize] = useState(20);
   const [expandedGstr1Invoices, setExpandedGstr1Invoices] = useState<Record<string, boolean>>({});
   const [expandedGstr2Grns, setExpandedGstr2Grns] = useState<Record<string, boolean>>({});
-  const isFinanceTaxUser = (user?.role || '').toLowerCase() === 'admin' || (user?.role || '').toLowerCase() === 'accounting';
+  const roleToken = (user?.role || '').toLowerCase();
+  const isFinanceTaxUser = roleToken === 'admin' || roleToken === 'general manager';
   const fromDate = dateRange.from;
   const toDate = dateRange.to;
 
@@ -699,7 +700,7 @@ const ReportsPage = () => {
           <div className="space-y-6">
             {!isFinanceTaxUser && (
               <div className="hms-card px-5 py-4 text-sm text-neutral-600">
-                GST reports are restricted to Finance/Tax users (Admin or Accounting role).
+                GST reports are restricted to Admin or General Manager users.
               </div>
             )}
             {isFinanceTaxUser && !gstData && !gstr2Data && !gstReconciliationData && !gstr3bData && (

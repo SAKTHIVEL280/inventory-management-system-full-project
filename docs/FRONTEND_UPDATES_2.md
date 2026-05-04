@@ -1,5 +1,20 @@
 # Frontend Updates Log
 
+## FE-127: General manager GST access messaging
+**Update**: Updated Reports page GST access guard to allow General Manager and refreshed restriction messaging.
+
+## FE-128: Admin-only approve/issue/clear UI + manual batch input
+**Update**: Hid approval/issue/clear actions behind admin role on Quotations, Invoices, Receivables, Payables, PO, and GRN pages. Added a manual Batch Number input alongside batch dropdowns in Inventory Count.
+
+## FE-129: Receivables status uses backend display
+**Update**: Receivables status column now prefers backend `status_display` for accurate partial/full receipt labels.
+
+## FE-130: View modals for payments
+**Update**: Added View actions and read-only modals for customer receipts and supplier payments to inspect details and allocations.
+
+## FE-131: Payment view readability
+**Update**: Normalized mode/status labels, cleaned PO meta from notes, and clarified allocation labels in the payment view modals.
+
 ## FE-126: Role-based navigation and gating updates
 **Update**: Updated role definitions to `admin`, `inventory manager`, and `general manager`. Restricted master pages to write access, added action-log permission gating, refreshed inventory count difference controls, and aligned UI badges/colors with the new roles.
 
