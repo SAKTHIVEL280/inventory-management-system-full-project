@@ -12,6 +12,7 @@ from app.database import get_db
 from app.dependencies import enforce_resource_ownership, require_permissions
 from app.models.product import Product, ProductCategory, StockLedger, UnitOfMeasure
 from app.models.user import User
+from app.services.auth_service import normalize_role
 from app.services.audit_service import log_audit_event
 from app.utils.input_validation import normalize_search_query
 from app.schemas.product import (
@@ -36,7 +37,7 @@ def _scope_to_owner(query, model_cls, current_user: User):
             raise HTTPException(status_code=403, detail="User is not assigned to a company")
         query = query.filter(company_col == current_user.company_id)
 
-    if current_user.role in {"admin", "accounts"}:
+    if normalize_role(current_user.role) in {"admin", "inventory manager", "general manager"}:
         return query
     owner_col = getattr(model_cls, "created_by", None)
     if owner_col is None:
@@ -115,7 +116,7 @@ def _to_product_with_stock(product: Product, stock: Decimal) -> ProductWithStock
 async def list_products(
     params: ProductListQueryParams = Depends(),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("products_read")),
+    current_user: User = Depends(require_permissions("products_read", "sales_invoices_read", "quotations_read")),
 ):
     search = normalize_search_query(params.search)
     query = db.query(Product).filter(Product.is_deleted == False)
@@ -170,7 +171,7 @@ async def list_products(
 async def list_products_flat(
     params: ProductListQueryParams = Depends(),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("products_read")),
+    current_user: User = Depends(require_permissions("products_read", "sales_invoices_read", "quotations_read")),
 ):
     """List endpoint returning only product rows (no pagination envelope)."""
     paged = await list_products(params=params, db=db, current_user=current_user)
@@ -382,7 +383,7 @@ async def apply_category_action(
 @router.get("/uom", response_model=list[UnitOfMeasureResponse])
 async def list_uom(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("uom_read")),
+    current_user: User = Depends(require_permissions("uom_read", "sales_invoices_read", "quotations_read")),
 ):
     uoms = db.query(UnitOfMeasure).filter(UnitOfMeasure.is_active == True).order_by(UnitOfMeasure.name.asc()).all()
     return [UnitOfMeasureResponse.model_validate(uom) for uom in uoms]
@@ -392,7 +393,7 @@ async def list_uom(
 async def get_product(
     product_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("products_read")),
+    current_user: User = Depends(require_permissions("products_read", "sales_invoices_read", "quotations_read")),
 ):
     query = db.query(Product).filter(Product.id == product_id, Product.is_deleted == False)
     query = _scope_to_owner(query, Product, current_user)

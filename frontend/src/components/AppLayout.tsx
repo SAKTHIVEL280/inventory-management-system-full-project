@@ -95,7 +95,7 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
     },
   });
 
-  const isAdmin = ['admin', 'doctor', 'accounts'].includes(user?.role?.toLowerCase() ?? '');
+  const isAdmin = (user?.role?.toLowerCase() ?? '') === 'admin';
 
   const navGroups: NavGroup[] = useMemo(() => [
     {
@@ -109,12 +109,12 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
       label: 'Masters',
       icon: 'folder',
       items: [
-        { to: '/masters/company', label: 'Company', visible: can('company_read'), icon: 'corporate_fare' },
-        { to: '/masters/users', label: 'Users', visible: can('users_read'), icon: 'groups' },
-        { to: '/masters/customers', label: 'Customers', visible: can('customers_read'), icon: 'person' },
-        { to: '/masters/suppliers', label: 'Suppliers', visible: can('suppliers_read'), icon: 'local_shipping' },
-        { to: '/masters/categories', label: 'Categories', visible: can('products_read'), icon: 'label' },
-        { to: '/masters/products', label: 'Products', visible: can('products_read'), icon: 'inventory_2' },
+        { to: '/masters/company', label: 'Company', visible: can('company_write'), icon: 'corporate_fare' },
+        { to: '/masters/users', label: 'Users', visible: can('users_write'), icon: 'groups' },
+        { to: '/masters/customers', label: 'Customers', visible: can('customers_write'), icon: 'person' },
+        { to: '/masters/suppliers', label: 'Suppliers', visible: can('suppliers_write'), icon: 'local_shipping' },
+        { to: '/masters/categories', label: 'Categories', visible: can('categories_write'), icon: 'label' },
+        { to: '/masters/products', label: 'Products', visible: can('products_write'), icon: 'inventory_2' },
       ],
     },
     {
@@ -160,7 +160,7 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
       icon: 'bar_chart',
       items: [
         { to: '/reports', label: 'Reports', visible: can('reports_read'), icon: 'bar_chart' },
-        { to: '/reports/action-logs', label: 'Action Logs', visible: can('reports_read'), icon: 'history' },
+        { to: '/reports/action-logs', label: 'Action Logs', visible: can('action_logs_read'), icon: 'history' },
       ],
     },
   ], [can, isAdmin]);

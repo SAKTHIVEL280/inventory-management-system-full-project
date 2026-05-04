@@ -26,6 +26,7 @@ from app.models.purchase import GoodsReceiptNote, PurchaseOrder
 from app.schemas.payment import PaymentCreateRequest, PaymentStatusRequest
 from app.services.order_number_service import generate_payment_number
 from app.services.audit_service import log_audit_event
+from app.services.auth_service import normalize_role
 from app.utils.input_validation import validate_optional_token
 
 router = APIRouter(prefix="/api/v1/payments", tags=["payments"])
@@ -34,7 +35,7 @@ PO_ID_META_REGEX = re.compile(r"\[PO_ID:([0-9a-fA-F-]{36})\]")
 
 
 def _scope_to_owner(query, model, current_user: User):
-    if current_user.role in {"admin", "accounts"}:
+    if normalize_role(current_user.role) in {"admin", "inventory manager", "general manager"}:
         return query
     owner_col = getattr(model, "created_by", None)
     if owner_col is None:

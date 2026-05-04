@@ -15,9 +15,9 @@ const InventoryCountDifferencePage = () => {
   const [activeRecountCountNumber, setActiveRecountCountNumber] = useState<string | null>(null);
 
   const queryClient = useQueryClient();
-  const { isAdmin, can } = usePermissions();
+  const { can } = usePermissions();
   const searchToken = countNumber.trim().toUpperCase();
-  const canAcceptDifference = isAdmin;
+  const canAcceptDifference = can('stock_ledger_write');
   const canRecount = can('stock_ledger_write');
 
   const {
@@ -108,7 +108,7 @@ const InventoryCountDifferencePage = () => {
 
   const handleAcceptDifference = (targetCountNumber: string) => {
     if (!canAcceptDifference) {
-      toast.error('Only Super Admin can accept differences');
+      toast.error('Only admin or inventory manager can accept differences');
       return;
     }
 
@@ -184,7 +184,7 @@ const InventoryCountDifferencePage = () => {
               ))}
             </select>
             {!canAcceptDifference && (
-              <p className="mt-1 text-xs text-neutral-500">Only Super Admin can accept difference and update stock.</p>
+              <p className="mt-1 text-xs text-neutral-500">Only admin or inventory manager can accept difference and update stock.</p>
             )}
           </div>
 

@@ -27,39 +27,23 @@ ROLE_DEFAULTS = {
         "sales_returns_read", "sales_returns_write",
         "receipts_read", "receipts_write",
         "payments_read", "payments_write",
+        "action_logs_read",
         "reports_read", "dashboard_read",
     ],
-    "accounts": [
-        "company_read",
-        "customers_read",
-        "suppliers_read",
-        "products_read",
-        "purchase_orders_read",
-        "grn_read",
-        "purchase_returns_read",
-        "stock_ledger_read",
-        "quotations_read",
-        "sales_orders_read",
-        "sales_invoices_read",
-        "sales_returns_read",
-        "receipts_read", "receipts_write",
-        "payments_read", "payments_write",
-        "reports_read", "dashboard_read",
-    ],
-    "billing": [
+    "inventory manager": [
         "customers_read", "customers_write",
         "suppliers_read", "suppliers_write",
         "products_read", "products_write",
         "categories_read", "categories_write",
-        "uom_read", "uom_write",
+        "uom_read",
         "purchase_orders_read", "purchase_orders_write",
         "grn_read", "grn_write",
-        "purchase_returns_read", "purchase_returns_write",
-        "stock_ledger_read",
+        "stock_ledger_read", "stock_ledger_write",
+        "dashboard_read",
+    ],
+    "general manager": [
         "quotations_read", "quotations_write",
-        "sales_orders_read", "sales_orders_write",
         "sales_invoices_read", "sales_invoices_write",
-        "sales_returns_read", "sales_returns_write",
         "receipts_read", "receipts_write",
         "payments_read", "payments_write",
         "reports_read", "dashboard_read",
@@ -69,6 +53,13 @@ ROLE_DEFAULTS = {
 
 ROLE_ALIASES = {
     "doctor": "admin",
+    "accounts": "general manager",
+    "billing": "general manager",
+    "accounting": "general manager",
+    "sales": "general manager",
+    "inventory": "inventory manager",
+    "inventory_manager": "inventory manager",
+    "general_manager": "general manager",
 }
 
 
@@ -112,7 +103,13 @@ def calculate_effective_access(
     denied = permission_overrides.get("deny", permission_overrides.get("denied", []))
     
     # Filter allowed: cannot grant admin-only modules unless user is admin
-    admin_only_modules = {"company_write", "users_read", "users_write"}
+    admin_only_modules = {
+        "company_read",
+        "company_write",
+        "users_read",
+        "users_write",
+        "action_logs_read",
+    }
     if normalized_role != "admin":
         allowed = [p for p in allowed if not any(ao in p for ao in admin_only_modules)]
     

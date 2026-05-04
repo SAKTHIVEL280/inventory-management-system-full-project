@@ -19,7 +19,13 @@ from app.services.auth_service import hash_password, calculate_effective_access
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
 
 
-ADMIN_ONLY_PERMISSIONS = {"company_read", "company_write", "users_read", "users_write"}
+ADMIN_ONLY_PERMISSIONS = {
+    "company_read",
+    "company_write",
+    "users_read",
+    "users_write",
+    "action_logs_read",
+}
 
 
 def _scope_to_company(query, current_user: User):

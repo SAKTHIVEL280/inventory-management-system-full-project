@@ -15,6 +15,7 @@ from app.models.customer import Customer
 from app.models.customization_option import CustomizationOption
 from app.models.user import User
 from app.services.audit_service import log_audit_event
+from app.services.auth_service import normalize_role
 from app.services.data_masking import DataMasker, should_mask_sensitive_fields
 from app.utils.input_validation import normalize_search_query
 from app.utils.state_mappings import validate_and_autofill_state_fields
@@ -38,7 +39,7 @@ def _scope_to_owner(query, model_cls, current_user: User):
             raise HTTPException(status_code=403, detail="User is not assigned to a company")
         query = query.filter(company_col == current_user.company_id)
 
-    if current_user.role in {"admin", "accounts"}:
+    if normalize_role(current_user.role) in {"admin", "inventory manager", "general manager"}:
         return query
     owner_col = getattr(model_cls, "created_by", None)
     if owner_col is None:
@@ -407,7 +408,7 @@ async def list_customers(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=500),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("customers_read")),
+    current_user: User = Depends(require_permissions("customers_read", "sales_invoices_read", "quotations_read", "receipts_read")),
 ):
     search = normalize_search_query(search)
     query = db.query(Customer).filter(Customer.is_deleted == False)
@@ -446,7 +447,7 @@ async def list_customers(
 @router.get("/customization-options", response_model=CustomerCustomizationOptionsResponse)
 async def get_customer_customization_options(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("customers_read")),
+    current_user: User = Depends(require_permissions("customers_read", "sales_invoices_read", "quotations_read", "receipts_read")),
 ):
     rows = (
         db.query(CustomizationOption)
@@ -572,7 +573,7 @@ async def create_customer(
 async def get_customer(
     customer_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("customers_read")),
+    current_user: User = Depends(require_permissions("customers_read", "sales_invoices_read", "quotations_read", "receipts_read")),
 ):
     customer = (
         _scope_to_owner(
@@ -730,7 +731,7 @@ async def delete_customer(
 async def customer_ledger(
     customer_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("customers_read")),
+    current_user: User = Depends(require_permissions("customers_read", "sales_invoices_read", "quotations_read", "receipts_read")),
 ):
     """BUG-10 fix: Return actual transaction history for the customer."""
     customer = (
@@ -799,7 +800,7 @@ async def customer_ledger(
 async def customer_balance(
     customer_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("customers_read")),
+    current_user: User = Depends(require_permissions("customers_read", "sales_invoices_read", "quotations_read", "receipts_read")),
 ):
     customer = (
         _scope_to_owner(

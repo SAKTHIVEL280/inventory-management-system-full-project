@@ -7,8 +7,8 @@ export default {
   ],
   safelist: [
     'bg-role-admin',
-    'bg-role-accounts',
-    'bg-role-billing',
+    'bg-role-inventory-manager',
+    'bg-role-general-manager',
   ],
   theme: {
     extend: {
@@ -36,8 +36,8 @@ export default {
         },
         role: {
           admin: '#2563eb',
-          accounts: '#059669',
-          billing: '#dc2626',
+          'inventory-manager': '#0f766e',
+          'general-manager': '#7c3aed',
         },
       },
       fontFamily: {

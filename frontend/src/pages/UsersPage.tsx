@@ -12,16 +12,15 @@ const schema = z.object({
   full_name: z.string().min(1, 'Name is required'),
   email: z.string().email('Valid email required'),
   password: z.string().optional(),
-  role: z.enum(['admin', 'doctor', 'accounts', 'billing']),
+  role: z.enum(['admin', 'inventory manager', 'general manager']),
 });
 
 type UserForm = z.infer<typeof schema>;
 
 const roleClassMap: Record<string, string> = {
   admin: 'bg-role-admin',
-  accounts: 'bg-role-accounts',
-  doctor: 'bg-role-admin',
-  billing: 'bg-role-billing',
+  'inventory manager': 'bg-role-inventory-manager',
+  'general manager': 'bg-role-general-manager',
 };
 
 const UsersPage = () => {
@@ -198,9 +197,8 @@ const UsersPage = () => {
               <label htmlFor="role" className="hms-label">Role</label>
               <select id="role" className="hms-input" {...register('role')}>
                 <option value="admin">Admin</option>
-                <option value="doctor">Doctor</option>
-                <option value="accounts">Accounts</option>
-                <option value="billing">Billing</option>
+                <option value="inventory manager">Inventory Manager</option>
+                <option value="general manager">General Manager</option>
               </select>
             </div>
             {formError && <p className="text-sm text-danger" role="alert" aria-live="assertive">{formError}</p>}

@@ -4,6 +4,9 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 
 
+ALLOWED_ROLES = {"admin", "inventory manager", "general manager"}
+
+
 class UserCreateRequest(BaseModel):
     full_name: str
     email: EmailStr
@@ -18,6 +21,14 @@ class UserCreateRequest(BaseModel):
         if len(value) < 8:
             raise ValueError("Password must be at least 8 characters")
         return value
+
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, value: str) -> str:
+        token = (value or "").strip().lower()
+        if token not in ALLOWED_ROLES:
+            raise ValueError("Invalid role")
+        return token
 
 
 class UserUpdateRequest(BaseModel):
@@ -34,6 +45,14 @@ class UserUpdateRequest(BaseModel):
         if value and len(value) < 8:
             raise ValueError("Password must be at least 8 characters")
         return value
+
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, value: str) -> str:
+        token = (value or "").strip().lower()
+        if token not in ALLOWED_ROLES:
+            raise ValueError("Invalid role")
+        return token
 
 
 class UserPermissionsUpdateRequest(BaseModel):

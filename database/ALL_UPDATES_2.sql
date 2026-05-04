@@ -573,4 +573,27 @@ CREATE INDEX IF NOT EXISTS ix_audit_logs_record_reference
 ON audit_logs (record_reference);
 
 -- ============================================================================
+-- 20. Role Cleanup For Access Control (DB-49)
+-- ============================================================================
+
+ALTER TABLE users
+DROP CONSTRAINT IF EXISTS users_role_check;
+
+ALTER TABLE users
+ADD CONSTRAINT users_role_check
+CHECK (role IN ('admin', 'inventory manager', 'general manager'));
+
+UPDATE users
+SET role = 'admin'
+WHERE LOWER(role) IN ('doctor');
+
+UPDATE users
+SET role = 'general manager'
+WHERE LOWER(role) IN ('accounts', 'billing', 'accounting', 'sales');
+
+UPDATE users
+SET role = 'inventory manager'
+WHERE LOWER(role) IN ('inventory', 'inventory_manager');
+
+-- ============================================================================
 COMMIT;

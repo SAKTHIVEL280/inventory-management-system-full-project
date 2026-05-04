@@ -122,7 +122,7 @@ function App() {
         <Route
           path="/masters/company"
           element={
-            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.COMPANY_READ}>
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.COMPANY_WRITE}>
               <CompanyPage />
             </ProtectedRoute>
           }
@@ -132,7 +132,7 @@ function App() {
         <Route
           path="/masters/users"
           element={
-            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.USERS_READ}>
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.USERS_WRITE}>
               <UsersPage />
             </ProtectedRoute>
           }
@@ -142,7 +142,7 @@ function App() {
         <Route
           path="/masters/customers"
           element={
-            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.CUSTOMERS_READ}>
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.CUSTOMERS_WRITE}>
               <CustomersPage />
             </ProtectedRoute>
           }
@@ -152,7 +152,7 @@ function App() {
         <Route
           path="/masters/suppliers"
           element={
-            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.SUPPLIERS_READ}>
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.SUPPLIERS_WRITE}>
               <SuppliersPage />
             </ProtectedRoute>
           }
@@ -162,7 +162,7 @@ function App() {
         <Route
           path="/masters/categories"
           element={
-            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.PRODUCTS_READ}>
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.CATEGORIES_WRITE}>
               <CategoriesPage />
             </ProtectedRoute>
           }
@@ -172,7 +172,7 @@ function App() {
         <Route
           path="/masters/products"
           element={
-            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.PRODUCTS_READ}>
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.PRODUCTS_WRITE}>
               <ProductsPage />
             </ProtectedRoute>
           }
@@ -293,7 +293,7 @@ function App() {
         <Route
           path="/reports/action-logs"
           element={
-            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.REPORTS_READ}>
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.ACTION_LOGS_READ}>
               <ActionLogsPage />
             </ProtectedRoute>
           }

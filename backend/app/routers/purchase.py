@@ -45,13 +45,14 @@ from app.services.order_number_service import (
 from app.services.gst_service import determine_tax_mode, calc_line_item, split_tax
 from app.services.stock_service import add_stock_entry, refresh_materialized_view, get_product_batch_snapshot, get_current_stock
 from app.services.audit_service import log_audit_event
+from app.services.auth_service import normalize_role
 from app.utils.input_validation import validate_optional_token
 
 router = APIRouter(tags=["purchase"])
 
 
 def _scope_to_owner(query, model, current_user: User):
-    if current_user.role in {"admin", "accounts"}:
+    if normalize_role(current_user.role) in {"admin", "inventory manager", "general manager"}:
         return query
     owner_col = getattr(model, "created_by", None)
     if owner_col is None:
@@ -120,7 +121,7 @@ async def list_purchase_orders(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=500),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("purchase_orders_read")),
+    current_user: User = Depends(require_permissions("purchase_orders_read", "payments_read")),
 ):
     status = validate_optional_token(
         status,
@@ -261,7 +262,7 @@ async def create_purchase_order(
 async def get_purchase_order(
     po_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("purchase_orders_read")),
+    current_user: User = Depends(require_permissions("purchase_orders_read", "payments_read")),
 ):
     po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id, PurchaseOrder.is_deleted == False).first()
     if not po:
@@ -448,7 +449,7 @@ async def list_grn(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=500),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("grn_read")),
+    current_user: User = Depends(require_permissions("grn_read", "payments_read")),
 ):
     status = validate_optional_token(
         status,
@@ -708,7 +709,7 @@ async def create_grn(
 async def get_grn(
     grn_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("grn_read")),
+    current_user: User = Depends(require_permissions("grn_read", "payments_read")),
 ):
     grn = db.query(GoodsReceiptNote).filter(GoodsReceiptNote.id == grn_id, GoodsReceiptNote.is_deleted == False).first()
     if not grn:
@@ -1259,7 +1260,7 @@ async def cancel_purchase_return(
 async def download_po_pdf(
     po_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("purchase_orders_read")),
+    current_user: User = Depends(require_permissions("purchase_orders_read", "payments_read")),
 ):
     """Download Purchase Order as a professional PDF."""
     from fastapi.responses import Response

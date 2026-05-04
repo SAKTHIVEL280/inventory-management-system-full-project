@@ -13,7 +13,7 @@ export interface User {
   id: string;
   full_name: string;
   email: string;
-  role: 'admin' | 'doctor' | 'accounts' | 'billing';
+  role: 'admin' | 'inventory manager' | 'general manager';
   company_id?: string | null;
   permission_overrides?: Record<string, unknown> | null;
   effective_access: string[];
@@ -272,7 +272,8 @@ export interface PaginatedResponse<T> {
 
 export const ROLES = {
   ADMIN: 'admin',
-  ACCOUNTS: 'accounts',
+  INVENTORY_MANAGER: 'inventory manager',
+  GENERAL_MANAGER: 'general manager',
 } as const;
 
 export const PERMISSION_SCOPES = {
@@ -328,6 +329,7 @@ export const PERMISSION_SCOPES = {
   
   // Reports & Dashboard
   REPORTS_READ: 'reports_read',
+  ACTION_LOGS_READ: 'action_logs_read',
   DASHBOARD_READ: 'dashboard_read',
 } as const;
 

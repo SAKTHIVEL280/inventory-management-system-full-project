@@ -13,7 +13,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import enforce_resource_ownership, require_permissions, require_role
+from app.dependencies import enforce_resource_ownership, require_permissions
 from app.models.inventory_count import InventoryCount, InventoryCountDifferenceAudit, InventoryCountItem
 from app.models.purchase import GoodsReceiptNote, GRNItem, PurchaseReturn, PurchaseReturnItem
 from app.models.product import Product, StockLedger
@@ -41,7 +41,7 @@ router = APIRouter(prefix="/api/v1/stock", tags=["stock"])
 
 
 def _scope_to_owner(query, model, current_user: User):
-    if normalize_role(current_user.role) in {"admin", "accounts"}:
+    if normalize_role(current_user.role) in {"admin", "inventory manager", "general manager"}:
         return query
     owner_col = getattr(model, "created_by", None)
     if owner_col is None:
@@ -922,7 +922,7 @@ async def accept_inventory_count_difference(
     count_number: str,
     payload: InventoryCountDifferenceAcceptRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(require_permissions("stock_ledger_write")),
 ):
     reason_code = payload.reason_code.strip().upper()
     if reason_code not in INVENTORY_COUNT_DIFFERENCE_REASON_CODES:

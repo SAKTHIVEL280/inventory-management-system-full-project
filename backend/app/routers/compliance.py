@@ -35,7 +35,7 @@ def _anonymized_phone(entity_id: UUID, digits: int = 10) -> str:
 async def export_customer_data(
     customer_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role("admin", "accounts")),
+    current_user: User = Depends(require_role("admin")),
 ):
     """Export customer data bundle for Data Subject Access Request workflows."""
     customer = db.query(Customer).filter(Customer.id == customer_id, Customer.is_deleted == False).first()
@@ -77,7 +77,7 @@ async def export_customer_data(
 async def export_supplier_data(
     supplier_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role("admin", "accounts")),
+    current_user: User = Depends(require_role("admin")),
 ):
     """Export supplier data bundle for legal/compliance requests."""
     supplier = db.query(Supplier).filter(Supplier.id == supplier_id, Supplier.is_deleted == False).first()
@@ -212,7 +212,7 @@ async def anonymize_supplier_data(
 async def retention_summary(
     older_than_days: int = Query(default=365, ge=1, le=3650),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role("admin", "accounts")),
+    current_user: User = Depends(require_role("admin")),
 ):
     """Show archival candidates older than configured retention window."""
     threshold = datetime.utcnow() - timedelta(days=older_than_days)

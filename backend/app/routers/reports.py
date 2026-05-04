@@ -13,7 +13,7 @@ from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import require_permissions
+from app.dependencies import require_permissions, require_role
 from app.models.user import User
 from app.models.inventory_count import InventoryCountDifferenceAudit, InventoryCountItem
 from app.models.product import Product, StockLedger
@@ -24,6 +24,7 @@ from app.models.supplier import Supplier
 from app.models.company import Company
 from app.models.payment import Payment, PaymentAllocation
 from app.services.audit_service import ensure_audit_logs_storage, log_audit_event, _extract_document_reference
+from app.services.auth_service import normalize_role
 from app.services.gst_service import (
     INVOICE_TYPE_EXPORT,
     INVOICE_TYPE_OTHER_STATES,
@@ -501,10 +502,10 @@ def _add_ambassador_watermark_to_pdf(pdf_bytes: bytes, ambassador_logo_bytes: by
 
 
 def _ensure_action_log_view_user(current_user: User) -> None:
-    if current_user.role not in {"admin", "accounting", "auditor"}:
+    if normalize_role(current_user.role) != "admin":
         raise HTTPException(
             status_code=403,
-            detail="Only Admin/Auditor users can view action logs",
+            detail="Only admin users can view action logs",
         )
 
 
@@ -1228,7 +1229,7 @@ async def sales_report(
     from_date: date,
     to_date: date,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("reports_read")),
+    current_user: User = Depends(require_permissions("action_logs_read")),
 ):
     _ensure_valid_date_range(from_date, to_date)
     rows = db.query(SalesInvoice).filter(
@@ -1259,7 +1260,7 @@ async def purchase_report(
     from_date: date,
     to_date: date,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("reports_read")),
+    current_user: User = Depends(require_permissions("action_logs_read")),
 ):
     _ensure_valid_date_range(from_date, to_date)
     rows = db.query(GoodsReceiptNote).filter(
@@ -4086,7 +4087,7 @@ async def retention_status_report(
 @router.post("/retention-cleanup")
 async def run_retention_cleanup_endpoint(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("admin")),
+    current_user: User = Depends(require_role("admin")),
 ):
     """
     Manually trigger retention cleanup.

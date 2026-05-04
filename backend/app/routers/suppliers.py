@@ -12,6 +12,7 @@ from app.dependencies import enforce_resource_ownership, require_permissions
 from app.models.customization_option import CustomizationOption
 from app.models.supplier import Supplier
 from app.models.user import User
+from app.services.auth_service import normalize_role
 from app.services.data_masking import DataMasker, should_mask_sensitive_fields
 from app.utils.input_validation import normalize_search_query
 from app.utils.state_mappings import (
@@ -32,7 +33,7 @@ router = APIRouter(prefix="/api/v1/suppliers", tags=["suppliers"])
 
 
 def _scope_to_owner(query, model_cls, current_user: User):
-    if current_user.role in {"admin", "accounts"}:
+    if normalize_role(current_user.role) in {"admin", "inventory manager", "general manager"}:
         return query
     owner_col = getattr(model_cls, "created_by", None)
     if owner_col is None:
@@ -338,7 +339,7 @@ async def list_suppliers(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=500),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("suppliers_read")),
+    current_user: User = Depends(require_permissions("suppliers_read", "payments_read")),
 ):
     search = normalize_search_query(search)
     query = db.query(Supplier).filter(Supplier.is_deleted == False)
@@ -377,7 +378,7 @@ async def list_suppliers(
 @router.get("/customization-options", response_model=SupplierCustomizationOptionsResponse)
 async def get_supplier_customization_options(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("suppliers_read")),
+    current_user: User = Depends(require_permissions("suppliers_read", "payments_read")),
 ):
     rows = (
         db.query(CustomizationOption)
@@ -461,7 +462,7 @@ async def create_supplier(
 async def get_supplier(
     supplier_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("suppliers_read")),
+    current_user: User = Depends(require_permissions("suppliers_read", "payments_read")),
 ):
     supplier = db.query(Supplier).filter(Supplier.id == supplier_id, Supplier.is_deleted == False).first()
     if not supplier:
@@ -530,7 +531,7 @@ async def delete_supplier(
 async def supplier_ledger(
     supplier_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("suppliers_read")),
+    current_user: User = Depends(require_permissions("suppliers_read", "payments_read")),
 ):
     """BUG-41 fix: Return actual transaction history for the supplier."""
     supplier = db.query(Supplier).filter(Supplier.id == supplier_id, Supplier.is_deleted == False).first()
@@ -592,7 +593,7 @@ async def supplier_ledger(
 async def supplier_balance(
     supplier_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("suppliers_read")),
+    current_user: User = Depends(require_permissions("suppliers_read", "payments_read")),
 ):
     supplier = db.query(Supplier).filter(Supplier.id == supplier_id, Supplier.is_deleted == False).first()
     if not supplier:

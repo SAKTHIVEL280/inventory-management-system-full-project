@@ -2,6 +2,10 @@
 
 ---
 
+## DB-49: Role cleanup for access control
+**Update**: Updated `users.role` constraint to the new roles (`admin`, `inventory manager`, `general manager`) and backfilled legacy roles (`doctor`, `accounts`, `billing`, `accounting`, `sales`, `inventory`). Added migration and consolidated pack updates.
+**Files**: `database/01_schema.sql`, `database/migrations/0004_user_roles_2026_05_04.sql`, `database/ALL_UPDATES_2.sql`
+
 ## DB-48: Company assignment backfill + company/customer/supplier model sync
 **Update**: Added idempotent migrations to align `company`, `customers`, and `suppliers` with current models (gstin_status, business_type, director fields, country fields) and to backfill `company_id` for users/customers/suppliers/products when missing. Added a server patch SQL for production application and updated consolidated migration pack.
 **Files**: `database/01_schema.sql`, `database/ALL_UPDATES_2.sql`, `database/migrations/0002_add_company_customer_supplier_fields.sql`, `database/migrations/0003_server_patch_2026_05_04.sql`

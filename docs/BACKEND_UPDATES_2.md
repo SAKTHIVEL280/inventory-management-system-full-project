@@ -2,6 +2,9 @@
 
 ---
 
+## BE-130: Role model refactor + module-level access enforcement
+**Update**: Replaced legacy roles with `admin`, `inventory manager`, and `general manager`. Updated role defaults, action-logs permission gating, and ownership scoping. Added admin-only action logs access and aligned read endpoints to allow sales/receivables/payables workflows without exposing master module access.
+
 ## BE-129: Company assignment in auth response
 **Update**: Added `company_id` to the auth user response so the client can refresh tenant context after company save. Company save flow assigns `company_id` to the current user when missing.
 

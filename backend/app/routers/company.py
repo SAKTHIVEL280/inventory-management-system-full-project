@@ -138,7 +138,13 @@ async def get_company_logo_file(
 @router.get("", response_model=CompanyResponse)
 async def get_company(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permissions("company_read", "company_write")),
+    current_user: User = Depends(require_permissions(
+        "company_read",
+        "company_write",
+        "sales_invoices_read",
+        "quotations_read",
+        "reports_read",
+    )),
 ):
     company = db.query(Company).first()
     if not company:

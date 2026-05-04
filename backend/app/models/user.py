@@ -18,7 +18,7 @@ class User(Base):
     role = Column(
         String(20),
         nullable=False,
-        default="inventory",
+        default="inventory manager",
     )
     permission_overrides = Column(JSON, nullable=True, default=None)
     force_password_change = Column(Boolean, default=False)

@@ -94,7 +94,7 @@ def enforce_resource_ownership(
     record_owner_id: UUID | None,
     current_user: User,
     *,
-    privileged_roles: tuple[str, ...] = ("admin", "accounts"),
+    privileged_roles: tuple[str, ...] = ("admin", "inventory manager", "general manager"),
 ) -> None:
     """Block access to user-owned resources when requester is not privileged.
 

@@ -70,7 +70,7 @@ GSTIN_REGEX = re.compile(r"^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$")
 
 
 def _scope_to_owner(query, model, current_user: User):
-    if normalize_role(current_user.role) in {"admin", "accounts"}:
+    if normalize_role(current_user.role) in {"admin", "inventory manager", "general manager"}:
         return query
     owner_col = getattr(model, "created_by", None)
     if owner_col is None:

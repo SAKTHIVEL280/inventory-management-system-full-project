@@ -1,5 +1,8 @@
 # Frontend Updates Log
 
+## FE-126: Role-based navigation and gating updates
+**Update**: Updated role definitions to `admin`, `inventory manager`, and `general manager`. Restricted master pages to write access, added action-log permission gating, refreshed inventory count difference controls, and aligned UI badges/colors with the new roles.
+
 ## FE-125: Company save refreshes session user
 **Update**: Refreshed the authenticated user context after Company Profile save by calling `getMe()` and updating the auth store. Added `company_id` to the frontend user type so client state reflects tenant assignment immediately.
 
