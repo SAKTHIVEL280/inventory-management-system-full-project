@@ -611,7 +611,7 @@ const ReportsPage = () => {
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                     <XAxis dataKey="date" tick={{ fontSize: 12 }} />
                     <YAxis tick={{ fontSize: 12 }} tickFormatter={v => `₹${(v/100).toFixed(0)}`} />
-                    <Tooltip formatter={(v: number) => formatAmount(v)} />
+                    <Tooltip formatter={(v) => formatAmount(Number(v ?? 0))} />
                     <Line type="monotone" dataKey="amount" stroke="#1E3A5F" strokeWidth={2} dot={{ fill: '#1E3A5F' }} />
                   </LineChart>
                 </ResponsiveContainer>
@@ -1343,7 +1343,7 @@ const ReportsPage = () => {
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                       <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                       <YAxis tick={{ fontSize: 12 }} tickFormatter={v => `₹${(v/100/1000).toFixed(0)}K`} />
-                      <Tooltip formatter={(v: number) => formatAmount(v)} />
+                      <Tooltip formatter={(v) => formatAmount(Number(v ?? 0))} />
                       <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                         {[0, 1, 2].map(idx => <Cell key={idx} fill={['#22c55e', '#ef4444', '#1E3A5F'][idx]} />)}
                       </Bar>

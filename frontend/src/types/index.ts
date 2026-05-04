@@ -14,6 +14,7 @@ export interface User {
   full_name: string;
   email: string;
   role: 'admin' | 'doctor' | 'accounts' | 'billing';
+  company_id?: string | null;
   permission_overrides?: Record<string, unknown> | null;
   effective_access: string[];
   force_password_change: boolean;

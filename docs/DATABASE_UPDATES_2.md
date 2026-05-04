@@ -2,6 +2,11 @@
 
 ---
 
+## DB-48: Company assignment backfill + company/customer/supplier model sync
+**Update**: Added idempotent migrations to align `company`, `customers`, and `suppliers` with current models (gstin_status, business_type, director fields, country fields) and to backfill `company_id` for users/customers/suppliers/products when missing. Added a server patch SQL for production application and updated consolidated migration pack.
+**Files**: `database/01_schema.sql`, `database/ALL_UPDATES_2.sql`, `database/migrations/0002_add_company_customer_supplier_fields.sql`, `database/migrations/0003_server_patch_2026_05_04.sql`
+**Ops**: `database/CLEAR_ALL_DATA.sql` refreshes current_stock mat view after truncation.
+
 ## DB-47: Clear-all-data utilities hardened
 **Update**: Updated `CLEAR_ALL_DATA.sql` and `VERIFY_ALL_TABLES_CLEARED.sql` to enumerate base tables via `pg_class/pg_namespace` (covers partitioned tables cleanly) and skip extension-owned tables, keeping resets safe if the DB includes extensions that ship reference tables.
 
@@ -411,23 +416,14 @@ No database changes required.
 
 ---
 
-## DB-26: API Base Hardening Update - No Database Changes Required
-**Date**: April 6, 2026
 **Status**: ✅ Verified - No Changes Needed
-**Test Case**: Deployed UI Auto Refresh While Typing
 **Module**: Auth / API Runtime
 **Type**: Critical Bug Fix - Frontend Logic Only
 
 ### Overview
 Validated schema impact for frontend API base hardening update.
-
-### Findings
-- Fix is frontend URL normalization behavior only.
-- No table/column/data migration required.
-
 ### Conclusion
 No database changes required.
-
 ---
 
 ## DB-25: Auto-Refresh While Typing Fix - No Database Changes Required
@@ -439,27 +435,16 @@ No database changes required.
 
 ### Overview
 Validated schema impact for deployed auto-refresh fix.
-
-### Findings
 - Fix is URL/runtime logic in frontend API clients.
 - No table/column/data migration required.
-
-### Conclusion
 No database changes required.
-
 ---
 
 ## DB-24: Branding Inline Logo Fallback - No Database Changes Required
 **Date**: April 5, 2026
 **Status**: ✅ Verified - No Changes Needed
-**Test Case**: Sidebar Top-Left Logo Still Missing on Ubuntu
-**Module**: Company / Branding API
-**Type**: Bug Fix - Backend/Frontend Logic Only
-
-### Overview
 Validated schema impact for branding inline logo fallback implementation.
 
-### Findings
 - Change is API response and frontend rendering behavior only.
 - Existing company/logo fields are unchanged.
 
@@ -472,30 +457,18 @@ No database changes required.
 **Date**: April 5, 2026
 **Status**: ✅ Verified - No Changes Needed
 **Test Case**: Frontend Not Loading After Server Upload
-**Module**: Deployment / Frontend Runtime
-**Type**: Bug Fix - Frontend Logic Only
 
 ### Overview
-Validated schema impact for Ubuntu frontend load fix.
 
 ### Findings
-- Fix modifies frontend API base/proxy behavior only.
-- No table/column/data migration required.
 
-### Conclusion
 No database changes required.
 
 ---
 
 ## DB-22: Sidebar Logo Shape Update - No Database Changes Required
-**Date**: April 5, 2026
-**Status**: ✅ Verified - No Changes Needed
-**Test Case**: Sidebar Top-Left Logo Shape
-**Module**: Company / Branding
-**Type**: UI Enhancement - Frontend Only
 
 ### Overview
-Validated schema impact for sidebar logo outer-shape update.
 
 ### Findings
 - Change is presentation-only (CSS class update).
@@ -508,23 +481,13 @@ No database changes required.
 
 ## DB-21: Sidebar Logo Endpoint Auth Fix - No Database Changes Required
 **Date**: April 5, 2026
-**Status**: ✅ Verified - No Changes Needed
-**Test Case**: Sidebar Top-Left Logo Visibility After Refresh
-**Module**: Company / Branding API
-**Type**: Bug Fix - Backend/Frontend Logic Only
-
 ### Overview
 Validated schema impact for final sidebar logo auth fix.
 
 ### Findings
 - Change is API endpoint auth behavior only.
-- Existing company/logo fields are unchanged and sufficient.
-
-### Conclusion
-No database changes required.
 
 ---
-
 ## DB-20: Sidebar Logo Visibility Fix - No Database Changes Required
 **Date**: April 5, 2026
 **Status**: ✅ Verified - No Changes Needed
@@ -537,18 +500,11 @@ Validated schema impact for sidebar logo visibility fix.
 
 ### Findings
 - Fix uses new API endpoints and frontend query update only.
-- Existing company logo columns/data are sufficient.
-
-### Conclusion
 No database changes required.
 
 ---
 
 ## DB-19: Logo Visibility Fix - No Database Changes Required
-**Date**: April 5, 2026
-**Status**: ✅ Verified - No Changes Needed
-**Test Case**: Company Logo Visibility in App
-**Module**: Company / Static Assets
 **Type**: Bug Fix - Backend/Frontend Logic Only
 
 ### Overview
@@ -561,16 +517,8 @@ Validated schema impact for company logo visibility fix.
 ### Conclusion
 No database changes required.
 
----
-
-## DB-18: Consolidated SQL Update File Synced with Migration Runner Alterations
-**Date**: April 5, 2026
 **Status**: ✅ Completed
 **Test Case**: Migration Consistency Audit
-**Module**: Database Migration Scripts
-**Type**: Script Alignment
-
-### Overview
 Synchronized consolidated SQL update script with alteration statements already present in migration runner.
 
 ### Changes Made

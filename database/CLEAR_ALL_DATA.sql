@@ -38,6 +38,16 @@ BEGIN
 
     RAISE NOTICE 'Truncating % tables in schema "%"...', table_count, target_schema;
     EXECUTE format('TRUNCATE TABLE %s RESTART IDENTITY CASCADE;', tables_sql);
+
+    IF EXISTS (
+        SELECT 1
+        FROM pg_matviews
+        WHERE schemaname = target_schema
+          AND matviewname = 'current_stock'
+    ) THEN
+        EXECUTE format('REFRESH MATERIALIZED VIEW %I.%I', target_schema, 'current_stock');
+    END IF;
+
     RAISE NOTICE 'All tables in schema "%" were truncated successfully.', target_schema;
 END $$;
 

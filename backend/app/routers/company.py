@@ -88,6 +88,14 @@ def _build_logo_data_url(file_path: Path) -> str | None:
         return None
 
 
+def _assign_company_to_user(db: Session, current_user: User, company: Company) -> bool:
+    if current_user.company_id is None:
+        current_user.company_id = company.id
+        db.add(current_user)
+        return True
+    return False
+
+
 @router.get("/branding", response_model=CompanyBrandingResponse)
 async def get_company_branding(
     db: Session = Depends(get_db),
@@ -136,8 +144,14 @@ async def get_company(
     if not company:
         company = Company(name="My Company")
         db.add(company)
+        db.flush()
+        _assign_company_to_user(db, current_user, company)
         db.commit()
         db.refresh(company)
+        return company
+
+    if _assign_company_to_user(db, current_user, company):
+        db.commit()
     return company
 
 
@@ -151,6 +165,9 @@ async def update_company(
     if not company:
         company = Company(name=payload.name)
         db.add(company)
+
+    db.flush()
+    _assign_company_to_user(db, current_user, company)
 
     for field, value in payload.model_dump().items():
         setattr(company, field, value)

@@ -2,6 +2,9 @@
 
 ---
 
+## BE-129: Company assignment in auth response
+**Update**: Added `company_id` to the auth user response so the client can refresh tenant context after company save. Company save flow assigns `company_id` to the current user when missing.
+
 ## BE-128: 15-day data retention for audit logs
 **Update**: Implemented automatic cleanup of audit logs and GST audit trail records older than 15 days. Created retention_cleanup service with cleanup_old_audit_logs() function, CLI script (run_retention_cleanup.py) with --dry-run and --status options, and API endpoints for monitoring (/retention-status) and manual triggering (/retention-cleanup). Includes cron job setup instructions for Linux/Windows servers. Fixed column name issue: audit_logs uses created_at, gst_report_audit_logs uses timestamp.
 

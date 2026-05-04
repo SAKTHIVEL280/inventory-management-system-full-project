@@ -2,6 +2,7 @@
 import bcrypt
 from sqlalchemy.orm import Session
 from app.models.user import User
+from app.models.company import Company
 from app.schemas.auth import UserResponse
 from typing import Optional, List, Dict, Any
 
@@ -127,6 +128,7 @@ def get_user_response(user: User) -> UserResponse:
         full_name=user.full_name,
         email=user.email,
         role=user.role,
+        company_id=user.company_id,
         permission_overrides=user.permission_overrides,
         effective_access=effective_access,
         force_password_change=user.force_password_change,
@@ -199,6 +201,13 @@ def authenticate_user(
         user.failed_login_attempts = 0
         user.locked_until = None
         db.commit()
+
+    # Ensure tenant assignment exists for legacy/seeded users
+    if user.company_id is None:
+        company = db.query(Company).order_by(Company.created_at.asc()).first()
+        if company is not None:
+            user.company_id = company.id
+            db.commit()
     
     return user
 

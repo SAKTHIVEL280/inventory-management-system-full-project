@@ -4,12 +4,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import { companyApi } from '../api/company';
+import { authApi } from '../api/auth';
 import { Company } from '../types';
 import { AppLayout } from '../components/AppLayout';
 import { PageError, PageLoading } from '../components/PageState';
 import { getStaticUrl } from '../utils/url_utils';
 import { getApiDetail, getApiDetailMessage } from '../utils/apiError';
 import { showError, showSuccess } from '../utils/toastHelper';
+import { useAuthStore } from '../store/auth';
 
 const schema = z.object({
   name: z.string().min(1, 'Company name is required'),
@@ -179,6 +181,7 @@ const mapCompanyToFormValues = (company?: Company): CompanyForm => ({
 const CompanyPage = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const setUser = useAuthStore((state) => state.setUser);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const ambassadorFileInputRef = useRef<HTMLInputElement>(null);
 
@@ -216,7 +219,7 @@ const CompanyPage = () => {
 
   const mutation = useMutation({
     mutationFn: (payload: Company) => companyApi.update(payload),
-    onSuccess: (updated) => {
+    onSuccess: async (updated) => {
       queryClient.setQueryData(['company'], updated);
       queryClient.setQueryData(['company-branding'], (old: { name?: string; logo_url?: string | null } | undefined) => ({
         name: updated.name,
@@ -224,6 +227,12 @@ const CompanyPage = () => {
       }));
       reset(mapCompanyToFormValues(updated));
       showSuccess('Company profile saved successfully');
+      try {
+        const me = await authApi.getMe();
+        setUser(me);
+      } catch {
+        // Ignore user refresh errors; next login will refresh context.
+      }
       navigate('/dashboard');
     },
     onError: (error: unknown) => {

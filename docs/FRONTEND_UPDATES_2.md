@@ -1,5 +1,8 @@
 # Frontend Updates Log
 
+## FE-125: Company save refreshes session user
+**Update**: Refreshed the authenticated user context after Company Profile save by calling `getMe()` and updating the auth store. Added `company_id` to the frontend user type so client state reflects tenant assignment immediately.
+
 ## FE-124: Action Logs Clear button removed
 **Update**: Removed Clear button from Action Logs filter controls and adjusted grid layout from 6 to 5 columns for cleaner UI.
 

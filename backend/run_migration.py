@@ -48,9 +48,11 @@ def main() -> int:
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS company_id UUID",
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS company_id UUID",
         "ALTER TABLE customers ADD COLUMN IF NOT EXISTS company_id UUID",
+        "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS company_id UUID",
         "CREATE INDEX IF NOT EXISTS ix_users_company_id ON users (company_id)",
         "CREATE INDEX IF NOT EXISTS ix_products_company_id ON products (company_id)",
         "CREATE INDEX IF NOT EXISTS ix_customers_company_id ON customers (company_id)",
+        "CREATE INDEX IF NOT EXISTS ix_suppliers_company_id ON suppliers (company_id)",
         """
         DO $$
         DECLARE company_uuid UUID;
@@ -78,6 +80,13 @@ def main() -> int:
                     company_uuid
                 )
                 WHERE c.company_id IS NULL;
+
+                UPDATE suppliers s
+                SET company_id = COALESCE(
+                    (SELECT u.company_id FROM users u WHERE u.id = s.created_by),
+                    company_uuid
+                )
+                WHERE s.company_id IS NULL;
             END IF;
         END $$
         """,
@@ -111,6 +120,16 @@ def main() -> int:
             END IF;
         END $$
         """,
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_suppliers_company') THEN
+                ALTER TABLE suppliers
+                    ADD CONSTRAINT fk_suppliers_company
+                    FOREIGN KEY (company_id) REFERENCES company(id);
+            END IF;
+        END $$
+        """,
 
         # Inventory/model compatibility
         "ALTER TABLE products ADD COLUMN IF NOT EXISTS safety_stock INTEGER NOT NULL DEFAULT 0",
@@ -140,6 +159,8 @@ def main() -> int:
         "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS gstin_status VARCHAR(20) NOT NULL DEFAULT 'non-registered'",
         "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS business_type VARCHAR(20) NOT NULL DEFAULT 'domestic'",
         "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS billing_country VARCHAR(100)",
+        "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS business_type VARCHAR(20) NOT NULL DEFAULT 'domestic'",
+        "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS billing_country VARCHAR(100)",
         "ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS currency_code VARCHAR(10) NOT NULL DEFAULT 'INR'",
         "ALTER TABLE company ADD COLUMN IF NOT EXISTS gstin_status VARCHAR(20) NOT NULL DEFAULT 'non-registered'",
         "ALTER TABLE company ADD COLUMN IF NOT EXISTS company_director_name VARCHAR(255)",
@@ -153,6 +174,9 @@ def main() -> int:
         "ALTER TABLE customers ADD COLUMN IF NOT EXISTS company_director_name VARCHAR(255)",
         "ALTER TABLE customers ADD COLUMN IF NOT EXISTS company_director_contact VARCHAR(255)",
         "ALTER TABLE customers ADD COLUMN IF NOT EXISTS gstin_status VARCHAR(20) NOT NULL DEFAULT 'non-registered'",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS business_type VARCHAR(20) NOT NULL DEFAULT 'domestic'",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS billing_country VARCHAR(100)",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS shipping_country VARCHAR(100)",
         "ALTER TABLE customers ADD COLUMN IF NOT EXISTS business_type VARCHAR(20) NOT NULL DEFAULT 'domestic'",
         "ALTER TABLE customers ADD COLUMN IF NOT EXISTS billing_country VARCHAR(100)",
         "ALTER TABLE customers ADD COLUMN IF NOT EXISTS shipping_country VARCHAR(100)",

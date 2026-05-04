@@ -17,12 +17,14 @@ body,
   font-family: 'Manrope', 'Inter', sans-serif;
 }
 
-body {
-  @apply text-neutral-700 antialiased;
-  background-color: #f6f7f8;
-  background-image:
-    radial-gradient(circle at 5% 5%, rgba(19, 127, 236, 0.08), transparent 22%),
-    radial-gradient(circle at 100% 90%, rgba(16, 185, 129, 0.06), transparent 24%);
+@layer base {
+  body {
+    @apply text-neutral-700 antialiased;
+    background-color: #f6f7f8;
+    background-image:
+      radial-gradient(circle at 5% 5%, rgba(19, 127, 236, 0.08), transparent 22%),
+      radial-gradient(circle at 100% 90%, rgba(16, 185, 129, 0.06), transparent 24%);
+  }
 }
 
 /* Remove native number input steppers globally */

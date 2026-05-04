@@ -189,7 +189,7 @@ const DashboardPage = () => {
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} tickFormatter={v => formatAmountShort(v)} />
-                  <Tooltip formatter={(v: number) => formatAmount(v)} labelStyle={{ fontWeight: 600 }} />
+                  <Tooltip formatter={(v) => formatAmount(Number(v ?? 0))} labelStyle={{ fontWeight: 600 }} />
                   <Line type="monotone" dataKey="amount" stroke="#1E3A5F" strokeWidth={2.5} dot={{ fill: '#1E3A5F', r: 4 }} />
                 </LineChart>
               </ResponsiveContainer>
@@ -249,14 +249,16 @@ const DashboardPage = () => {
                     tickFormatter={(v) => formatAmountShort(v)}
                   />
                   <Tooltip
-                    formatter={(value: number, name: string) => {
-                      if (name === 'fully_settled_amount' || name === 'Fully Received' || name === 'Fully Settled' || name === 'Fully Paid') {
-                        return [formatAmount(value), 'Fully Paid'];
+                    formatter={(value, name) => {
+                      const numericValue = typeof value === 'number' ? value : Number(value ?? 0);
+                      const label = typeof name === 'string' ? name : String(name ?? '');
+                      if (label === 'fully_settled_amount' || label === 'Fully Received' || label === 'Fully Settled' || label === 'Fully Paid') {
+                        return [formatAmount(numericValue), 'Fully Paid'];
                       }
-                      if (name === 'partially_settled_amount' || name === 'Partially Received' || name === 'Partially Settled' || name === 'Partially Paid') {
-                        return [formatAmount(value), 'Partially Paid'];
+                      if (label === 'partially_settled_amount' || label === 'Partially Received' || label === 'Partially Settled' || label === 'Partially Paid') {
+                        return [formatAmount(numericValue), 'Partially Paid'];
                       }
-                      return [formatAmount(value), 'Received'];
+                      return [formatAmount(numericValue), 'Received'];
                     }}
                     labelStyle={{ fontWeight: 600 }}
                   />

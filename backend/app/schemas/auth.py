@@ -16,6 +16,7 @@ class UserResponse(BaseModel):
     full_name: str
     email: str
     role: str
+    company_id: Optional[UUID] = None
     permission_overrides: Optional[Dict[str, Any]] = None
     effective_access: List[str]
     force_password_change: bool
