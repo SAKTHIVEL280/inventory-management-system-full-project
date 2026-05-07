@@ -60,6 +60,34 @@ def _scope_to_owner(query, model, current_user: User):
     return query.filter(or_(owner_col == current_user.id, owner_col.is_(None)))
 
 
+def _has_text(value: str | None) -> bool:
+    return bool((value or "").strip())
+
+
+def _enforce_supplier_gstin_for_gst_purchase(*, supplier: Supplier, gst_applicable: bool) -> None:
+    if not gst_applicable:
+        return
+
+    gstin_status = (supplier.gstin_status or "").strip().lower()
+    gstin = ((supplier.gstin or "") or "").strip().upper()
+    if gstin:
+        return
+
+    if gstin_status == "registered":
+        raise HTTPException(
+            status_code=400,
+            detail="Supplier GSTIN is required for GST-reportable purchases",
+        )
+
+    errors: list[str] = []
+    if not _has_text(supplier.state):
+        errors.append("State is required for Non-Registered GST suppliers")
+    if not _has_text(supplier.state_code):
+        errors.append("State Code is required for GST calculation")
+    if errors:
+        raise HTTPException(status_code=400, detail=errors)
+
+
 def _enforce_owner(record, current_user: User) -> None:
     enforce_resource_ownership(getattr(record, "created_by", None), current_user)
 
@@ -165,6 +193,8 @@ async def create_purchase_order(
     tax_mode = determine_tax_mode(db, "supplier", payload.supplier_id)
     is_igst = tax_mode["is_igst"]
     gst_applicable = tax_mode["gst_applicable"]
+    _enforce_supplier_gstin_for_gst_purchase(supplier=supplier, gst_applicable=gst_applicable)
+    _enforce_supplier_gstin_for_gst_purchase(supplier=supplier, gst_applicable=gst_applicable)
 
     # BUG-03: Thread-safe number generation with FOR UPDATE lock
     po_number = generate_po_number(db)
@@ -295,6 +325,7 @@ async def update_purchase_order(
     tax_mode = determine_tax_mode(db, "supplier", payload.supplier_id)
     is_igst = tax_mode["is_igst"]
     gst_applicable = tax_mode["gst_applicable"]
+    _enforce_supplier_gstin_for_gst_purchase(supplier=supplier, gst_applicable=gst_applicable)
 
     under_delivery_tolerance = float(payload.under_delivery_tolerance or 0)
     _validate_payload_under_delivery_tolerance(under_delivery_tolerance, payload.items)
@@ -551,6 +582,7 @@ async def create_grn(
     tax_mode = determine_tax_mode(db, "supplier", payload.supplier_id)
     is_igst = tax_mode["is_igst"]
     gst_applicable = tax_mode["gst_applicable"]
+    _enforce_supplier_gstin_for_gst_purchase(supplier=supplier, gst_applicable=gst_applicable)
 
     grn_number = generate_grn_number(db)
     grn = GoodsReceiptNote(
@@ -1109,6 +1141,11 @@ async def create_purchase_return(
     tax_mode = determine_tax_mode(db, "supplier", payload.supplier_id)
     is_igst = tax_mode["is_igst"]
     gst_applicable = tax_mode["gst_applicable"]
+    supplier = db.query(Supplier).filter(Supplier.id == payload.supplier_id, Supplier.is_deleted == False).first()
+    if not supplier:
+        raise HTTPException(status_code=400, detail="Invalid supplier")
+    _enforce_owner(supplier, current_user)
+    _enforce_supplier_gstin_for_gst_purchase(supplier=supplier, gst_applicable=gst_applicable)
 
     # BUG-04: Safe return number generation
     return_number = generate_purchase_return_number(db)

@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import enforce_resource_ownership, require_permissions
-from app.models.company import Company
 from app.models.customer import Customer
 from app.models.customization_option import CustomizationOption
 from app.models.user import User
@@ -231,30 +230,6 @@ def _normalize_country(value: str | None) -> str | None:
 def _normalize_state(value: str | None) -> str | None:
     cleaned = (value or "").strip()
     return cleaned or None
-
-
-def _has_text(value: str | None) -> bool:
-    return bool((value or "").strip())
-
-
-def _apply_company_billing_defaults(db: Session, payload: CustomerCreateRequest | CustomerUpdateRequest) -> None:
-    company = db.query(Company).first()
-
-    if not _has_text(payload.billing_address_line1):
-        payload.billing_address_line1 = company.address_line1 if company else payload.billing_address_line1
-    if not _has_text(payload.billing_address_line2):
-        payload.billing_address_line2 = company.address_line2 if company else payload.billing_address_line2
-    if not _has_text(payload.billing_city):
-        payload.billing_city = company.city if company else payload.billing_city
-    if not _has_text(payload.billing_state):
-        payload.billing_state = company.state if company else payload.billing_state
-    if not _has_text(payload.billing_state_code):
-        payload.billing_state_code = company.state_code if company else payload.billing_state_code
-    if not _has_text(payload.billing_pincode):
-        payload.billing_pincode = company.pincode if company else payload.billing_pincode
-
-    if not _has_text(payload.billing_country) and payload.business_type == "domestic":
-        payload.billing_country = "India"
 
 
 def _upsert_customer_customization_option(
@@ -524,7 +499,6 @@ async def create_customer(
                 detail={"error_code": "DUPLICATE_GSTIN", "message": "GSTIN already exists"},
             )
 
-    _apply_company_billing_defaults(db, payload)
     _apply_gstin_state_code(payload)
     _validate_and_autofill_customer_states(payload)
     _normalize_shipping(payload)

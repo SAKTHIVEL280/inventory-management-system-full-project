@@ -5,6 +5,12 @@
 ## BE-131: General manager access for sales/GST reports
 **Update**: Allowed general managers to access GST report generation and corrected report endpoints to use `reports_read` instead of action-log permissions. Updated GST guard messaging accordingly.
 
+## BE-136: Customer master address autofill fix
+**Update**: Removed company address defaults from customer create so billing/shipping fields remain empty unless explicitly provided.
+
+## BE-137: Invoice batch quantity validation
+**Update**: Blocked invoice saves when requested batch quantity exceeds available batch stock.
+
 ## BE-132: Admin-only approval actions for sales/purchase/payments
 **Update**: Restricted approval/status-changing actions to admins only by enforcing `require_role("admin")` on quotation status updates, invoice issue, purchase order status updates, GRN confirm, and payment status updates.
 
@@ -13,6 +19,9 @@
 
 ## BE-134: Payment view details enrichment
 **Update**: Enhanced payment detail response to include readable status/notes and allocation identifiers (invoice/GRN/PO numbers) for view modals.
+
+## BE-135: GST validation for non-registered parties
+**Update**: Allowed non-registered customers/suppliers to proceed without GSTIN when state/state code are present, and added clear validation messages when state/state code are missing for GST-applicable invoices/purchases.
 
 ## BE-130: Role model refactor + module-level access enforcement
 **Update**: Replaced legacy roles with `admin`, `inventory manager`, and `general manager`. Updated role defaults, action-logs permission gating, and ownership scoping. Added admin-only action logs access and aligned read endpoints to allow sales/receivables/payables workflows without exposing master module access.

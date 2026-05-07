@@ -139,17 +139,31 @@ def _enforce_bill_to_gstin_for_gst_invoice(
     if not is_india_country(_customer_country_for_invoice(bill_to_customer)):
         return
 
+    gstin_status = (bill_to_customer.gstin_status or "").strip().lower()
     gstin = ((bill_to_customer.gstin or "") or "").strip().upper()
-    if not gstin:
+    if gstin:
+        if not GSTIN_REGEX.match(gstin):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Billing GSTIN is invalid: {gstin}",
+            )
+        return
+
+    if gstin_status == "registered":
         raise HTTPException(
             status_code=400,
             detail="Billing GSTIN is required for GST-reportable invoices",
         )
-    if not GSTIN_REGEX.match(gstin):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Billing GSTIN is invalid: {gstin}",
-        )
+
+    state = (bill_to_customer.shipping_state or bill_to_customer.billing_state or "").strip()
+    state_code = (bill_to_customer.shipping_state_code or bill_to_customer.billing_state_code or "").strip()
+    errors: list[str] = []
+    if not state:
+        errors.append("State is required for Non-Registered GST customers")
+    if not state_code:
+        errors.append("State Code is required for GST calculation")
+    if errors:
+        raise HTTPException(status_code=400, detail=errors)
 
 
 def _sales_order_module_removed() -> None:
@@ -436,10 +450,11 @@ def _validate_invoice_line_items_for_save(
     """Validate invoice items and return product cache for reuse in save flow."""
     product_cache: dict[str, Product] = {}
     batch_cache: dict[str, dict[str, dict[str, Any]]] = {}
+    batch_requested: dict[str, float] = {}
     today = date.today()
     validation_errors: list[str] = []
 
-    for item in items:
+    for index, item in enumerate(items):
         product_key = str(item.product_id)
         if product_key not in product_cache:
             product_query = db.query(Product).filter(Product.id == item.product_id)
@@ -461,6 +476,18 @@ def _validate_invoice_line_items_for_save(
         ):
             if err not in validation_errors:
                 validation_errors.append(err)
+
+        batch_token = (getattr(item, "batch_no", None) or "").strip()
+        if batch_token and batch_token in batch_cache[product_key]:
+            available_qty = float(batch_cache[product_key][batch_token].get("available_qty", 0.0))
+            requested_qty = float(getattr(item, "quantity", 0) or 0) + float(getattr(item, "free_quantity", 0) or 0)
+            cache_key = f"{product_key}::{batch_token}"
+            next_requested = batch_requested.get(cache_key, 0.0) + requested_qty
+            batch_requested[cache_key] = next_requested
+            if next_requested - available_qty > 1e-6:
+                validation_errors.append(
+                    f"Line item {index + 1}: Entered quantity exceeds available stock in selected batch"
+                )
 
     if validation_errors:
         raise HTTPException(status_code=400, detail=validation_errors)

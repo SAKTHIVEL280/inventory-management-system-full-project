@@ -2,7 +2,7 @@
  * Sales Invoices Page
  * List, create, edit, issue invoices. GST-aware line items.
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { AppLayout } from '../components/AppLayout';
 import { salesApi, type SalesInvoice, type CreateInvoicePayload, type SalesLineItem, type SalesInvoiceItem, type InvoiceTypeValue, type InvoiceBatchOption } from '../api/sales';
@@ -285,7 +285,7 @@ const InvoicesPage = () => {
         batch_no: '',
         manufacture_date: '',
         expiry_date: '',
-        quantity: 1,
+        quantity: 0,
         free_quantity: 0,
         unit_price: 0,
         discount_percent: 0,
@@ -442,6 +442,44 @@ const InvoicesPage = () => {
     if (!Number.isFinite(qty)) return '0';
     return Number(qty).toFixed(4).replace(/\.?0+$/, '');
   };
+  const lineItemInputClass = 'h-9 w-full rounded border px-2 py-1.5 text-sm leading-5';
+  const lineItemInputReadOnlyClass = 'h-9 w-full rounded border bg-neutral-50 px-2 py-1.5 text-sm text-neutral-700 leading-5';
+  const lineItemSelectClass = 'h-9 w-full rounded border px-2 py-1.5 text-sm';
+  const batchQtyErrorForRow = (rowIndex: number, item: SalesLineItem) => {
+    const batchNo = (item.batch_no || '').trim();
+    if (!batchNo || !item.product_id) return '';
+    const options = batchOptionsByRow[rowIndex] || [];
+    const selected = options.find((opt) => opt.batch_no === batchNo);
+    if (!selected) return '';
+    const requestedQty = items.reduce((sum, row) => {
+      if (row.product_id !== item.product_id) return sum;
+      if ((row.batch_no || '').trim() !== batchNo) return sum;
+      return sum + Number(row.quantity || 0) + Number(row.free_quantity || 0);
+    }, 0);
+    if (requestedQty - Number(selected.available_qty || 0) > 1e-6) {
+      return 'Entered quantity exceeds available stock in selected batch';
+    }
+    return '';
+  };
+  const batchQtyErrorSummary = useMemo(() => {
+    for (let idx = 0; idx < items.length; idx += 1) {
+      const item = items[idx];
+      const batchNo = (item.batch_no || '').trim();
+      if (!batchNo || !item.product_id) continue;
+      const options = batchOptionsByRow[idx] || [];
+      const selected = options.find((opt) => opt.batch_no === batchNo);
+      if (!selected) continue;
+      const requestedQty = items.reduce((sum, row) => {
+        if (row.product_id !== item.product_id) return sum;
+        if ((row.batch_no || '').trim() !== batchNo) return sum;
+        return sum + Number(row.quantity || 0) + Number(row.free_quantity || 0);
+      }, 0);
+      if (requestedQty - Number(selected.available_qty || 0) > 1e-6) {
+        return `Line item ${idx + 1}: Entered quantity exceeds available stock in selected batch`;
+      }
+    }
+    return '';
+  }, [batchOptionsByRow, items]);
 
   const loadBatchOptionsForRow = useCallback(async (rowIndex: number, productId: string, autoSelectSingle: boolean) => {
     try {
@@ -534,6 +572,11 @@ const InvoicesPage = () => {
     );
     if (invalidDateOrderIndex >= 0) {
       setError(`Line item ${invalidDateOrderIndex + 1}: EXP date must be later than MFG date`);
+      return;
+    }
+
+    if (batchQtyErrorSummary) {
+      setError(batchQtyErrorSummary);
       return;
     }
 
@@ -738,6 +781,11 @@ const InvoicesPage = () => {
           <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-2 sm:p-4 backdrop-blur-sm">
             <div className="hms-card my-4 sm:my-8 w-[min(96vw,1500px)] max-w-none space-y-6 p-4 sm:p-6">
               <h2 className="font-display text-xl font-bold">{editingId ? 'Modify/Change' : 'New'} Invoice</h2>
+              {batchQtyErrorSummary && batchQtyErrorSummary !== error && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  {batchQtyErrorSummary}
+                </div>
+              )}
               {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>}
               
               {!editingId && (
@@ -798,18 +846,18 @@ const InvoicesPage = () => {
                   </div>
                 </div>
                 <div className="overflow-x-auto rounded-lg border border-neutral-200">
-                  <table className="w-full min-w-[1760px] table-fixed text-sm">
+                  <table className="w-full min-w-[2100px] table-fixed text-sm">
                     <thead>
                       <tr className="bg-neutral-50">
-                        <th className="w-[16%] px-3 py-2 text-left">Product</th>
-                        <th className="w-[7%] px-3 py-2 text-left">Product Code</th>
-                        <th className="w-[9%] px-3 py-2 text-left">Description</th>
-                        <th className="w-[7%] px-3 py-2 text-left">Packing Unit</th>
-                        <th className="w-[7%] px-3 py-2 text-left">Base Unit</th>
-                        <th className="w-[7%] px-3 py-2 text-left">Batch</th>
-                        <th className="w-[7%] px-3 py-2 text-left">MFG Date</th>
-                        <th className="w-[7%] px-3 py-2 text-left">EXP Date</th>
-                        <th className="w-[7%] px-3 py-2 text-left">HSN</th>
+                        <th className="w-[18%] px-3 py-2 text-left">Product</th>
+                        <th className="w-[8%] px-3 py-2 text-left">Product Code</th>
+                        <th className="w-[10%] px-3 py-2 text-left">Description</th>
+                        <th className="w-[8%] px-3 py-2 text-left">Packing Unit</th>
+                        <th className="w-[8%] px-3 py-2 text-left">Base Unit</th>
+                        <th className="w-[12%] px-3 py-2 text-left">Batch</th>
+                        <th className="w-[12%] px-3 py-2 text-left">MFG Date</th>
+                        <th className="w-[12%] px-3 py-2 text-left">EXP Date</th>
+                        <th className="w-[5%] px-3 py-2 text-left">HSN</th>
                         <th className="w-16 px-3 py-2 text-right">Qty</th>
                         <th className="w-16 px-3 py-2 text-right">Free</th>
                         <th className="w-28 px-3 py-2 text-right">MRP (₹)</th>
@@ -825,10 +873,11 @@ const InvoicesPage = () => {
                         const rowBatchOptions = batchOptionsByRow[idx] || [];
                         const hasMultipleBatches = rowBatchOptions.length > 1;
                         const hasSingleBatch = rowBatchOptions.length === 1;
+                        const batchQtyError = batchQtyErrorForRow(idx, item);
                         return (
                         <tr key={idx} className="border-t border-neutral-100">
                           <td className="px-3 py-2">
-                            <select className="w-full rounded border px-2 py-1.5 text-sm" value={item.product_id} onChange={e => updateItem(idx, 'product_id', e.target.value)}>
+                            <select className={lineItemSelectClass} value={item.product_id} onChange={e => updateItem(idx, 'product_id', e.target.value)}>
                               <option value="">Select</option>
                               {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.product_code})</option>)}
                             </select>
@@ -838,15 +887,15 @@ const InvoicesPage = () => {
                           {/* SAL-014: Description column */}
                           <td className="px-3 py-2 text-xs text-neutral-500">{prod?.description || prod?.name || '-'}</td>
                           <td className="px-3 py-2">
-                            <input type="text" className="w-full rounded border bg-neutral-50 px-2 py-1.5 text-sm text-neutral-700" value={item.order_unit || ''} readOnly placeholder="Auto from product" />
+                            <input type="text" className={lineItemInputReadOnlyClass} value={item.order_unit || ''} readOnly placeholder="Auto from product" />
                           </td>
                           <td className="px-3 py-2">
-                            <input type="text" className="w-full rounded border bg-neutral-50 px-2 py-1.5 text-sm text-neutral-700" value={resolveBaseUnit(prod)} readOnly placeholder="Auto from product" />
+                            <input type="text" className={lineItemInputReadOnlyClass} value={resolveBaseUnit(prod)} readOnly placeholder="Auto from product" />
                           </td>
                           <td className="px-3 py-2">
                             {hasMultipleBatches ? (
                               <select
-                                className="w-full rounded border px-2 py-1.5 text-sm"
+                                className={lineItemSelectClass}
                                 value={item.batch_no || ''}
                                 onChange={e => updateItem(idx, 'batch_no', e.target.value)}
                               >
@@ -860,7 +909,7 @@ const InvoicesPage = () => {
                             ) : (
                               <input
                                 type="text"
-                                className="w-full rounded border bg-neutral-50 px-2 py-1.5 text-sm text-neutral-700"
+                                className={lineItemInputReadOnlyClass}
                                 value={hasSingleBatch ? (item.batch_no || rowBatchOptions[0].batch_no) : ''}
                                 readOnly
                                 placeholder={item.product_id ? 'No batch available' : 'Select product first'}
@@ -868,29 +917,37 @@ const InvoicesPage = () => {
                             )}
                           </td>
                           <td className="px-3 py-2">
-                            <input type="date" className="w-full rounded border bg-neutral-50 px-2 py-1.5 text-sm text-neutral-700" value={item.manufacture_date || ''} readOnly />
+                            <input type="date" className={lineItemInputReadOnlyClass} value={item.manufacture_date || ''} readOnly />
                           </td>
                           <td className="px-3 py-2">
-                            <input type="date" className="w-full rounded border bg-neutral-50 px-2 py-1.5 text-sm text-neutral-700" value={item.expiry_date || ''} readOnly />
+                            <input type="date" className={lineItemInputReadOnlyClass} value={item.expiry_date || ''} readOnly />
                           </td>
                           {/* SAL-021: HSN Code column */}
                           <td className="px-3 py-2 text-xs text-neutral-500">{prod?.hsn_code || '-'}</td>
                           <td className="px-3 py-2">
-                            <input type="number" min="0.01" step="0.01" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={item.quantity} onChange={e => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} />
+                            <input
+                              type="number"
+                              min="0.01"
+                              step="0.01"
+                              className={`${lineItemInputClass} text-right ${batchQtyError ? 'border-red-300' : ''}`}
+                              value={emptyWhenZero(item.quantity)}
+                              onChange={e => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)}
+                              placeholder="Qty"
+                            />
                           </td>
                           <td className="px-3 py-2">
-                            <input type="number" min="0" step="0.01" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={emptyWhenZero(item.free_quantity)} onChange={e => updateItem(idx, 'free_quantity', parseFloat(e.target.value) || 0)} />
+                            <input type="number" min="0" step="0.01" className={`${lineItemInputClass} text-right`} value={emptyWhenZero(item.free_quantity)} onChange={e => updateItem(idx, 'free_quantity', parseFloat(e.target.value) || 0)} />
                           </td>
                           {/* SAL-020: MRP auto-fills from Product Master */}
                           <td className="px-3 py-2">
-                            <input type="number" min="0" step="0.01" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={item.unit_price ? paiseToRupees(item.unit_price) : ''} onChange={e => updateItem(idx, 'unit_price', rupeesToPaise(e.target.value))} />
+                            <input type="number" min="0" step="0.01" className={`${lineItemInputClass} text-right`} value={item.unit_price ? paiseToRupees(item.unit_price) : ''} onChange={e => updateItem(idx, 'unit_price', rupeesToPaise(e.target.value))} />
                           </td>
                           <td className="px-3 py-2">
-                            <input type="number" min="0" max="100" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={emptyWhenZero(item.discount_percent)} onChange={e => updateItem(idx, 'discount_percent', parseFloat(e.target.value) || 0)} />
+                            <input type="number" min="0" max="100" className={`${lineItemInputClass} text-right`} value={emptyWhenZero(item.discount_percent)} onChange={e => updateItem(idx, 'discount_percent', parseFloat(e.target.value) || 0)} />
                           </td>
                           {!isExportInvoice && (
                             <td className="px-3 py-2">
-                              <select className="w-full min-w-[60px] rounded border border-neutral-300 bg-white px-2 py-1.5 text-sm text-neutral-900 appearance-auto" value={item.gst_rate} onChange={e => updateItem(idx, 'gst_rate', parseInt(e.target.value))}>
+                              <select className={`${lineItemSelectClass} min-w-[70px] border-neutral-300 bg-white text-neutral-900 appearance-auto`} value={item.gst_rate} onChange={e => updateItem(idx, 'gst_rate', parseInt(e.target.value))}>
                                 <option value={0}>0%</option>
                                 <option value={5}>5%</option>
                                 <option value={12}>12%</option>

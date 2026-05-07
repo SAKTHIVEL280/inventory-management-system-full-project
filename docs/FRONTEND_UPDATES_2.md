@@ -18,6 +18,21 @@
 ## FE-132: Notes cleanup in payment views
 **Update**: Stripped PO metadata tokens from notes in receivables/payables view modals for readability.
 
+## FE-133: Invoice batch quantity validation
+**Update**: Added real-time batch-quantity checks in invoice line items and blocked submit when requested quantity exceeds available batch stock.
+
+## FE-134: Invoice validation visibility + width fixes
+**Update**: Moved batch-quantity validation to a top-of-form alert, widened Batch/MFG/EXP fields on invoices, and increased GRN product column width for readability.
+
+## FE-135: Invoice page runtime fix
+**Update**: Added missing `useMemo` import to prevent the Sales Invoice page from crashing on load.
+
+## FE-136: Invoice + GRN line-item alignment
+**Update**: Standardized line-item field heights and adjusted column widths in Sales Invoice and GRN forms for consistent alignment and visibility after adding items.
+
+## FE-137: GRN/Sales Invoice overlap + placeholder cleanup
+**Update**: Resolved GRN product/received-qty overlap, widened invoice batch/MFG/EXP columns, and replaced default numeric values with placeholders for clean input.
+
 ## FE-126: Role-based navigation and gating updates
 **Update**: Updated role definitions to `admin`, `inventory manager`, and `general manager`. Restricted master pages to write access, added action-log permission gating, refreshed inventory count difference controls, and aligned UI badges/colors with the new roles.
 

@@ -280,7 +280,7 @@ const GRNPage = () => {
     setTolerancePopup(null);
     setToleranceErrorItemIndex(null);
     setSearchMatchedRowIndex(null);
-    setItems([...items, { product_id: '', batch_no: '', manufacture_date: '', expiry_date: '', quantity: 1, unit_price: 0, discount_percent: 0, gst_rate: 18 }]);
+    setItems([...items, { product_id: '', batch_no: '', manufacture_date: '', expiry_date: '', quantity: 0, unit_price: 0, discount_percent: 0, gst_rate: 18 }]);
   };
 
   const updateItem = (idx: number, field: keyof GRNLineItem, value: string | number) => {
@@ -982,8 +982,9 @@ const GRNPage = () => {
                     min="0"
                     step="0.01"
                     className={`w-full rounded-lg border px-3 py-2 text-sm ${selectedPO ? 'border-neutral-200 bg-neutral-50' : 'border-neutral-200'}`}
-                    value={underDeliveryTolerance}
-                    onChange={e => setUnderDeliveryTolerance(parseFloat(e.target.value) || 0)}
+                    value={selectedPO ? underDeliveryTolerance : emptyWhenZero(underDeliveryTolerance)}
+                    onChange={e => setUnderDeliveryTolerance(e.target.value === '' ? 0 : (parseFloat(e.target.value) || 0))}
+                    placeholder="Enter tolerance"
                     readOnly={!!selectedPO}
                   />
                 </div>
@@ -994,8 +995,9 @@ const GRNPage = () => {
                     min="0"
                     step="0.01"
                     className={`w-full rounded-lg border px-3 py-2 text-sm ${selectedPO ? 'border-neutral-200 bg-neutral-50' : 'border-neutral-200'}`}
-                    value={overDeliveryTolerance}
-                    onChange={e => setOverDeliveryTolerance(parseFloat(e.target.value) || 0)}
+                    value={selectedPO ? overDeliveryTolerance : emptyWhenZero(overDeliveryTolerance)}
+                    onChange={e => setOverDeliveryTolerance(e.target.value === '' ? 0 : (parseFloat(e.target.value) || 0))}
+                    placeholder="Enter tolerance"
                     readOnly={!!selectedPO}
                   />
                 </div>
@@ -1022,12 +1024,12 @@ const GRNPage = () => {
                   </div>
                 </div>
                 <div className="max-h-[52vh] overflow-auto rounded-lg border border-neutral-200">
-                  <table className="w-full text-sm">
+                  <table className="w-full min-w-[1700px] table-fixed text-sm">
                     <thead><tr className="bg-neutral-50">
                       <th className="px-3 py-2 text-right w-14">S.No</th>
-                      <th className="px-3 py-2 text-left">Product Code</th>
-                      <th className="px-3 py-2 text-left">Product</th>
-                      <th className="px-3 py-2 text-right w-36">Received Qty</th>
+                      <th className="px-3 py-2 text-left w-[12%] min-w-[120px]">Product Code</th>
+                      <th className="px-3 py-2 text-left w-[32%] min-w-[320px]">Product</th>
+                      <th className="px-3 py-2 text-right w-40">Received Qty</th>
                       <th className="px-3 py-2 text-right w-24">Free</th>
                       <th className="px-3 py-2 text-left w-32">Batch No</th>
                       <th className="px-3 py-2 text-left w-36">MFG Date</th>
@@ -1054,7 +1056,7 @@ const GRNPage = () => {
                           <td className="px-3 py-2">
                             {selectedPO ? (
                               <select
-                                className="w-full rounded border px-2 py-1.5 text-sm"
+                                className="h-9 w-full rounded border px-2 py-1.5 text-sm"
                                 value={item.purchase_order_item_id || ''}
                                 onChange={e => updateItemFromPOOption(idx, e.target.value)}
                               >
@@ -1066,7 +1068,7 @@ const GRNPage = () => {
                                 ))}
                               </select>
                             ) : (
-                              <select className="w-full rounded border px-2 py-1.5 text-sm" value={item.product_id} onChange={e => updateItem(idx, 'product_id', e.target.value)}>
+                              <select className="h-9 w-full rounded border px-2 py-1.5 text-sm" value={item.product_id} onChange={e => updateItem(idx, 'product_id', e.target.value)}>
                                 <option value="">Select</option>
                                 {availableProducts.map(p => <option key={p.id} value={p.id}>{p.name} ({p.product_code})</option>)}
                               </select>
@@ -1082,7 +1084,7 @@ const GRNPage = () => {
                                   type="number"
                                   min="0.01"
                                   step="0.01"
-                                  className={`w-24 rounded border px-2 py-1.5 text-right text-sm ${toleranceErrorItemIndex === idx ? 'border-red-400 bg-red-50 ring-1 ring-red-200' : ''}`}
+                                  className={`h-9 w-full rounded border px-2 py-1.5 text-right text-sm ${toleranceErrorItemIndex === idx ? 'border-red-400 bg-red-50 ring-1 ring-red-200' : ''}`}
                                   value={item.quantity}
                                   onChange={e => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)}
                                   title={`Ordered: ${item.po_ordered_qty ?? 0}, Previously received: ${item.po_received_qty ?? 0}`}
@@ -1092,8 +1094,8 @@ const GRNPage = () => {
                                 </div>
                               </div>
                             ) : (
-                              <input type="number" min="0.01" step="0.01" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={item.quantity}
-                                onChange={e => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} />
+                              <input type="number" min="0.01" step="0.01" className="h-9 w-full rounded border px-2 py-1.5 text-right text-sm" value={emptyWhenZero(item.quantity)}
+                                onChange={e => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} placeholder="Qty" />
                             )}
                           </td>
                           <td className="px-3 py-2">
@@ -1101,7 +1103,7 @@ const GRNPage = () => {
                               type="number"
                               min="0"
                               step="0.01"
-                              className="w-full rounded border px-2 py-1.5 text-right text-sm"
+                              className="h-9 w-full rounded border px-2 py-1.5 text-right text-sm"
                               value={emptyWhenZero(item.free_quantity)}
                               onChange={e => {
                                 const val = e.target.value;
@@ -1113,7 +1115,7 @@ const GRNPage = () => {
                           <td className="px-3 py-2">
                             <input
                               type="text"
-                              className="w-full rounded border px-2 py-1.5 text-sm"
+                              className="h-9 w-full rounded border px-2 py-1.5 text-sm"
                               value={item.batch_no || ''}
                               onChange={e => updateItem(idx, 'batch_no', e.target.value)}
                               placeholder="e.g. BATCH-001"
@@ -1122,7 +1124,7 @@ const GRNPage = () => {
                           <td className="px-3 py-2">
                             <input
                               type="date"
-                              className="w-full rounded border px-2 py-1.5 text-sm"
+                              className="h-9 w-full rounded border px-2 py-1.5 text-sm"
                               value={item.manufacture_date || ''}
                               max={mfgDateInputMax}
                               onChange={e => updateItem(idx, 'manufacture_date', e.target.value)}
@@ -1131,23 +1133,23 @@ const GRNPage = () => {
                           <td className="px-3 py-2">
                             <input
                               type="date"
-                              className="w-full rounded border px-2 py-1.5 text-sm"
+                              className="h-9 w-full rounded border px-2 py-1.5 text-sm"
                               value={item.expiry_date || ''}
                               min={expiryDateInputMin}
                               onChange={e => updateItem(idx, 'expiry_date', e.target.value)}
                             />
                           </td>
                           <td className="px-3 py-2">
-                            <input type="number" min="0" step="0.01" className="w-full rounded border px-2 py-1.5 text-right text-sm"
+                            <input type="number" min="0" step="0.01" className="h-9 w-full rounded border px-2 py-1.5 text-right text-sm"
                               value={item.unit_price ? paiseToRupees(item.unit_price) : ''}
                               onChange={e => updateItem(idx, 'unit_price', rupeesToPaise(e.target.value))} />
                           </td>
                           <td className="px-3 py-2">
-                            <input type="number" min="0" max="100" className="w-full rounded border px-2 py-1.5 text-right text-sm" value={emptyWhenZero(item.discount_percent)}
+                            <input type="number" min="0" max="100" className="h-9 w-full rounded border px-2 py-1.5 text-right text-sm" value={emptyWhenZero(item.discount_percent)}
                               onChange={e => updateItem(idx, 'discount_percent', parseFloat(e.target.value) || 0)} />
                           </td>
                           <td className="px-3 py-2">
-                            <select className="w-full rounded border px-2 py-1.5 text-sm" value={item.gst_rate} onChange={e => updateItem(idx, 'gst_rate', parseInt(e.target.value))}>
+                            <select className="h-9 w-full rounded border px-2 py-1.5 text-sm" value={item.gst_rate} onChange={e => updateItem(idx, 'gst_rate', parseInt(e.target.value))}>
                               <option value={0}>0%</option><option value={5}>5%</option><option value={12}>12%</option><option value={18}>18%</option><option value={28}>28%</option>
                             </select>
                           </td>
