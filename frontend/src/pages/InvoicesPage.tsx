@@ -405,7 +405,7 @@ const InvoicesPage = () => {
     if (normalized >= 0) return Math.floor(normalized / step) * step;
     return -Math.floor(Math.abs(normalized) / step) * step;
   };
-  const formatAmount = (p: number) => `₹${(p / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+  const formatAmount = (p: number) => `Rs. ${(p / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
   const deriveInvoicePaymentStatusLabel = (invoice?: Pick<SalesInvoice, 'status' | 'amount_paid' | 'total_amount'>) => {
     if (!invoice) return '-';
     const token = (invoice.status || '').trim().toLowerCase();
@@ -449,6 +449,12 @@ const InvoicesPage = () => {
   const itemsTotalPaise = items.reduce((sum, item) => sum + calcTotal(item), 0);
   const roundedItemsTotalPaise = roundToNearestFivePaise(itemsTotalPaise);
   const roundOffPaise = roundedItemsTotalPaise - itemsTotalPaise;
+  const viewExactTotalPaise = selectedInvoice
+    ? Number(selectedInvoice.total_taxable_amount || 0) + Number(selectedInvoice.total_gst || 0)
+    : 0;
+  const viewRoundedTotalPaise = roundToNearestFivePaise(viewExactTotalPaise);
+  const viewRoundOffPaise = viewRoundedTotalPaise - viewExactTotalPaise;
+  const viewTotalLabelColSpan = selectedInvoice?.invoice_type === 'export_invoice' ? 4 : 5;
   const formatAvailableQty = (qty: number) => {
     if (!Number.isFinite(qty)) return '0';
     return Number(qty).toFixed(4).replace(/\.?0+$/, '');
@@ -871,7 +877,7 @@ const InvoicesPage = () => {
                         <th className="w-[5%] px-3 py-2 text-left">HSN</th>
                         <th className="w-16 px-3 py-2 text-right">Qty</th>
                         <th className="w-16 px-3 py-2 text-right">Free</th>
-                        <th className="w-28 px-3 py-2 text-right">MRP (₹)</th>
+                        <th className="w-28 px-3 py-2 text-right">MRP (Rs.)</th>
                         <th className="w-16 px-3 py-2 text-right">Disc %</th>
                         {!isExportInvoice && <th className="w-28 px-3 py-2 text-right">{gstColumnLabel(invoiceType)}</th>}
                         <th className="w-28 px-3 py-2 text-right">Total</th>
@@ -1062,7 +1068,7 @@ const InvoicesPage = () => {
                     <span className="material-icons text-sm" aria-hidden="true">picture_as_pdf</span>
                     Download PDF
                   </button>
-                  <button onClick={() => setShowInvoiceDetail(false)} className="text-2xl text-neutral-400 hover:text-neutral-600">&times;</button>
+                  <button onClick={() => setShowInvoiceDetail(false)} className="text-2xl text-neutral-400 hover:text-neutral-600">X</button>
                 </div>
               </div>
 
@@ -1147,6 +1153,22 @@ const InvoicesPage = () => {
                           </tr>
                         ))}
                       </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 bg-neutral-50">
+                          <td colSpan={viewTotalLabelColSpan} className="px-3 py-2 text-right font-semibold">Total:</td>
+                          <td className="px-3 py-2 text-right font-medium">{formatAmount(viewExactTotalPaise)}</td>
+                        </tr>
+                        {viewRoundOffPaise !== 0 && (
+                          <tr className="bg-neutral-50">
+                            <td colSpan={viewTotalLabelColSpan} className="px-3 py-2 text-right font-semibold">Round Off:</td>
+                            <td className="px-3 py-2 text-right font-medium">{formatAmount(viewRoundOffPaise)}</td>
+                          </tr>
+                        )}
+                        <tr className="bg-neutral-50">
+                          <td colSpan={viewTotalLabelColSpan} className="px-3 py-2 text-right font-semibold">Grand Total:</td>
+                          <td className="px-3 py-2 text-right font-bold text-primary">{formatAmount(viewRoundedTotalPaise)}</td>
+                        </tr>
+                      </tfoot>
                     </table>
                   </div>
                 </div>

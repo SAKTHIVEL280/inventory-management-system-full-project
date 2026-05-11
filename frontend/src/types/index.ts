@@ -75,6 +75,8 @@ export interface Company {
   qtn_counter: number;
   grn_prefix: string;
   grn_counter: number;
+  rdn_prefix: string;
+  rdn_counter: number;
 }
 
 export interface UserManagement {
@@ -267,6 +269,134 @@ export interface PaginatedResponse<T> {
 }
 
 // ============================================================================
+// Customization Options
+// ============================================================================
+
+export interface CustomizationOption {
+  id: string;
+  module: string;
+  field_name: string;
+  option_value: string;
+  display_label?: string | null;
+  sort_order: number;
+  is_active: boolean;
+  is_deleted?: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface CustomizationOptionsListResponse {
+  items: CustomizationOption[];
+  total: number;
+  page: number;
+  page_size: number;
+  has_more: boolean;
+}
+
+export interface CustomizationOptionPayload {
+  module: string;
+  field_name: string;
+  option_value: string;
+  display_label?: string | null;
+  sort_order?: number;
+  is_active?: boolean;
+}
+
+// ============================================================================
+// Return Delivery Note (RDN)
+// ============================================================================
+
+export interface RDNReturnReasonOption {
+  value: string;
+  label: string;
+}
+
+export interface RDNCustomizationOptions {
+  return_reasons: RDNReturnReasonOption[];
+}
+
+export interface RDNOverviewItem {
+  rdn_id: string;
+  rdn_number: string;
+  customer_id: string;
+  customer_name: string;
+  sales_invoice_id: string;
+  invoice_number: string;
+  receipt_date: string;
+  product_id: string;
+  product_code?: string | null;
+  product_name?: string | null;
+  return_quantity: number;
+  mrp?: number | null;
+  status: string;
+}
+
+export interface RDNOverviewResponse {
+  items: RDNOverviewItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  has_more: boolean;
+}
+
+export interface RDN {
+  id: string;
+  rdn_number: string;
+  customer_id: string;
+  sales_invoice_id: string;
+  customer_delivery_number?: string | null;
+  customer_delivery_date: string;
+  receipt_date: string;
+  status: string;
+  notes?: string | null;
+  created_at?: string | null;
+}
+
+export interface RDNItem {
+  id: string;
+  rdn_id: string;
+  product_id: string;
+  product_code?: string | null;
+  product_name?: string | null;
+  invoice_item_id: string;
+  batch_no: string;
+  manufacture_date: string;
+  expiry_date: string;
+  invoice_quantity: number;
+  return_quantity: number;
+  mrp?: number | null;
+  reason_code: string;
+  reason_label: string;
+}
+
+export interface RDNDetailResponse {
+  rdn: RDN;
+  items: RDNItem[];
+}
+
+export interface RDNLineItemPayload {
+  product_id: string;
+  invoice_item_id: string;
+  batch_no: string;
+  manufacture_date: string;
+  expiry_date: string;
+  return_quantity: number;
+  reason_code: string;
+}
+
+export interface RDNCreatePayload {
+  customer_id: string;
+  sales_invoice_id: string;
+  customer_delivery_number?: string | null;
+  customer_delivery_date: string;
+  receipt_date: string;
+  notes?: string | null;
+  items: RDNLineItemPayload[];
+}
+
+export interface RDNUpdatePayload extends RDNCreatePayload {}
+
+// ============================================================================
 // Constants
 // ============================================================================
 
@@ -320,6 +450,8 @@ export const PERMISSION_SCOPES = {
   SALES_INVOICES_WRITE: 'sales_invoices_write',
   SALES_RETURNS_READ: 'sales_returns_read',
   SALES_RETURNS_WRITE: 'sales_returns_write',
+  RDN_READ: 'rdn_read',
+  RDN_WRITE: 'rdn_write',
   
   // Payments
   RECEIPTS_READ: 'receipts_read',

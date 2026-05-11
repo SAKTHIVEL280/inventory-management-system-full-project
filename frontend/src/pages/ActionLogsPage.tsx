@@ -275,6 +275,7 @@ const ActionLogsPage = () => {
                     <option value="stock">Stock</option>
                     <option value="sales-returns">Sales Returns</option>
                     <option value="purchase-returns">Purchase Returns</option>
+                     <option value="rdn">RDN</option>
                   </select>
                   <select
                     value={actionLogType}

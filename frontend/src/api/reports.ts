@@ -59,11 +59,13 @@ export interface StockReportItem {
   min_stock: number;
   safety_stock: number;
   status: string;
+  total_mrp_value: number;
 }
 
 export interface StockReportResponse {
   items: StockReportItem[];
   total: number;
+  grand_total_mrp_value: number;
 }
 
 export interface GSTR1ReportRow {

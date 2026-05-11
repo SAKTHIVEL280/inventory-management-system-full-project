@@ -115,6 +115,7 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
         { to: '/masters/suppliers', label: 'Suppliers', visible: can('suppliers_write'), icon: 'local_shipping' },
         { to: '/masters/categories', label: 'Categories', visible: can('categories_write'), icon: 'label' },
         { to: '/masters/products', label: 'Products', visible: can('products_write'), icon: 'inventory_2' },
+        { to: '/masters/customization-options', label: 'Customization Options', visible: isAdmin, icon: 'tune' },
       ],
     },
     {
@@ -143,6 +144,7 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
       items: [
         { to: '/sales/quotations', label: 'Quotations', visible: can('quotations_read'), icon: 'request_quote' },
         { to: '/sales/invoices', label: 'Sales Invoice', visible: can('sales_invoices_read'), icon: 'receipt' },
+        { to: '/sales/rdn', label: 'Return Delivery Note', visible: can('rdn_read'), icon: 'assignment_return' },
       ],
     },
     {

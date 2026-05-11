@@ -12,14 +12,17 @@ const StockPage = () => {
   const [lowStockOnly, setLowStockOnly] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [grandTotalMrpValue, setGrandTotalMrpValue] = useState(0);
 
   const fetchStock = async () => {
     try {
       setLoading(true);
       const data = await getStockReport(lowStockOnly);
       setItems(data.items || []);
+      setGrandTotalMrpValue(data.grand_total_mrp_value || 0);
     } catch {
       setItems([]);
+      setGrandTotalMrpValue(0);
     } finally {
       setLoading(false);
     }
@@ -53,6 +56,8 @@ const StockPage = () => {
     'Low Stock': 'bg-orange-100 text-orange-700',
   };
 
+  const formatAmount = (paise: number) => `Rs. ${(paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+
   const lowCount = items.filter(i => i.status === 'Low Stock').length;
   const normalCount = items.filter(i => i.status === 'In Stock').length;
 
@@ -60,7 +65,7 @@ const StockPage = () => {
     <AppLayout title="Stock / Inventory">
       <div className="space-y-6">
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="hms-card p-5">
             <div className="flex items-center justify-between">
               <div>
@@ -80,6 +85,17 @@ const StockPage = () => {
               </div>
               <div className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-100">
                 <span className="material-icons text-orange-600" aria-hidden="true">warning</span>
+              </div>
+            </div>
+          </div>
+          <div className="hms-card p-5 border border-amber-200 bg-amber-50">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-amber-700">Total MRP Value</p>
+                <p className="mt-2 text-2xl font-bold text-amber-700">{formatAmount(grandTotalMrpValue)}</p>
+              </div>
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-amber-100">
+                <span className="material-icons text-amber-600" aria-hidden="true">currency_rupee</span>
               </div>
             </div>
           </div>
@@ -119,13 +135,14 @@ const StockPage = () => {
                 <th className="px-4 py-3 text-left font-semibold text-neutral-600">EXP Date</th>
                 <th className="px-4 py-3 text-left font-semibold text-neutral-600">HSN</th>
                 <th className="px-4 py-3 text-right font-semibold text-neutral-600">Current Qty</th>
+                <th className="px-4 py-3 text-right font-semibold text-neutral-600">MRP Value</th>
                 <th className="px-4 py-3 text-right font-semibold text-neutral-600">Safety Stock</th>
                 <th className="px-4 py-3 text-right font-semibold text-neutral-600">Min Stock</th>
                 <th className="px-4 py-3 text-center font-semibold text-neutral-600">Status</th>
               </tr></thead>
               <tbody>
-                {loading ? <tr><td colSpan={10} className="px-4 py-8 text-center text-neutral-500">Loading...</td></tr>
-                : filtered.length === 0 ? <tr><td colSpan={10} className="px-4 py-8 text-center text-neutral-500">No stock rows found</td></tr>
+                {loading ? <tr><td colSpan={11} className="px-4 py-8 text-center text-neutral-500">Loading...</td></tr>
+                : filtered.length === 0 ? <tr><td colSpan={11} className="px-4 py-8 text-center text-neutral-500">No stock rows found</td></tr>
                 : filtered.map((item, idx) => (
                   <tr key={`${item.product_code}-${item.batch_no || 'no-batch'}-${idx}`} className="border-b border-neutral-100 hover:bg-neutral-50">
                     <td className="px-4 py-3 font-medium">{item.product_code}</td>
@@ -135,6 +152,7 @@ const StockPage = () => {
                     <td className="px-4 py-3 text-neutral-500">{formatDate(item.expiry_date)}</td>
                     <td className="px-4 py-3 text-neutral-500">{item.hsn}</td>
                     <td className={`px-4 py-3 text-right font-medium ${item.status === 'Low Stock' ? 'hms-low-stock-qty hms-low-stock-blink' : ''}`}>{item.closing_qty}</td>
+                    <td className="px-4 py-3 text-right font-semibold text-amber-700 bg-amber-50">{formatAmount(item.total_mrp_value)}</td>
                     <td className="px-4 py-3 text-right text-neutral-500">{item.safety_stock}</td>
                     <td className="px-4 py-3 text-right text-neutral-500">{item.min_stock}</td>
                     <td className="px-4 py-3 text-center">

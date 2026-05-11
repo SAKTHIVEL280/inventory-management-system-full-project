@@ -16,9 +16,11 @@ import CustomersPage from './pages/CustomersPage';
 import SuppliersPage from './pages/SuppliersPage';
 import CategoriesPage from './pages/CategoriesPage';
 import ProductsPage from './pages/ProductsPage';
+import CustomizationOptionsPage from './pages/CustomizationOptionsPage';
 import PurchaseOrderPage from './pages/PurchaseOrderPage';
 import QuotationsPage from './pages/QuotationsPage';
 import InvoicesPage from './pages/InvoicesPage';
+import RDNPage from './pages/RDNPage';
 import GRNPage from './pages/GRNPage';
 import StockPage from './pages/StockPage';
 import InventoryCountPage from './pages/InventoryCountPage';
@@ -179,6 +181,15 @@ function App() {
         />
         <Route path="/products" element={<Navigate to="/masters/products" replace />} />
 
+        <Route
+          path="/masters/customization-options"
+          element={
+            <ProtectedRoute requiredRole="admin">
+              <CustomizationOptionsPage />
+            </ProtectedRoute>
+          }
+        />
+
         {/* ── Purchase ────────────────────────────────────── */}
         <Route
           path="/purchase/orders"
@@ -216,6 +227,14 @@ function App() {
           element={
             <ProtectedRoute requiredPermission={PERMISSION_SCOPES.SALES_INVOICES_READ}>
               <InvoicesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/sales/rdn"
+          element={
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.RDN_READ}>
+              <RDNPage />
             </ProtectedRoute>
           }
         />
