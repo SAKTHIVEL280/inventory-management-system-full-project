@@ -89,6 +89,32 @@ Updated customer payment terms column behavior to avoid automatic default `30` d
 ### Validation
 - Verified no SQL/editor errors in modified files.
 
+---
+
+## DB-52: RDN tables + company counters
+**Date**: May 12, 2026
+**Status**: ✅ Completed
+**Module**: Sales, Inventory
+**Type**: Feature
+
+### Overview
+Added Return Delivery Note (RDN) tables, company numbering fields, and seeded return reasons for configurable dropdown options.
+
+### Changes Made
+- Added `rdn_prefix` / `rdn_counter` to `company`.
+- Added `return_delivery_notes` and `return_delivery_note_items` tables with indexes.
+- Seeded RDN return reason options in `customization_options`.
+- Added migration script and consolidated compatibility updates.
+
+### Files Modified
+- `database/01_schema.sql`
+- `database/migrations/0007_rdn_feature_2026_05_12.sql`
+- `database/ALL_UPDATES_2.sql`
+- `backend/run_migration.py`
+
+### Validation
+- Verified no SQL/editor errors in modified files.
+
 ## DB-39: STO-006/007 Inventory Count Tables and Compatibility Migration
 **Date**: April 8, 2026
 **Status**: ✅ Completed

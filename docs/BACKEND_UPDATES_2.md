@@ -1303,6 +1303,131 @@ No backend changes required.
 
 ---
 
+## BE-156: RDN action log ref
+**Date**: May 11, 2026
+**Status**: ✅ Completed
+**Module**: Sales
+**Type**: Fix
+
+### Overview
+Ensured RDN action logs use RDN number instead of UUID in descriptions.
+
+### Changes Made
+- Added RDN number to audit record-reference resolution.
+
+### Files Modified
+- `backend/app/services/audit_service.py`
+
+### Validation
+- Verified no backend/IDE errors in modified files.
+
+---
+
+## BE-155: RDN admin confirm + action logs
+**Date**: May 11, 2026
+**Status**: ✅ Completed
+**Module**: Sales
+**Type**: Fix
+
+### Overview
+Restricted RDN confirm to admins and enabled RDN audit logging in Action Logs.
+
+### Changes Made
+- Restricted RDN confirm endpoint to admin role.
+- Logged RDN actions with resource IDs for references.
+- Added RDN to financial audit modules and action log filters.
+- Added RDN reference lookup for action logs.
+
+### Files Modified
+- `backend/app/routers/rdn.py`
+- `backend/app/services/audit_service.py`
+- `backend/app/routers/reports.py`
+
+### Validation
+- Verified no backend/IDE errors in modified files.
+
+---
+
+## BE-154: Customization options admin API
+**Date**: May 11, 2026
+**Status**: ✅ Completed
+**Module**: Masters
+**Type**: Feature
+
+### Overview
+Added admin-only CRUD endpoints for customization options.
+
+### Changes Made
+- Added customization options schemas and router.
+- Added list/create/update/delete endpoints for admins.
+
+### Files Modified
+- `backend/app/schemas/customization_option.py`
+- `backend/app/routers/customization_options.py`
+- `backend/app/routers/__init__.py`
+- `backend/app/main.py`
+
+### Validation
+- Verified no backend/IDE errors in modified files.
+
+---
+
+## BE-153: RDN detail product name
+**Date**: May 11, 2026
+**Status**: ✅ Completed
+**Module**: Sales
+**Type**: Fix
+
+### Overview
+Returned product name/code in RDN detail payload for UI display.
+
+### Changes Made
+- Joined products in RDN detail and returned product name/code per item.
+
+### Files Modified
+- `backend/app/routers/rdn.py`
+
+### Validation
+- Verified no backend/IDE errors in modified files.
+
+---
+
+## BE-152: RDN backend + stock MRP
+**Date**: May 12, 2026
+**Status**: ✅ Completed
+**Module**: Sales, Inventory, Reports
+**Type**: Feature
+
+### Overview
+Added Return Delivery Note (RDN) backend support with draft/update/confirm/cancel flows and stock updates, plus stock report MRP totals and RDN integration.
+
+### Changes Made
+- Added RDN models, schemas, router, numbering, and permissions.
+- Added RDN customization options endpoint for return reasons.
+- Added audit log labels for RDN actions.
+- Updated stock report batch aggregation to include confirmed RDN returns.
+- Added per-row MRP value and grand total MRP value to stock report response.
+
+### Files Modified
+- `backend/app/models/rdn.py`
+- `backend/app/routers/rdn.py`
+- `backend/app/routers/reports.py`
+- `backend/app/services/order_number_service.py`
+- `backend/app/services/auth_service.py`
+- `backend/app/services/audit_service.py`
+- `backend/app/models/company.py`
+- `backend/app/schemas/rdn.py`
+- `backend/app/schemas/company.py`
+- `backend/app/models/__init__.py`
+- `backend/app/routers/__init__.py`
+- `backend/app/main.py`
+- `backend/run_migration.py`
+
+### Validation
+- Verified no backend/IDE errors in modified files.
+
+---
+
 ## BE-27: Branding API Inline Logo Fallback for Server UI Reliability
 **Date**: April 5, 2026
 **Status**: ✅ Completed

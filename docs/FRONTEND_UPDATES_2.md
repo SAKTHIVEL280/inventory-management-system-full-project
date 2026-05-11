@@ -1492,6 +1492,151 @@ Updated Customer Master country and currency controls to be editable while still
 
 ---
 
+## FE-7: RDN confirm admin-only
+**Date**: May 11, 2026
+**Status**: ✅ Completed
+**Module**: Sales
+**Type**: Fix
+
+### Overview
+Restricted RDN confirm action to admin users and exposed RDN in Action Logs filter.
+
+### Changes Made
+- Hid RDN confirm action for non-admin users.
+- Added RDN to Action Logs module filter.
+
+### Files Modified
+- `frontend/src/pages/RDNPage.tsx`
+- `frontend/src/components/rdn/RDNDetailModal.tsx`
+- `frontend/src/pages/ActionLogsPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified files.
+
+---
+
+## FE-6: Customization options admin UI
+**Date**: May 11, 2026
+**Status**: ✅ Completed
+**Module**: Masters
+**Type**: Feature
+
+### Overview
+Added admin-only Customization Options screen under Masters.
+
+### Changes Made
+- Added customization options types and API client.
+- Added admin-only screen to manage customization options.
+- Added Masters navigation entry and route.
+
+### Files Modified
+- `frontend/src/types/index.ts`
+- `frontend/src/api/customizationOptions.ts`
+- `frontend/src/pages/CustomizationOptionsPage.tsx`
+- `frontend/src/components/AppLayout.tsx`
+- `frontend/src/App.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified files.
+
+---
+
+## FE-5: RDN view product name
+**Date**: May 11, 2026
+**Status**: ✅ Completed
+**Module**: Sales
+**Type**: Fix
+
+### Overview
+Displayed product name in the RDN detail view instead of raw IDs.
+
+### Changes Made
+- Added product name/code to RDN item type.
+- Updated RDN detail modal to show product name/code.
+
+### Files Modified
+- `frontend/src/types/index.ts`
+- `frontend/src/components/rdn/RDNDetailModal.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified files.
+
+---
+
+## FE-4: Invoice view round-off summary
+**Date**: May 11, 2026
+**Status**: ✅ Completed
+**Module**: Sales
+**Type**: Fix
+
+### Overview
+Aligned invoice view totals with stored round-off logic by showing total, round-off, and grand total in the item summary.
+
+### Changes Made
+- Added round-off and grand total rows to invoice view item totals.
+- Used stored invoice totals to reflect correct rounding.
+
+### Files Modified
+- `frontend/src/pages/InvoicesPage.tsx`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified files.
+
+---
+
+## FE-3: Add RHF resolver dependency
+**Date**: May 11, 2026
+**Status**: ✅ Completed
+**Module**: Sales
+**Type**: Fix
+
+### Overview
+Added missing React Hook Form resolver dependency used by the RDN form.
+
+### Changes Made
+- Added `@hookform/resolvers` dependency for zod validation.
+
+### Files Modified
+- `frontend/package.json`
+
+### Validation
+- Vite import resolution restored for RDN form.
+
+---
+
+## FE-2: RDN UI + stock MRP
+**Date**: May 12, 2026
+**Status**: ✅ Completed
+**Module**: Sales, Inventory
+**Type**: Feature / UI Enhancement
+
+### Overview
+Added Return Delivery Note (RDN) UI with list, create/edit, detail/confirm/cancel flows and added highlighted MRP value column plus grand total summary in Stock Overview.
+
+### Changes Made
+- Added RDN page route and Sales navigation entry.
+- Implemented RDN overview list, create/edit modal, and detail modal with confirm/cancel.
+- Added RDN API client and types.
+- Added total MRP value column + grand total card in Stock Overview.
+- Updated stock report API typings for MRP totals.
+
+### Files Modified
+- `frontend/src/App.tsx`
+- `frontend/src/components/AppLayout.tsx`
+- `frontend/src/pages/RDNPage.tsx`
+- `frontend/src/components/rdn/RDNOverviewTable.tsx`
+- `frontend/src/components/rdn/RDNFormModal.tsx`
+- `frontend/src/components/rdn/RDNDetailModal.tsx`
+- `frontend/src/api/rdn.ts`
+- `frontend/src/api/reports.ts`
+- `frontend/src/pages/StockPage.tsx`
+- `frontend/src/types/index.ts`
+
+### Validation
+- Verified no TypeScript/IDE errors in modified files.
+
+---
+
 ## FE-34: Customer Master CUS-012 - Credit Label Rename and Conditional Shipping Address
 **Date**: April 7, 2026
 **Status**: ✅ Completed
