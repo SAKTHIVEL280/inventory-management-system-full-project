@@ -19,6 +19,7 @@ from app.models.inventory_count import InventoryCountDifferenceAudit, InventoryC
 from app.models.product import Product, StockLedger
 from app.models.sales import SalesInvoice, SalesInvoiceItem, SalesOrder, SalesReturn, SalesReturnItem
 from app.models.purchase import GoodsReceiptNote, GRNItem, PurchaseOrder, PurchaseReturn, PurchaseReturnItem
+from app.models.rdn import ReturnDeliveryNote, ReturnDeliveryNoteItem
 from app.models.customer import Customer
 from app.models.supplier import Supplier
 from app.models.company import Company
@@ -517,6 +518,7 @@ FINANCIAL_ACTION_LOG_MODULES = (
     "stock",
     "sales-returns",
     "purchase-returns",
+    "rdn",
 )
 FINANCIAL_ACTION_LOG_MODULES_SQL = "', '".join(FINANCIAL_ACTION_LOG_MODULES)
 
@@ -1170,6 +1172,37 @@ async def stock_report(
             float(row.qty or 0),
         )
 
+    rdn_rows = (
+        db.query(
+            ReturnDeliveryNoteItem.product_id,
+            ReturnDeliveryNoteItem.batch_no,
+            ReturnDeliveryNoteItem.manufacture_date,
+            ReturnDeliveryNoteItem.expiry_date,
+            func.coalesce(func.sum(ReturnDeliveryNoteItem.return_quantity), 0).label("qty"),
+        )
+        .join(ReturnDeliveryNote, ReturnDeliveryNoteItem.rdn_id == ReturnDeliveryNote.id)
+        .filter(
+            ReturnDeliveryNote.status == "confirmed",
+            ReturnDeliveryNote.is_deleted == False,
+            ReturnDeliveryNoteItem.is_deleted == False,
+        )
+        .group_by(
+            ReturnDeliveryNoteItem.product_id,
+            ReturnDeliveryNoteItem.batch_no,
+            ReturnDeliveryNoteItem.manufacture_date,
+            ReturnDeliveryNoteItem.expiry_date,
+        )
+        .all()
+    )
+    for row in rdn_rows:
+        _accumulate(
+            row.product_id,
+            row.batch_no,
+            row.manufacture_date,
+            row.expiry_date,
+            float(row.qty or 0),
+        )
+
     inventory_count_diff_rows = (
         db.query(
             InventoryCountItem.product_id,
@@ -1209,6 +1242,7 @@ async def stock_report(
         )
 
     products = db.query(Product).filter(Product.is_deleted == False).all()
+    grand_total_mrp_value = 0.0
     for product in products:
         product_id = str(product.id)
         safety = float(product.safety_stock or 0)
@@ -1233,6 +1267,8 @@ async def stock_report(
         product_batches.sort(key=lambda entry: (entry[0] == NO_BATCH_TOKEN, entry[0]))
 
         for batch_no, manufacture_date, expiry_date, batch_qty in product_batches:
+            total_mrp_value = float(batch_qty) * float(product.mrp or 0)
+            grand_total_mrp_value += total_mrp_value
             rows.append({
                 "product_code": product.product_code,
                 "product_name": product.name,
@@ -1244,10 +1280,11 @@ async def stock_report(
                 "min_stock": float(safety),
                 "safety_stock": float(safety),
                 "status": status,
+                "total_mrp_value": total_mrp_value,
             })
 
     rows.sort(key=lambda row: (row["product_name"] or "", row["batch_no"] or "~"))
-    return {"items": rows, "total": len(rows)}
+    return {"items": rows, "total": len(rows), "grand_total_mrp_value": grand_total_mrp_value}
 
 
 @router.get("/sales")

@@ -1,5 +1,5 @@
 """API routers."""
 
-from app.routers import auth, company, users, customers, suppliers, products, purchase, sales, payments, reports, stock, archive, compliance
+from app.routers import auth, company, users, customers, suppliers, products, purchase, sales, payments, reports, stock, archive, compliance, rdn, customization_options
 
-__all__ = ["auth", "company", "users", "customers", "suppliers", "products", "purchase", "sales", "payments", "reports", "stock", "archive", "compliance"]
+__all__ = ["auth", "company", "users", "customers", "suppliers", "products", "purchase", "sales", "payments", "reports", "stock", "archive", "compliance", "rdn", "customization_options"]

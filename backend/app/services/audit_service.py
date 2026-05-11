@@ -48,6 +48,7 @@ _ENTITY_LABELS = {
     "stock": "Stock Adjustment",
     "sales-returns": "Sales Return",
     "purchase-returns": "Purchase Return",
+    "rdn": "RDN",
     "reports": "Report",
     "audit": "Action Log",
     "auth": "Session",
@@ -61,6 +62,7 @@ _FINANCIAL_MODULES = {
     "stock",
     "sales-returns",
     "purchase-returns",
+    "rdn",
 }
 
 
@@ -221,6 +223,7 @@ def _extract_document_reference(record_reference: str | None, details: dict[str,
         "invoice_number",
         "invoice_no",
         "sales_invoice_no",
+        "rdn_number",
         "po_number",
         "po_no",
         "purchase_order_no",
@@ -288,7 +291,7 @@ def _extract_document_reference(record_reference: str | None, details: dict[str,
     # Fall back to record_reference if it's not a UUID or module name
     if record_reference and not _looks_like_uuid(record_reference):
         # Don't show module names as references
-        module_names = {"invoices", "purchase-orders", "grn", "payments", "stock", "customers", "suppliers", "products", "users", "quotations"}
+        module_names = {"invoices", "purchase-orders", "grn", "payments", "stock", "customers", "suppliers", "products", "users", "quotations", "rdn"}
         if record_reference.lower() not in module_names:
             return record_reference.strip()
     
@@ -314,6 +317,15 @@ def _fetch_document_reference_from_db(db: Session, module_name: str, resource_id
         if module in {"invoices", "sales", "sales-invoices"}:
             result = db.execute(
                 text("SELECT invoice_number FROM sales_invoices WHERE id = :id AND is_deleted = FALSE LIMIT 1"),
+                {"id": resource_id}
+            ).scalar()
+            if result:
+                return str(result).strip()
+
+        # Return Delivery Notes
+        elif module in {"rdn", "return-delivery-notes", "return_delivery_notes"}:
+            result = db.execute(
+                text("SELECT rdn_number FROM return_delivery_notes WHERE id = :id AND is_deleted = FALSE LIMIT 1"),
                 {"id": resource_id}
             ).scalar()
             if result:
@@ -581,6 +593,7 @@ def _derive_record_reference(resource_id: UUID | str | None, details: dict[str, 
         "invoice_number",
         "invoice_no",
         "sales_invoice_no",
+        "rdn_number",
         "po_number",
         "po_no",
         "grn_number",

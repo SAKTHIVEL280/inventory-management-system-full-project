@@ -25,6 +25,7 @@ ROLE_DEFAULTS = {
         "sales_orders_read", "sales_orders_write",
         "sales_invoices_read", "sales_invoices_write",
         "sales_returns_read", "sales_returns_write",
+        "rdn_read", "rdn_write",
         "receipts_read", "receipts_write",
         "payments_read", "payments_write",
         "action_logs_read",
@@ -44,6 +45,7 @@ ROLE_DEFAULTS = {
     "general manager": [
         "quotations_read", "quotations_write",
         "sales_invoices_read", "sales_invoices_write",
+        "rdn_read", "rdn_write",
         "receipts_read", "receipts_write",
         "payments_read", "payments_write",
         "reports_read", "dashboard_read",

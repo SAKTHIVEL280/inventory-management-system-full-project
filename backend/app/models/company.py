@@ -50,6 +50,8 @@ class Company(Base):
     qtn_counter = Column(Integer, nullable=False, default=1)
     grn_prefix = Column(String(10), nullable=False, default="GRN")
     grn_counter = Column(Integer, nullable=False, default=1)
+    rdn_prefix = Column(String(10), nullable=False, default="RDN")
+    rdn_counter = Column(Integer, nullable=False, default=1)
 
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)

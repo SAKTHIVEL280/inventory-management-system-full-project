@@ -60,6 +60,14 @@ def generate_invoice_number(db: Session) -> str:
     return number
 
 
+def generate_rdn_number(db: Session) -> str:
+    """Generate next RDN number (thread-safe)."""
+    company = _get_company_locked(db)
+    number = f"{company.rdn_prefix}-{str(company.rdn_counter).zfill(5)}"
+    company.rdn_counter += 1
+    return number
+
+
 def generate_purchase_return_number(db: Session) -> str:
     """Generate next purchase return number (thread-safe).
     

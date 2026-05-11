@@ -47,6 +47,8 @@ class CompanyBase(BaseModel):
     qtn_counter: int = 1
     grn_prefix: str = "GRN"
     grn_counter: int = 1
+    rdn_prefix: str = "RDN"
+    rdn_counter: int = 1
 
     @field_validator("gstin")
     @classmethod
