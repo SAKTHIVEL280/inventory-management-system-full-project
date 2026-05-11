@@ -13,7 +13,7 @@ from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import require_permissions, require_role
+from app.dependencies import require_permissions, require_role, scope_query_to_company
 from app.models.user import User
 from app.models.inventory_count import InventoryCountDifferenceAudit, InventoryCountItem
 from app.models.product import Product, StockLedger
@@ -678,26 +678,31 @@ async def dashboard_report(
     month_start = today.replace(day=1)
     receivable_statuses = ["issued", "partial_paid"]
     cash_receipt_statuses = ["pending", "cleared"]
+    cid = current_user.company_id
 
-    # Count totals
-    total_products = db.query(func.count(Product.id)).filter(
-        Product.is_deleted == False
-    ).scalar() or 0
+    # Count totals — scoped by company
+    product_q = db.query(func.count(Product.id)).filter(Product.is_deleted == False)
+    if cid:
+        product_q = product_q.filter(Product.company_id == cid)
+    total_products = product_q.scalar() or 0
 
-    total_customers = db.query(func.count(Customer.id)).filter(
-        Customer.is_deleted == False,
-        Customer.is_active == True
-    ).scalar() or 0
+    customer_q = db.query(func.count(Customer.id)).filter(Customer.is_deleted == False, Customer.is_active == True)
+    if cid:
+        customer_q = customer_q.filter(Customer.company_id == cid)
+    total_customers = customer_q.scalar() or 0
 
-    total_suppliers = db.query(func.count(Supplier.id)).filter(
-        Supplier.is_deleted == False,
-        Supplier.is_active == True
-    ).scalar() or 0
+    supplier_q = db.query(func.count(Supplier.id)).filter(Supplier.is_deleted == False, Supplier.is_active == True)
+    if cid:
+        supplier_q = supplier_q.filter(Supplier.company_id == cid)
+    total_suppliers = supplier_q.scalar() or 0
 
     # Low stock count
     low_stock_count = 0
     safety_stock_count = 0
-    products = db.query(Product).filter(Product.is_deleted == False).all()
+    product_list_q = db.query(Product).filter(Product.is_deleted == False)
+    if cid:
+        product_list_q = product_list_q.filter(Product.company_id == cid)
+    products = product_list_q.all()
     for product in products:
         qty_scalar = db.query(func.coalesce(func.sum(StockLedger.quantity), 0)).filter(StockLedger.product_id == product.id).scalar() or 0
         qty = float(qty_scalar)
@@ -710,56 +715,74 @@ async def dashboard_report(
             low_stock_count += 1
 
     # Pending purchase orders
-    pending_po_count = db.query(func.count(PurchaseOrder.id)).filter(
+    po_q = db.query(func.count(PurchaseOrder.id)).filter(
         PurchaseOrder.status.in_(["pending", "approved", "partial_received"]),
         PurchaseOrder.is_deleted == False,
-    ).scalar() or 0
+    )
+    if cid:
+        po_q = po_q.filter(PurchaseOrder.company_id == cid)
+    pending_po_count = po_q.scalar() or 0
 
     # Sales Order module removed from active workflow.
     pending_so_count = 0
 
     # Today sales
-    today_sales = db.query(func.coalesce(func.sum(SalesInvoice.total_amount), 0)).filter(
+    today_sales_q = db.query(func.coalesce(func.sum(SalesInvoice.total_amount), 0)).filter(
         SalesInvoice.invoice_date == today,
         SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
         SalesInvoice.is_deleted == False,
-    ).scalar() or 0
+    )
+    if cid:
+        today_sales_q = today_sales_q.filter(SalesInvoice.company_id == cid)
+    today_sales = today_sales_q.scalar() or 0
 
     # Month sales
-    month_sales = db.query(func.coalesce(func.sum(SalesInvoice.total_amount), 0)).filter(
+    month_sales_q = db.query(func.coalesce(func.sum(SalesInvoice.total_amount), 0)).filter(
         SalesInvoice.invoice_date >= month_start,
         SalesInvoice.invoice_date <= today,
         SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
         SalesInvoice.is_deleted == False,
-    ).scalar() or 0
+    )
+    if cid:
+        month_sales_q = month_sales_q.filter(SalesInvoice.company_id == cid)
+    month_sales = month_sales_q.scalar() or 0
 
     # Outstanding receivables
-    outstanding_receivables = db.query(func.coalesce(func.sum(SalesInvoice.amount_due), 0)).filter(
+    receivables_q = db.query(func.coalesce(func.sum(SalesInvoice.amount_due), 0)).filter(
         SalesInvoice.amount_due > 0,
         SalesInvoice.status.in_(receivable_statuses),
         SalesInvoice.is_deleted == False,
-    ).scalar() or 0
+    )
+    if cid:
+        receivables_q = receivables_q.filter(SalesInvoice.company_id == cid)
+    outstanding_receivables = receivables_q.scalar() or 0
 
     # Overdue invoices count
-    overdue_invoices_count = db.query(func.count(SalesInvoice.id)).filter(
+    overdue_q = db.query(func.count(SalesInvoice.id)).filter(
         SalesInvoice.due_date < today,
         SalesInvoice.status.in_(["issued", "partial_paid"]),
         SalesInvoice.is_deleted == False,
-    ).scalar() or 0
+    )
+    if cid:
+        overdue_q = overdue_q.filter(SalesInvoice.company_id == cid)
+    overdue_invoices_count = overdue_q.scalar() or 0
 
     # Sales trend (last 7 days)
     sales_trend = []
     for i in range(6, -1, -1):
         day = today - timedelta(days=i)
-        amount = db.query(func.coalesce(func.sum(SalesInvoice.total_amount), 0)).filter(
+        trend_q = db.query(func.coalesce(func.sum(SalesInvoice.total_amount), 0)).filter(
             SalesInvoice.invoice_date == day,
             SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
             SalesInvoice.is_deleted == False,
-        ).scalar() or 0
+        )
+        if cid:
+            trend_q = trend_q.filter(SalesInvoice.company_id == cid)
+        amount = trend_q.scalar() or 0
         sales_trend.append({"date": day.isoformat(), "amount": int(amount)})
 
     # Top products
-    top_products_query = db.query(
+    top_products_base = db.query(
         Product.name,
         func.coalesce(func.sum(SalesInvoiceItem.quantity), 0).label("quantity_sold"),
         func.coalesce(func.sum(SalesInvoiceItem.total_amount), 0).label("amount"),
@@ -771,7 +794,10 @@ async def dashboard_report(
         SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
         SalesInvoice.is_deleted == False,
         Product.is_deleted == False,
-    ).group_by(Product.id, Product.name).order_by(text("quantity_sold DESC")).limit(5).all()
+    )
+    if cid:
+        top_products_base = top_products_base.filter(SalesInvoice.company_id == cid)
+    top_products_query = top_products_base.group_by(Product.id, Product.name).order_by(text("quantity_sold DESC")).limit(5).all()
 
     top_products = [
         {
@@ -1534,12 +1560,26 @@ async def gstr1_report(
         bill_to_name = (bill_to_customer.company_name if bill_to_customer else "").strip()
         ship_to_name = (ship_to_customer.company_name if ship_to_customer else "").strip()
         bill_to_gstin = ((bill_to_customer.gstin if bill_to_customer else "") or "").strip().upper()
+        bill_to_gstin_status = ((bill_to_customer.gstin_status if bill_to_customer else "") or "non-registered").strip().lower()
+        bill_to_state = (
+            (ship_to_customer.shipping_state if ship_to_customer else "")
+            or (ship_to_customer.billing_state if ship_to_customer else "")
+            or (bill_to_customer.shipping_state if bill_to_customer else "")
+            or (bill_to_customer.billing_state if bill_to_customer else "")
+            or ""
+        ).strip()
+        bill_to_state_code = (
+            (ship_to_customer.shipping_state_code if ship_to_customer else "")
+            or (ship_to_customer.billing_state_code if ship_to_customer else "")
+            or (bill_to_customer.shipping_state_code if bill_to_customer else "")
+            or (bill_to_customer.billing_state_code if bill_to_customer else "")
+            or ""
+        ).strip()
         place_of_supply = (
             (invoice.supply_state or "").strip()
-            or ((ship_to_customer.shipping_state if ship_to_customer else "") or "").strip()
-            or ((ship_to_customer.billing_state if ship_to_customer else "") or "").strip()
-            or ((bill_to_customer.shipping_state if bill_to_customer else "") or "").strip()
-            or ((bill_to_customer.billing_state if bill_to_customer else "") or "").strip()
+            or ((invoice.supply_state_code or "").strip())
+            or bill_to_state
+            or bill_to_state_code
         )
 
         order_currency = sales_order_currency_map.get(str(invoice.sales_order_id or ""), {})
@@ -1586,12 +1626,25 @@ async def gstr1_report(
         if not ship_to_name:
             validation_errors.append(f"VAL-010 Mandatory Fields Check failed for invoice {invoice_number}: ship-to party name is required")
         if not is_export_transaction:
-            if not bill_to_gstin:
-                validation_errors.append(f"VAL-010 Mandatory Fields Check failed for invoice {invoice_number}: billing GSTIN is required")
-            elif not GSTIN_REGEX.match(bill_to_gstin):
-                validation_errors.append(
-                    f"VAL-002 GSTIN Format Check failed for invoice {invoice_number}: GSTIN {bill_to_gstin} is invalid"
-                )
+            if bill_to_is_india:
+                if bill_to_gstin:
+                    if not GSTIN_REGEX.match(bill_to_gstin):
+                        validation_errors.append(
+                            f"VAL-002 GSTIN Format Check failed for invoice {invoice_number}: GSTIN {bill_to_gstin} is invalid"
+                        )
+                elif bill_to_gstin_status == "registered":
+                    validation_errors.append(
+                        f"VAL-010 Mandatory Fields Check failed for invoice {invoice_number}: billing GSTIN is required"
+                    )
+                else:
+                    if not bill_to_state:
+                        validation_errors.append(
+                            f"VAL-010 Mandatory Fields Check failed for invoice {invoice_number}: state is required for non-registered GST customers"
+                        )
+                    if not bill_to_state_code:
+                        validation_errors.append(
+                            f"VAL-010 Mandatory Fields Check failed for invoice {invoice_number}: state code is required for GST calculation"
+                        )
         if not place_of_supply:
             validation_errors.append(f"VAL-010 Mandatory Fields Check failed for invoice {invoice_number}: place of supply is required")
         if source_invoice_amount <= 0:
@@ -2503,7 +2556,15 @@ async def gstr2_report(
 
         supplier_name = (supplier.company_name if supplier else "").strip()
         supplier_gstin = ((supplier.gstin if supplier else "") or "").strip().upper()
-        place_of_supply = ((supplier.place_of_supply if supplier else "") or (supplier.state if supplier else "") or "").strip()
+        supplier_gstin_status = ((supplier.gstin_status if supplier else "") or "non-registered").strip().lower()
+        supplier_state = ((supplier.state if supplier else "") or "").strip()
+        supplier_state_code = ((supplier.state_code if supplier else "") or "").strip()
+        place_of_supply = (
+            (supplier.place_of_supply if supplier else "")
+            or supplier_state
+            or supplier_state_code
+            or ""
+        ).strip()
         supplier_business_type = ((supplier.business_type if supplier else "domestic") or "domestic").strip().lower()
         supplier_country = ((supplier.billing_country if supplier else "") or "").strip()
         supplier_is_india = is_india_country(supplier_country) or (not supplier_country and supplier_business_type == "domestic")
@@ -2556,12 +2617,24 @@ async def gstr2_report(
         if not supplier_name:
             validation_errors.append(f"VAL-010 Mandatory Fields Check failed for GRN {grn_number}: supplier name is required")
         if supplier_is_india:
-            if not supplier_gstin:
-                validation_errors.append(f"VAL-010 Mandatory Fields Check failed for GRN {grn_number}: supplier GSTIN is required")
-            elif not GSTIN_REGEX.match(supplier_gstin):
+            if supplier_gstin:
+                if not GSTIN_REGEX.match(supplier_gstin):
+                    validation_errors.append(
+                        f"VAL-002 GSTIN Format Check failed for GRN {grn_number}: GSTIN {supplier_gstin} is invalid"
+                    )
+            elif supplier_gstin_status == "registered":
                 validation_errors.append(
-                    f"VAL-002 GSTIN Format Check failed for GRN {grn_number}: GSTIN {supplier_gstin} is invalid"
+                    f"VAL-010 Mandatory Fields Check failed for GRN {grn_number}: supplier GSTIN is required"
                 )
+            else:
+                if not supplier_state:
+                    validation_errors.append(
+                        f"VAL-010 Mandatory Fields Check failed for GRN {grn_number}: state is required for non-registered GST suppliers"
+                    )
+                if not supplier_state_code:
+                    validation_errors.append(
+                        f"VAL-010 Mandatory Fields Check failed for GRN {grn_number}: state code is required for GST calculation"
+                    )
         if not place_of_supply:
             validation_errors.append(f"VAL-010 Mandatory Fields Check failed for GRN {grn_number}: place of supply is required")
         if source_grn_amount <= 0:
@@ -3937,6 +4010,7 @@ async def action_logs_report(
                     OR COALESCE(u.email, '') ILIKE :user_filter
                   )
               AND (:reference_filter IS NULL OR COALESCE(a.record_reference, '') ILIKE :reference_filter)
+              AND (:company_id IS NULL OR a.company_id = CAST(:company_id AS UUID))
             """
         ),
         {
@@ -3946,6 +4020,7 @@ async def action_logs_report(
             "action_type": selected_action_type,
             "user_filter": user_filter,
             "reference_filter": reference_filter,
+            "company_id": str(current_user.company_id) if current_user.company_id else None,
         },
     ).scalar()
     total_count = int(count_row or 0)
@@ -3981,6 +4056,7 @@ async def action_logs_report(
                     OR COALESCE(u.email, '') ILIKE :user_filter
                   )
               AND (:reference_filter IS NULL OR COALESCE(a.record_reference, '') ILIKE :reference_filter)
+              AND (:company_id IS NULL OR a.company_id = CAST(:company_id AS UUID))
             ORDER BY a.created_at DESC
             LIMIT :page_size OFFSET :offset
             """
@@ -3992,6 +4068,7 @@ async def action_logs_report(
             "action_type": selected_action_type,
             "user_filter": user_filter,
             "reference_filter": reference_filter,
+            "company_id": str(current_user.company_id) if current_user.company_id else None,
             "page_size": page_size,
             "offset": offset,
         },

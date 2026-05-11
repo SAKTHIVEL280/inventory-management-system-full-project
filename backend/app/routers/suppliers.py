@@ -8,7 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import enforce_resource_ownership, require_permissions
+from app.dependencies import enforce_resource_ownership, require_permissions, get_current_company_id, scope_query_to_company
 from app.models.customization_option import CustomizationOption
 from app.models.supplier import Supplier
 from app.models.user import User
@@ -33,6 +33,10 @@ router = APIRouter(prefix="/api/v1/suppliers", tags=["suppliers"])
 
 
 def _scope_to_owner(query, model_cls, current_user: User):
+    """Scope by company_id first, then by ownership for non-privileged users."""
+    # Always apply company filter
+    if current_user.company_id is not None:
+        query = scope_query_to_company(query, model_cls, current_user.company_id)
     if normalize_role(current_user.role) in {"admin", "inventory manager", "general manager"}:
         return query
     owner_col = getattr(model_cls, "created_by", None)
@@ -450,6 +454,7 @@ async def create_supplier(
         **payload.model_dump(exclude={"supplier_code", "state_code"}),
         supplier_code=payload.supplier_code or _generate_supplier_code(db, payload),
         state_code=_state_code_from_payload(payload),
+        company_id=current_user.company_id,
         created_by=current_user.id,
     )
     db.add(supplier)

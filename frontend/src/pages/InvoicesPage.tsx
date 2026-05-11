@@ -398,6 +398,13 @@ const InvoicesPage = () => {
     const gstRate = isExportInvoice ? 0 : i.gst_rate;
     return Math.round(t + t * gstRate / 100);
   };
+  const roundToNearestFivePaise = (value: number) => {
+    if (!Number.isFinite(value)) return 0;
+    const normalized = Math.round(value);
+    const step = 500;
+    if (normalized >= 0) return Math.floor(normalized / step) * step;
+    return -Math.floor(Math.abs(normalized) / step) * step;
+  };
   const formatAmount = (p: number) => `₹${(p / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
   const deriveInvoicePaymentStatusLabel = (invoice?: Pick<SalesInvoice, 'status' | 'amount_paid' | 'total_amount'>) => {
     if (!invoice) return '-';
@@ -438,6 +445,10 @@ const InvoicesPage = () => {
     if (baseUnit) return baseUnit;
     return uomAbbreviationById(product.uom_id) || '';
   }, [uomAbbreviationById]);
+
+  const itemsTotalPaise = items.reduce((sum, item) => sum + calcTotal(item), 0);
+  const roundedItemsTotalPaise = roundToNearestFivePaise(itemsTotalPaise);
+  const roundOffPaise = roundedItemsTotalPaise - itemsTotalPaise;
   const formatAvailableQty = (qty: number) => {
     if (!Number.isFinite(qty)) return '0';
     return Number(qty).toFixed(4).replace(/\.?0+$/, '');
@@ -971,7 +982,19 @@ const InvoicesPage = () => {
                       <tfoot>
                         <tr className="border-t-2 bg-neutral-50">
                           <td colSpan={lineItemTotalLabelColSpan} className="px-3 py-2 text-right font-semibold">Total:</td>
-                          <td className="px-3 py-2 text-right font-bold text-primary">{formatAmount(items.reduce((s, i) => s + calcTotal(i), 0))}</td>
+                          <td className="px-3 py-2 text-right font-medium">{formatAmount(itemsTotalPaise)}</td>
+                          <td></td>
+                        </tr>
+                        {roundOffPaise !== 0 && (
+                          <tr className="bg-neutral-50">
+                            <td colSpan={lineItemTotalLabelColSpan} className="px-3 py-2 text-right font-semibold">Round Off:</td>
+                            <td className="px-3 py-2 text-right font-medium">{formatAmount(roundOffPaise)}</td>
+                            <td></td>
+                          </tr>
+                        )}
+                        <tr className="bg-neutral-50">
+                          <td colSpan={lineItemTotalLabelColSpan} className="px-3 py-2 text-right font-semibold">Grand Total:</td>
+                          <td className="px-3 py-2 text-right font-bold text-primary">{formatAmount(roundedItemsTotalPaise)}</td>
                           <td></td>
                         </tr>
                       </tfoot>

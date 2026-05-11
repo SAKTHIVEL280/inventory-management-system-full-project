@@ -13,7 +13,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import enforce_resource_ownership, require_permissions
+from app.dependencies import enforce_resource_ownership, require_permissions, scope_query_to_company
 from app.models.inventory_count import InventoryCount, InventoryCountDifferenceAudit, InventoryCountItem
 from app.models.purchase import GoodsReceiptNote, GRNItem, PurchaseReturn, PurchaseReturnItem
 from app.models.product import Product, StockLedger
@@ -41,6 +41,9 @@ router = APIRouter(prefix="/api/v1/stock", tags=["stock"])
 
 
 def _scope_to_owner(query, model, current_user: User):
+    """Scope by company_id first, then by ownership for non-privileged users."""
+    if current_user.company_id is not None:
+        query = scope_query_to_company(query, model, current_user.company_id)
     if normalize_role(current_user.role) in {"admin", "inventory manager", "general manager"}:
         return query
     owner_col = getattr(model, "created_by", None)
@@ -633,6 +636,7 @@ async def create_inventory_count(
             count_date=payload.count_date,
             count_performed_by=payload.count_performed_by.strip(),
             status="confirmed",
+            company_id=current_user.company_id,
             created_by=current_user.id,
         )
         db.add(inventory_count)

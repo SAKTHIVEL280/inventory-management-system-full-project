@@ -641,6 +641,7 @@ def log_audit_event(
     resource_id: UUID | None = None,
     details: dict[str, Any] | None = None,
     ip_address: str | None = None,
+    company_id: UUID | str | None = None,
 ) -> None:
     """Write a best-effort audit event.
 
@@ -648,6 +649,19 @@ def log_audit_event(
     """
     try:
         _ensure_audit_logs_table(db)
+
+        # Auto-resolve company_id from user if not explicitly provided
+        resolved_company_id = company_id
+        if resolved_company_id is None and user_id is not None:
+            try:
+                user_row = db.execute(
+                    text("SELECT company_id FROM users WHERE id = :uid LIMIT 1"),
+                    {"uid": str(user_id)},
+                ).mappings().first()
+                if user_row:
+                    resolved_company_id = user_row.get("company_id")
+            except Exception:
+                pass
 
         safe_details = _sanitize_details(details or {})
         action_type = _derive_action_type(action)
@@ -677,10 +691,10 @@ def log_audit_event(
                     """
                     INSERT INTO audit_logs (
                         user_id, username, action, action_type, module_name, resource_type, resource_id,
-                        record_reference, description, status, details, ip_address
+                        record_reference, description, status, details, ip_address, company_id
                     ) VALUES (
                         :user_id, :username, :action, :action_type, :module_name, :resource_type, :resource_id,
-                        :record_reference, :description, :status, CAST(:details AS JSONB), :ip_address
+                        :record_reference, :description, :status, CAST(:details AS JSONB), :ip_address, :company_id
                     )
                     """
                 ),
@@ -697,6 +711,7 @@ def log_audit_event(
                     "status": status,
                     "details": json.dumps(safe_details),
                     "ip_address": ip_address,
+                    "company_id": str(resolved_company_id) if resolved_company_id else None,
                 },
             )
             _maybe_cleanup_old_audit_logs(db)
@@ -712,3 +727,4 @@ def log_audit_event(
     except Exception:
         # Best-effort logging should not interrupt business flow.
         return
+

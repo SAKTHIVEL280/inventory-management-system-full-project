@@ -85,4 +85,5 @@ class StockLedger(Base):
     is_deleted = Column(Boolean, nullable=False, default=False)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("company.id"), nullable=True, index=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)

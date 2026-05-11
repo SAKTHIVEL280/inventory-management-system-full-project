@@ -254,7 +254,7 @@ trace/
 # TEMPORARY LOCAL NOTES
 # ============================================
 temp_csv_status_remarks.md
-
+requirements/
 # ============================================
 # DEPENDENCY LOCK FILES (Optional - uncomment if needed)
 # ============================================

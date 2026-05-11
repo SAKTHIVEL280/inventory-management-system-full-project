@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
 from app.database import get_db
-from app.dependencies import enforce_resource_ownership, require_permissions, require_role
+from app.dependencies import enforce_resource_ownership, require_permissions, require_role, scope_query_to_company
 from app.models.user import User
 from app.models.company import Company
 from app.models.customer import Customer
@@ -35,6 +35,9 @@ PO_ID_META_REGEX = re.compile(r"\[PO_ID:([0-9a-fA-F-]{36})\]")
 
 
 def _scope_to_owner(query, model, current_user: User):
+    """Scope by company_id first, then by ownership for non-privileged users."""
+    if current_user.company_id is not None:
+        query = scope_query_to_company(query, model, current_user.company_id)
     if normalize_role(current_user.role) in {"admin", "inventory manager", "general manager"}:
         return query
     owner_col = getattr(model, "created_by", None)
@@ -597,6 +600,7 @@ async def create_payment(
         bank_name=payload.bank_name,
         notes=_attach_po_meta_to_notes(payload.notes, payload.purchase_order_id),
         status="pending",
+        company_id=current_user.company_id,
         created_by=current_user.id,
     )
     db.add(payment)

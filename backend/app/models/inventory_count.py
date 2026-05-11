@@ -18,6 +18,7 @@ class InventoryCount(Base):
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("company.id"), nullable=True, index=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
 
 
@@ -51,5 +52,6 @@ class InventoryCountDifferenceAudit(Base):
     difference_qty = Column(Numeric(12, 4), nullable=False)
     reason_code = Column(String(50), nullable=False)
     reason_label = Column(String(120), nullable=False)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("company.id"), nullable=True, index=True)
     accepted_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     accepted_at = Column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)

@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, scope_query_to_company
 from app.models.customer import Customer
 from app.models.payment import Payment
 from app.models.product import Product, ProductCategory, StockLedger
@@ -69,12 +69,12 @@ def _to_date(value: datetime | None) -> date | None:
     return value
 
 
-def _compute_stats(db: Session, policy: ArchivePolicy, today: date) -> dict[str, Any]:
-    rows = (
-        db.query(policy.model.id, policy.model.deleted_at)
-        .filter(policy.model.is_deleted == True)
-        .all()
-    )
+def _compute_stats(db: Session, policy: ArchivePolicy, today: date, company_id=None) -> dict[str, Any]:
+    q = db.query(policy.model.id, policy.model.deleted_at).filter(policy.model.is_deleted == True)
+    company_col = getattr(policy.model, "company_id", None)
+    if company_id is not None and company_col is not None:
+        q = q.filter(company_col == company_id)
+    rows = q.all()
 
     total_archived = 0
     due_soon = 0
@@ -105,9 +105,9 @@ def _compute_stats(db: Session, policy: ArchivePolicy, today: date) -> dict[str,
     }
 
 
-def _all_stats(db: Session) -> list[dict[str, Any]]:
+def _all_stats(db: Session, company_id=None) -> list[dict[str, Any]]:
     today = date.today()
-    return [_compute_stats(db, policy, today) for policy in ARCHIVE_POLICIES]
+    return [_compute_stats(db, policy, today, company_id) for policy in ARCHIVE_POLICIES]
 
 
 @router.get("/login-alerts")
@@ -115,7 +115,7 @@ async def login_alerts(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    stats = _all_stats(db)
+    stats = _all_stats(db, company_id=current_user.company_id)
 
     remind_modules = [s for s in stats if s["due_soon"] > 0 or s["overdue"] > 0]
     protected = [s for s in remind_modules if not s["purge_allowed"]]
@@ -142,7 +142,7 @@ async def purge_preview(
 ):
     _require_admin(current_user)
 
-    stats = _all_stats(db)
+    stats = _all_stats(db, company_id=current_user.company_id)
     purge_candidates = sum(s["overdue"] for s in stats if s["purge_allowed"])
     expected_text = f"DELETE {purge_candidates} RECORDS"
 
@@ -162,7 +162,7 @@ async def purge_confirm(
 ):
     _require_admin(current_user)
 
-    stats = _all_stats(db)
+    stats = _all_stats(db, company_id=current_user.company_id)
     purge_candidates = sum(s["overdue"] for s in stats if s["purge_allowed"])
     expected_text = f"DELETE {purge_candidates} RECORDS"
 

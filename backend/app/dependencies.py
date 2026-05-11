@@ -137,3 +137,32 @@ def create_refresh_token(data: dict) -> str:
         to_encode, settings.secret_key, algorithm=settings.algorithm
     )
     return encoded_jwt
+
+
+async def get_current_company_id(
+    current_user: User = Depends(get_current_user),
+) -> UUID:
+    """Extract and validate the company_id from the current user.
+
+    Returns the user's company_id or raises 403 if the user is not
+    associated with any company.
+    """
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User is not associated with any company",
+        )
+    return current_user.company_id
+
+
+def scope_query_to_company(query, model_cls, company_id: UUID):
+    """Apply company_id filter to a SQLAlchemy query.
+
+    Ensures tenant isolation by restricting results to the given company.
+    Gracefully handles models that lack a company_id column (no-op).
+    """
+    company_col = getattr(model_cls, "company_id", None)
+    if company_col is None:
+        return query
+    return query.filter(company_col == company_id)
+

@@ -24,6 +24,7 @@ from app.models.purchase import PurchaseOrder, PurchaseOrderItem
 from app.models.sales import SalesInvoice, SalesInvoiceItem, SalesOrder, Quotation, QuotationItem
 from app.models.supplier import Supplier
 from app.services.gst_service import determine_default_invoice_type, determine_tax_mode, is_india_country
+from app.utils.rounding import round_paise_to_nearest_5
 
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
@@ -1454,11 +1455,11 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
     tax_col_2_label = "UTGST" if show_utgst else "SGST"
     tax_secondary_prefix = "UTGST" if show_utgst else "SGST"
 
-    # GEN-001: Round-off computation
-    exact_total_paise = int(invoice.total_amount or 0)
-    exact_total_rupees = exact_total_paise / 100
-    rounded_total_rupees = round(exact_total_rupees)
-    round_off_value = rounded_total_rupees - exact_total_rupees
+    # GEN-001: Round-off computation (nearest 0/5 rule)
+    exact_total_paise = int(invoice.total_taxable_amount or 0) + int(invoice.total_gst or 0)
+    rounded_total_paise = round_paise_to_nearest_5(exact_total_paise)
+    rounded_total_rupees = rounded_total_paise / 100
+    round_off_value = (rounded_total_paise - exact_total_paise) / 100
     round_off_display = f"{round_off_value:+.2f}" if abs(round_off_value) >= 0.005 else "0.00"
 
     place_of_supply_value = (

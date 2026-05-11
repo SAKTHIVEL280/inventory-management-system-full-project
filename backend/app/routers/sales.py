@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
 
 from app.database import get_db
-from app.dependencies import enforce_resource_ownership, require_permissions, require_role
+from app.dependencies import enforce_resource_ownership, require_permissions, require_role, scope_query_to_company
 from app.models.user import User
 from app.models.product import Product
 from app.models.customer import Customer
@@ -60,6 +60,7 @@ from app.services.order_number_service import (
     generate_sales_return_number,
 )
 from app.services.gst_service import determine_tax_mode, determine_default_invoice_type, invoice_type_tax_mode, is_india_country, calc_line_item, split_tax
+from app.utils.rounding import round_paise_to_nearest_5
 from app.services.auth_service import normalize_role
 from app.services.stock_service import get_current_stock, get_product_batch_snapshot, add_stock_entry, refresh_materialized_view
 from app.config import settings
@@ -70,6 +71,9 @@ GSTIN_REGEX = re.compile(r"^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$")
 
 
 def _scope_to_owner(query, model, current_user: User):
+    """Scope by company_id first, then by ownership for non-privileged users."""
+    if current_user.company_id is not None:
+        query = scope_query_to_company(query, model, current_user.company_id)
     if normalize_role(current_user.role) in {"admin", "inventory manager", "general manager"}:
         return query
     owner_col = getattr(model, "created_by", None)
@@ -683,6 +687,7 @@ async def create_quotation(
         notes=payload.notes,
         terms_conditions=payload.terms_conditions,
         status="draft",  # BUG-13: Always force draft
+        company_id=current_user.company_id,
         created_by=current_user.id,
     )
     db.add(q)
@@ -942,6 +947,7 @@ async def convert_quotation_to_so(
         total_amount=q.total_amount,
         notes=q.notes,
         terms_conditions=q.terms_conditions,
+        company_id=current_user.company_id,
         created_by=current_user.id,
     )
     db.add(so)
@@ -1039,6 +1045,7 @@ async def create_sales_order(
         ship_to_customer_id=payload.ship_to_customer_id or payload.customer_id,
         notes=payload.notes,
         terms_conditions=payload.terms_conditions,
+        company_id=current_user.company_id,
         created_by=current_user.id,
     )
     db.add(so)
@@ -1341,6 +1348,7 @@ async def convert_so_to_invoice(
         amount_due=0,
         notes=so.notes,
         terms_conditions=so.terms_conditions,
+        company_id=current_user.company_id,
         created_by=current_user.id,
     )
     db.add(invoice)
@@ -1388,7 +1396,8 @@ async def convert_so_to_invoice(
     invoice.total_sgst = total_sgst
     invoice.total_igst = total_igst
     invoice.total_gst = total_cgst + total_sgst + total_igst
-    invoice.total_amount = total_taxable + invoice.total_gst
+    exact_total = total_taxable + invoice.total_gst
+    invoice.total_amount = round_paise_to_nearest_5(exact_total)
     invoice.amount_due = invoice.total_amount
 
     db.commit()
@@ -1534,6 +1543,7 @@ async def create_invoice(
         is_igst=is_igst,
         notes=payload.notes,
         terms_conditions=payload.terms_conditions,
+        company_id=current_user.company_id,
         created_by=current_user.id,
     )
     db.add(invoice)
@@ -1585,7 +1595,8 @@ async def create_invoice(
     invoice.total_sgst = total_sgst
     invoice.total_igst = total_igst
     invoice.total_gst = total_cgst + total_sgst + total_igst
-    invoice.total_amount = total_taxable + invoice.total_gst
+    exact_total = total_taxable + invoice.total_gst
+    invoice.total_amount = round_paise_to_nearest_5(exact_total)
     invoice.amount_due = invoice.total_amount
 
     db.commit()
@@ -1718,7 +1729,8 @@ async def update_invoice(
     invoice.total_sgst = total_sgst
     invoice.total_igst = total_igst
     invoice.total_gst = total_cgst + total_sgst + total_igst
-    invoice.total_amount = total_taxable + invoice.total_gst
+    exact_total = total_taxable + invoice.total_gst
+    invoice.total_amount = round_paise_to_nearest_5(exact_total)
     invoice.amount_due = max(0, invoice.total_amount - invoice.amount_paid)
 
     db.commit()
@@ -1913,6 +1925,7 @@ async def create_sales_return(
         return_date=payload.return_date,
         reason=payload.reason,
         status="draft",
+        company_id=current_user.company_id,
         created_by=current_user.id,
     )
     db.add(ret)

@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
 from app.database import get_db
-from app.dependencies import enforce_resource_ownership, require_permissions, require_role
+from app.dependencies import enforce_resource_ownership, require_permissions, require_role, scope_query_to_company
 from app.models.user import User
 from app.models.product import Product
 from app.models.supplier import Supplier
@@ -52,6 +52,9 @@ router = APIRouter(tags=["purchase"])
 
 
 def _scope_to_owner(query, model, current_user: User):
+    """Scope by company_id first, then by ownership for non-privileged users."""
+    if current_user.company_id is not None:
+        query = scope_query_to_company(query, model, current_user.company_id)
     if normalize_role(current_user.role) in {"admin", "inventory manager", "general manager"}:
         return query
     owner_col = getattr(model, "created_by", None)
@@ -213,6 +216,7 @@ async def create_purchase_order(
         under_delivery_tolerance=under_delivery_tolerance,
         over_delivery_tolerance=payload.over_delivery_tolerance,
         notes=payload.notes,
+        company_id=current_user.company_id,
         created_by=current_user.id,
     )
     db.add(po)
@@ -597,6 +601,7 @@ async def create_grn(
         over_delivery_tolerance=over_delivery_tolerance,
         status="draft",
         notes=payload.notes,
+        company_id=current_user.company_id,
         created_by=current_user.id,
     )
     db.add(grn)
@@ -1157,6 +1162,7 @@ async def create_purchase_return(
         return_date=payload.return_date,
         reason=payload.reason,
         status="draft",  # BUG-13: Always start as draft
+        company_id=current_user.company_id,
         created_by=current_user.id,
     )
     db.add(ret)

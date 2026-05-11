@@ -9,7 +9,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import require_role
+from app.dependencies import require_role, scope_query_to_company
 from app.models.customer import Customer
 from app.models.payment import Payment
 from app.models.product import Product
@@ -38,7 +38,10 @@ async def export_customer_data(
     current_user: User = Depends(require_role("admin")),
 ):
     """Export customer data bundle for Data Subject Access Request workflows."""
-    customer = db.query(Customer).filter(Customer.id == customer_id, Customer.is_deleted == False).first()
+    customer = db.query(Customer).filter(Customer.id == customer_id, Customer.is_deleted == False)
+    if current_user.company_id:
+        customer = customer.filter(Customer.company_id == current_user.company_id)
+    customer = customer.first()
     if not customer:
         raise _not_found("Customer")
 
@@ -80,7 +83,10 @@ async def export_supplier_data(
     current_user: User = Depends(require_role("admin")),
 ):
     """Export supplier data bundle for legal/compliance requests."""
-    supplier = db.query(Supplier).filter(Supplier.id == supplier_id, Supplier.is_deleted == False).first()
+    supplier = db.query(Supplier).filter(Supplier.id == supplier_id, Supplier.is_deleted == False)
+    if current_user.company_id:
+        supplier = supplier.filter(Supplier.company_id == current_user.company_id)
+    supplier = supplier.first()
     if not supplier:
         raise _not_found("Supplier")
 
@@ -128,7 +134,10 @@ async def anonymize_customer_data(
     current_user: User = Depends(require_role("admin")),
 ):
     """Anonymize customer PII while preserving transactional integrity."""
-    customer = db.query(Customer).filter(Customer.id == customer_id, Customer.is_deleted == False).first()
+    customer = db.query(Customer).filter(Customer.id == customer_id, Customer.is_deleted == False)
+    if current_user.company_id:
+        customer = customer.filter(Customer.company_id == current_user.company_id)
+    customer = customer.first()
     if not customer:
         raise _not_found("Customer")
 
@@ -172,7 +181,10 @@ async def anonymize_supplier_data(
     current_user: User = Depends(require_role("admin")),
 ):
     """Anonymize supplier PII while preserving transactional integrity."""
-    supplier = db.query(Supplier).filter(Supplier.id == supplier_id, Supplier.is_deleted == False).first()
+    supplier = db.query(Supplier).filter(Supplier.id == supplier_id, Supplier.is_deleted == False)
+    if current_user.company_id:
+        supplier = supplier.filter(Supplier.company_id == current_user.company_id)
+    supplier = supplier.first()
     if not supplier:
         raise _not_found("Supplier")
 
