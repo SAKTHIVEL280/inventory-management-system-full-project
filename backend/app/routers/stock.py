@@ -17,6 +17,7 @@ from app.dependencies import enforce_resource_ownership, require_permissions, sc
 from app.models.inventory_count import InventoryCount, InventoryCountDifferenceAudit, InventoryCountItem
 from app.models.purchase import GoodsReceiptNote, GRNItem, PurchaseReturn, PurchaseReturnItem
 from app.models.product import Product, StockLedger
+from app.models.rdn import ReturnDeliveryNote, ReturnDeliveryNoteItem
 from app.models.sales import SalesInvoice, SalesInvoiceItem, SalesReturn, SalesReturnItem
 from app.models.user import User
 from app.schemas.product import StockAdjustmentRequest, StockLedgerResponse
@@ -248,6 +249,35 @@ def _build_product_batch_snapshot(db: Session, product_id: UUID) -> dict[str, di
         .all()
     )
     for row in sales_return_rows:
+        _accumulate(
+            row.batch_no,
+            row.manufacture_date,
+            row.expiry_date,
+            float(row.qty or 0),
+        )
+
+    rdn_rows = (
+        db.query(
+            ReturnDeliveryNoteItem.batch_no,
+            ReturnDeliveryNoteItem.manufacture_date,
+            ReturnDeliveryNoteItem.expiry_date,
+            func.coalesce(func.sum(ReturnDeliveryNoteItem.return_quantity), 0).label("qty"),
+        )
+        .join(ReturnDeliveryNote, ReturnDeliveryNoteItem.rdn_id == ReturnDeliveryNote.id)
+        .filter(
+            ReturnDeliveryNoteItem.product_id == product_id,
+            ReturnDeliveryNote.status == "confirmed",
+            ReturnDeliveryNote.is_deleted == False,
+            ReturnDeliveryNoteItem.is_deleted == False,
+        )
+        .group_by(
+            ReturnDeliveryNoteItem.batch_no,
+            ReturnDeliveryNoteItem.manufacture_date,
+            ReturnDeliveryNoteItem.expiry_date,
+        )
+        .all()
+    )
+    for row in rdn_rows:
         _accumulate(
             row.batch_no,
             row.manufacture_date,

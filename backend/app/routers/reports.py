@@ -19,7 +19,7 @@ from app.models.inventory_count import InventoryCountDifferenceAudit, InventoryC
 from app.models.product import Product, StockLedger
 from app.models.sales import SalesInvoice, SalesInvoiceItem, SalesOrder, SalesReturn, SalesReturnItem
 from app.models.purchase import GoodsReceiptNote, GRNItem, PurchaseOrder, PurchaseReturn, PurchaseReturnItem
-from app.models.rdn import RdnCreditNote, RdnCreditNoteItem
+from app.models.rdn import ReturnDeliveryNote, ReturnDeliveryNoteItem, RdnCreditNote, RdnCreditNoteItem
 from app.models.customer import Customer
 from app.models.supplier import Supplier
 from app.models.company import Company
@@ -1173,10 +1173,41 @@ async def stock_report(
             float(row.qty or 0),
         )
 
-    # NOTE: RDN return quantities are NOT accumulated here because the RDN confirm
-    # flow already creates stock_ledger entries (transaction_type='sale_return',
-    # reference_type='rdn') which are included in `product_totals`.  Adding RDN
-    # quantities again at the batch level would double-count them.
+    # RDN return quantities must be accumulated at the batch level so that batch
+    # rows correctly reflect restored stock.  The original double-count was caused
+    # by the sales_issue_rows filter missing the "returned" status — NOT by RDN
+    # being present here.  product_totals (stock_ledger) is the authoritative total;
+    # unassigned_qty reconciles any difference (opening stock, manual adjustments).
+    rdn_rows = (
+        db.query(
+            ReturnDeliveryNoteItem.product_id,
+            ReturnDeliveryNoteItem.batch_no,
+            ReturnDeliveryNoteItem.manufacture_date,
+            ReturnDeliveryNoteItem.expiry_date,
+            func.coalesce(func.sum(ReturnDeliveryNoteItem.return_quantity), 0).label("qty"),
+        )
+        .join(ReturnDeliveryNote, ReturnDeliveryNoteItem.rdn_id == ReturnDeliveryNote.id)
+        .filter(
+            ReturnDeliveryNote.status == "confirmed",
+            ReturnDeliveryNote.is_deleted == False,
+            ReturnDeliveryNoteItem.is_deleted == False,
+        )
+        .group_by(
+            ReturnDeliveryNoteItem.product_id,
+            ReturnDeliveryNoteItem.batch_no,
+            ReturnDeliveryNoteItem.manufacture_date,
+            ReturnDeliveryNoteItem.expiry_date,
+        )
+        .all()
+    )
+    for row in rdn_rows:
+        _accumulate(
+            row.product_id,
+            row.batch_no,
+            row.manufacture_date,
+            row.expiry_date,
+            float(row.qty or 0),
+        )
 
     inventory_count_diff_rows = (
         db.query(
@@ -1209,7 +1240,7 @@ async def stock_report(
 
     balances_by_product: dict[str, list[tuple[str, date | None, date | None, float]]] = {}
     for (product_id, batch_no), qty in batch_balances.items():
-        if abs(qty) < 1e-6:
+        if qty < 1e-6:
             continue
         manufacture_date, expiry_date = batch_meta.get((product_id, batch_no), (None, None))
         balances_by_product.setdefault(product_id, []).append(
@@ -1242,7 +1273,8 @@ async def stock_report(
         product_batches.sort(key=lambda entry: (entry[0] == NO_BATCH_TOKEN, entry[0]))
 
         for batch_no, manufacture_date, expiry_date, batch_qty in product_batches:
-            total_mrp_value = float(batch_qty) * float(product.mrp or 0)
+            display_qty = max(0.0, float(batch_qty))
+            total_mrp_value = display_qty * float(product.mrp or 0)
             grand_total_mrp_value += total_mrp_value
             rows.append({
                 "product_code": product.product_code,
@@ -1251,7 +1283,7 @@ async def stock_report(
                 "batch_no": None if batch_no == NO_BATCH_TOKEN else batch_no,
                 "manufacture_date": manufacture_date,
                 "expiry_date": expiry_date,
-                "closing_qty": float(batch_qty),
+                "closing_qty": display_qty,
                 "min_stock": float(safety),
                 "safety_stock": float(safety),
                 "status": status,

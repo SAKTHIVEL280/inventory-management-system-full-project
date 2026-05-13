@@ -22,4 +22,5 @@
 - **BE-147**: Archive router — company_id scoping on archive stats and purge queries.
 - **BE-148**: Audit service auto-resolves company_id from user_id for all existing calls.
 - **BE-151**: GST reports allow non-registered GSTIN; invoice totals round down to 0/5 with PDF round-off.
-- **BE-152**: Fixed double stock update on RDN: removed redundant RDN batch queries, added "returned" to invoice status filter.
+- **BE-152**: Fixed RDN stock: added "returned" to sales status filter to prevent dropped deductions.
+- **BE-153**: Fixed negative stock in Inventory: restored RDN batch accumulation, clamped negative qty/MRP to zero.

@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.models.inventory_count import InventoryCountDifferenceAudit, InventoryCountItem
 from app.models.purchase import GoodsReceiptNote, GRNItem, PurchaseReturn, PurchaseReturnItem
+from app.models.rdn import ReturnDeliveryNote, ReturnDeliveryNoteItem
 from app.models.product import StockLedger
 from app.models.sales import SalesInvoice, SalesInvoiceItem, SalesReturn, SalesReturnItem
 
@@ -157,11 +158,34 @@ def get_product_batch_snapshot(db: Session, product_id: UUID) -> dict[str, dict[
             float(row.qty or 0),
         )
 
-    # NOTE: RDN return quantities are NOT accumulated here because the RDN confirm
-    # flow already creates stock_ledger entries (transaction_type='sale_return',
-    # reference_type='rdn').  Adding RDN quantities again at the batch level would
-    # double-count them.
-
+    rdn_rows = (
+        db.query(
+            ReturnDeliveryNoteItem.batch_no,
+            ReturnDeliveryNoteItem.manufacture_date,
+            ReturnDeliveryNoteItem.expiry_date,
+            func.coalesce(func.sum(ReturnDeliveryNoteItem.return_quantity), 0).label("qty"),
+        )
+        .join(ReturnDeliveryNote, ReturnDeliveryNoteItem.rdn_id == ReturnDeliveryNote.id)
+        .filter(
+            ReturnDeliveryNoteItem.product_id == product_id,
+            ReturnDeliveryNote.status == "confirmed",
+            ReturnDeliveryNote.is_deleted == False,
+            ReturnDeliveryNoteItem.is_deleted == False,
+        )
+        .group_by(
+            ReturnDeliveryNoteItem.batch_no,
+            ReturnDeliveryNoteItem.manufacture_date,
+            ReturnDeliveryNoteItem.expiry_date,
+        )
+        .all()
+    )
+    for row in rdn_rows:
+        _accumulate(
+            row.batch_no,
+            row.manufacture_date,
+            row.expiry_date,
+            float(row.qty or 0),
+        )
 
     inventory_count_diff_rows = (
         db.query(
