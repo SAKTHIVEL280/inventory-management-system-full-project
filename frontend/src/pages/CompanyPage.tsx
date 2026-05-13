@@ -150,6 +150,8 @@ const emptyCompany: Company = {
   qtn_counter: 1,
   grn_prefix: 'GRN',
   grn_counter: 1,
+  rdn_prefix: 'RDN',
+  rdn_counter: 1,
 };
 
 const mapCompanyToFormValues = (company?: Company): CompanyForm => ({

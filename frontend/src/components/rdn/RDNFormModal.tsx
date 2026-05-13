@@ -254,7 +254,7 @@ export const RDNFormModal = ({ open, initialData, onClose, onSaved }: RDNFormMod
               batch_no: '',
               manufacture_date: '',
               expiry_date: '',
-              return_quantity: '',
+              return_quantity: 0,
               reason_code: '',
             })} className="rounded-lg border border-neutral-200 px-3 py-1.5 text-sm font-semibold text-neutral-600">
               Add Item
