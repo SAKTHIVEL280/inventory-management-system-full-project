@@ -1,5 +1,20 @@
 # Frontend Updates Log
 
+## FE-142: Invoice view net item totals
+**Update**: Invoice view uses net item totals.
+
+## FE-141: Invoice returned status + RDN totals
+**Update**: Added Returned badge and RDN totals footer.
+
+## FE-140: RDN credit note total rounding
+**Update**: Total now reflects round-off grand total.
+
+## FE-139: RDN credit note round-off view
+**Update**: Added round-off + readable RDN created date.
+
+## FE-138: RDN credit note page
+**Update**: Added RDN Credit Note list/detail UI, routes, and navigation entry.
+
 ## FE-127: General manager GST access messaging
 **Update**: Updated Reports page GST access guard to allow General Manager and refreshed restriction messaging.
 

@@ -19,7 +19,7 @@ from app.models.inventory_count import InventoryCountDifferenceAudit, InventoryC
 from app.models.product import Product, StockLedger
 from app.models.sales import SalesInvoice, SalesInvoiceItem, SalesOrder, SalesReturn, SalesReturnItem
 from app.models.purchase import GoodsReceiptNote, GRNItem, PurchaseOrder, PurchaseReturn, PurchaseReturnItem
-from app.models.rdn import ReturnDeliveryNote, ReturnDeliveryNoteItem
+from app.models.rdn import RdnCreditNote, RdnCreditNoteItem
 from app.models.customer import Customer
 from app.models.supplier import Supplier
 from app.models.company import Company
@@ -87,7 +87,7 @@ GST_REPORT_FX_RATES = _load_report_fx_rates()
 
 def _derive_invoice_status(raw_status: str | None, amount_paid: int, total_amount: int) -> str:
     token = (raw_status or "").strip().lower()
-    if token in {"draft", "cancelled"}:
+    if token in {"draft", "cancelled", "returned"}:
         return token
     paid = int(amount_paid or 0)
     total = int(total_amount or 0)
@@ -775,7 +775,7 @@ async def dashboard_report(
         day = today - timedelta(days=i)
         trend_q = db.query(func.coalesce(func.sum(SalesInvoice.total_amount), 0)).filter(
             SalesInvoice.invoice_date == day,
-            SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
+            func.lower(func.trim(SalesInvoice.status)).in_(["issued", "partial_paid", "paid", "returned"]),
             SalesInvoice.is_deleted == False,
         )
         if cid:
@@ -1015,6 +1015,7 @@ async def stock_report(
                 StockLedger.product_id,
                 func.coalesce(func.sum(StockLedger.quantity), 0).label("qty"),
             )
+            .filter(StockLedger.is_deleted == False)
             .group_by(StockLedger.product_id)
             .all()
         )
@@ -1119,7 +1120,7 @@ async def stock_report(
         )
         .join(SalesInvoice, SalesInvoiceItem.invoice_id == SalesInvoice.id)
         .filter(
-            SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
+            SalesInvoice.status.in_(["issued", "partial_paid", "paid", "returned"]),
             SalesInvoice.is_deleted == False,
             SalesInvoiceItem.is_deleted == False,
         )
@@ -1172,36 +1173,10 @@ async def stock_report(
             float(row.qty or 0),
         )
 
-    rdn_rows = (
-        db.query(
-            ReturnDeliveryNoteItem.product_id,
-            ReturnDeliveryNoteItem.batch_no,
-            ReturnDeliveryNoteItem.manufacture_date,
-            ReturnDeliveryNoteItem.expiry_date,
-            func.coalesce(func.sum(ReturnDeliveryNoteItem.return_quantity), 0).label("qty"),
-        )
-        .join(ReturnDeliveryNote, ReturnDeliveryNoteItem.rdn_id == ReturnDeliveryNote.id)
-        .filter(
-            ReturnDeliveryNote.status == "confirmed",
-            ReturnDeliveryNote.is_deleted == False,
-            ReturnDeliveryNoteItem.is_deleted == False,
-        )
-        .group_by(
-            ReturnDeliveryNoteItem.product_id,
-            ReturnDeliveryNoteItem.batch_no,
-            ReturnDeliveryNoteItem.manufacture_date,
-            ReturnDeliveryNoteItem.expiry_date,
-        )
-        .all()
-    )
-    for row in rdn_rows:
-        _accumulate(
-            row.product_id,
-            row.batch_no,
-            row.manufacture_date,
-            row.expiry_date,
-            float(row.qty or 0),
-        )
+    # NOTE: RDN return quantities are NOT accumulated here because the RDN confirm
+    # flow already creates stock_ledger entries (transaction_type='sale_return',
+    # reference_type='rdn') which are included in `product_totals`.  Adding RDN
+    # quantities again at the batch level would double-count them.
 
     inventory_count_diff_rows = (
         db.query(
@@ -1419,8 +1394,21 @@ async def gstr1_report(
         .all()
     )
 
+    credit_notes = (
+        db.query(RdnCreditNote)
+        .filter(
+            RdnCreditNote.credit_note_date >= from_date,
+            RdnCreditNote.credit_note_date <= to_date,
+            RdnCreditNote.status == "posted",
+            RdnCreditNote.is_deleted == False,
+        )
+        .order_by(RdnCreditNote.credit_note_date.asc(), RdnCreditNote.credit_note_number.asc())
+        .all()
+    )
+
     invoice_ids = [row.id for row in invoices]
     invoice_id_map = {str(row.id): row for row in invoices}
+    credit_note_ids = [row.id for row in credit_notes]
 
     invoice_item_map: dict[str, list[dict]] = defaultdict(list)
     if invoice_ids:
@@ -1462,9 +1450,59 @@ async def gstr1_report(
                 }
             )
 
+    credit_note_item_map: dict[str, list[dict]] = defaultdict(list)
+    credit_note_rate_map: dict[str, set[float]] = defaultdict(set)
+    if credit_note_ids:
+        credit_item_rows = (
+            db.query(
+                RdnCreditNoteItem.credit_note_id,
+                RdnCreditNoteItem.return_quantity,
+                RdnCreditNoteItem.taxable_amount,
+                RdnCreditNoteItem.cgst_amount,
+                RdnCreditNoteItem.sgst_amount,
+                RdnCreditNoteItem.igst_amount,
+                RdnCreditNoteItem.gst_rate,
+                Product.name.label("product_name"),
+                Product.description.label("product_description"),
+                Product.hsn_code.label("hsn_code"),
+            )
+            .outerjoin(Product, RdnCreditNoteItem.product_id == Product.id)
+            .filter(
+                RdnCreditNoteItem.credit_note_id.in_(credit_note_ids),
+                RdnCreditNoteItem.is_deleted == False,
+            )
+            .all()
+        )
+        for item in credit_item_rows:
+            note_key = str(item.credit_note_id)
+            credit_note_item_map[note_key].append(
+                {
+                    "product_name": item.product_name,
+                    "product_description": item.product_description,
+                    "hsn_code": item.hsn_code,
+                    "quantity": _round_quantity(item.return_quantity),
+                    "taxable_amount": _paise_to_amount(item.taxable_amount),
+                    "cgst_amount": _paise_to_amount(item.cgst_amount),
+                    "sgst_amount": _paise_to_amount(item.sgst_amount),
+                    "igst_amount": _paise_to_amount(item.igst_amount),
+                    "gst_rate": _round_2(float(item.gst_rate or 0.0)),
+                }
+            )
+            credit_note_rate_map[note_key].add(_round_2(float(item.gst_rate or 0.0)))
+
     invoice_totals_map: dict[str, dict[str, float]] = {}
     invoice_rate_map: dict[str, set[float]] = defaultdict(set)
     validation_errors: list[str] = []
+
+    credit_note_totals_map: dict[str, dict[str, float]] = {
+        str(note.id): {
+            "taxable_amount": _paise_to_amount(note.total_taxable_amount),
+            "cgst_amount": _paise_to_amount(note.total_cgst),
+            "sgst_amount": _paise_to_amount(note.total_sgst),
+            "igst_amount": _paise_to_amount(note.total_igst),
+        }
+        for note in credit_notes
+    }
 
     if invoice_ids:
         item_rows = (
@@ -1510,7 +1548,18 @@ async def gstr1_report(
                 )
             invoice_rate_map[invoice_key].add(slab)
 
+    credit_note_invoice_ids = {note.sales_invoice_id for note in credit_notes}
+    credit_note_invoices = (
+        db.query(SalesInvoice)
+        .filter(SalesInvoice.id.in_(list(credit_note_invoice_ids)), SalesInvoice.is_deleted == False)
+        .all()
+        if credit_note_invoice_ids
+        else []
+    )
+    credit_note_invoice_map = {str(row.id): row for row in credit_note_invoices}
+
     sales_order_ids = {row.sales_order_id for row in invoices if row.sales_order_id is not None}
+    sales_order_ids.update({row.sales_order_id for row in credit_note_invoices if row.sales_order_id is not None})
     sales_order_currency_map: dict[str, dict[str, float | str | None]] = {}
     if sales_order_ids:
         order_rows = (
@@ -1532,6 +1581,14 @@ async def gstr1_report(
         for customer_id in [row.customer_id, row.bill_to_customer_id, row.ship_to_customer_id]
         if customer_id is not None
     }
+    customer_ids.update(
+        {
+            customer_id
+            for row in credit_note_invoices
+            for customer_id in [row.customer_id, row.bill_to_customer_id, row.ship_to_customer_id]
+            if customer_id is not None
+        }
+    )
     customers = (
         db.query(Customer)
         .filter(Customer.id.in_(list(customer_ids)), Customer.is_deleted == False)
@@ -1854,6 +1911,188 @@ async def gstr1_report(
             detail_subtotal["ugst_amount"] = _round_2(detail_subtotal["ugst_amount"] + line_ugst)
             detail_subtotal["export_amount"] = _round_2(detail_subtotal["export_amount"] + line_export)
             detail_subtotal["total_tax_amount"] = _round_2(detail_subtotal["total_tax_amount"] + line_total_tax)
+        serial_no += 1
+
+        subtotal["invoice_amount"] = _round_2(subtotal["invoice_amount"] + taxable_amount)
+        subtotal["cgst_amount"] = _round_2(subtotal["cgst_amount"] + cgst_amount)
+        subtotal["sgst_amount"] = _round_2(subtotal["sgst_amount"] + sgst_amount)
+        subtotal["igst_amount"] = _round_2(subtotal["igst_amount"] + igst_amount)
+        subtotal["ugst_amount"] = _round_2(subtotal["ugst_amount"] + ugst_amount)
+        subtotal["export_amount"] = _round_2(subtotal["export_amount"] + export_amount)
+        subtotal["total_tax_amount"] = _round_2(subtotal["total_tax_amount"] + total_tax_amount)
+
+    for credit_note in credit_notes:
+        invoice = credit_note_invoice_map.get(str(credit_note.sales_invoice_id))
+        if not invoice:
+            continue
+
+        note_key = str(credit_note.id)
+        invoice_number = (credit_note.credit_note_number or "").strip()
+        bill_to_id = str(invoice.bill_to_customer_id or invoice.customer_id) if (invoice.bill_to_customer_id or invoice.customer_id) else None
+        ship_to_id = str(invoice.ship_to_customer_id or invoice.customer_id) if (invoice.ship_to_customer_id or invoice.customer_id) else None
+        bill_to_customer = customer_map.get(bill_to_id) if bill_to_id else None
+        ship_to_customer = customer_map.get(ship_to_id) if ship_to_id else None
+
+        bill_to_name = (bill_to_customer.company_name if bill_to_customer else "").strip()
+        ship_to_name = (ship_to_customer.company_name if ship_to_customer else "").strip()
+        bill_to_gstin = ((bill_to_customer.gstin if bill_to_customer else "") or "").strip().upper()
+        bill_to_state = (
+            (ship_to_customer.shipping_state if ship_to_customer else "")
+            or (ship_to_customer.billing_state if ship_to_customer else "")
+            or (bill_to_customer.shipping_state if bill_to_customer else "")
+            or (bill_to_customer.billing_state if bill_to_customer else "")
+            or ""
+        ).strip()
+        bill_to_state_code = (
+            (ship_to_customer.shipping_state_code if ship_to_customer else "")
+            or (ship_to_customer.billing_state_code if ship_to_customer else "")
+            or (bill_to_customer.shipping_state_code if bill_to_customer else "")
+            or (bill_to_customer.billing_state_code if bill_to_customer else "")
+            or ""
+        ).strip()
+        place_of_supply = (
+            (invoice.supply_state or "").strip()
+            or ((invoice.supply_state_code or "").strip())
+            or bill_to_state
+            or bill_to_state_code
+        )
+
+        order_currency = sales_order_currency_map.get(str(invoice.sales_order_id or ""), {})
+        currency = (
+            (order_currency.get("currency_code") if order_currency else None)
+            or (bill_to_customer.currency_code if bill_to_customer else None)
+            or GST_REPORT_BASE_CURRENCY
+        )
+        currency = str(currency).strip().upper()
+
+        stored_exchange_rate = float(order_currency.get("exchange_rate") or 0.0) if order_currency else 0.0
+
+        totals = credit_note_totals_map.get(note_key) or {
+            "taxable_amount": _paise_to_amount(credit_note.total_taxable_amount),
+            "cgst_amount": _paise_to_amount(credit_note.total_cgst),
+            "sgst_amount": _paise_to_amount(credit_note.total_sgst),
+            "igst_amount": _paise_to_amount(credit_note.total_igst),
+        }
+
+        source_invoice_amount = _round_2(-totals["taxable_amount"])
+        source_cgst = _round_2(-totals["cgst_amount"])
+        source_sgst = _round_2(-totals["sgst_amount"])
+        source_igst = _round_2(-totals["igst_amount"])
+
+        invoice_type = _normalize_invoice_type(invoice.invoice_type, bool(invoice.is_igst))
+        bill_to_country = _customer_country_for_gstr(bill_to_customer)
+        bill_to_is_india = is_india_country(bill_to_country)
+        is_export_transaction = invoice_type == INVOICE_TYPE_EXPORT or (not bill_to_is_india)
+        display_bill_to_gstin = bill_to_gstin if bill_to_is_india else (bill_to_gstin or "N/A")
+        invoice_rates = sorted(credit_note_rate_map.get(note_key, set()))
+
+        conversion_rate, conversion_source, _ = _resolve_report_fx_rate(
+            currency,
+            stored_exchange_rate=stored_exchange_rate,
+        )
+
+        taxable_amount = _convert_with_rate(source_invoice_amount, float(conversion_rate or 1.0))
+        cgst_amount = _convert_with_rate(source_cgst, float(conversion_rate or 1.0))
+        sgst_amount = _convert_with_rate(source_sgst, float(conversion_rate or 1.0))
+        igst_amount = _convert_with_rate(source_igst, float(conversion_rate or 1.0))
+        ugst_amount = 0.0
+        export_amount = 0.0
+
+        if invoice_type == INVOICE_TYPE_UNION_TERRITORY:
+            ugst_amount = sgst_amount
+            sgst_amount = 0.0
+        elif invoice_type == INVOICE_TYPE_EXPORT:
+            export_amount = taxable_amount
+            cgst_amount = 0.0
+            sgst_amount = 0.0
+            igst_amount = 0.0
+            ugst_amount = 0.0
+
+        tax_percent = _round_2(invoice_rates[0]) if len(invoice_rates) == 1 else None
+        total_tax_amount = _round_2(cgst_amount + sgst_amount + igst_amount + ugst_amount + export_amount)
+
+        report_rows.append(
+            {
+                "s_no": serial_no,
+                "sales_invoice_date": _format_ddmmyyyy(credit_note.credit_note_date),
+                "sales_invoice_no": invoice_number,
+                "bill_to_party_name": bill_to_name,
+                "bill_to_party_gstin_no": display_bill_to_gstin,
+                "place_of_supply": place_of_supply,
+                "ship_to_party_name": ship_to_name,
+                "invoice_amount": taxable_amount,
+                "currency": GST_REPORT_BASE_CURRENCY,
+                "source_currency": currency,
+                "conversion_rate_to_inr": _round_2(float(conversion_rate or 1.0)),
+                "conversion_source": conversion_source,
+                "tax_percent": tax_percent,
+                "cgst_amount": cgst_amount,
+                "sgst_amount": sgst_amount,
+                "igst_amount": igst_amount,
+                "ugst_amount": ugst_amount,
+                "export_amount": export_amount,
+                "total_tax_amount": total_tax_amount,
+            }
+        )
+
+        for item in credit_note_item_map.get(note_key, []):
+            item_name = _compose_item_description(
+                item.get("product_name"),
+                None,
+                item.get("product_description"),
+            )
+            line_amount = _convert_with_rate(-item.get("taxable_amount", 0.0), float(conversion_rate or 1.0))
+            line_cgst = _convert_with_rate(-item.get("cgst_amount", 0.0), float(conversion_rate or 1.0))
+            line_sgst = _convert_with_rate(-item.get("sgst_amount", 0.0), float(conversion_rate or 1.0))
+            line_igst = _convert_with_rate(-item.get("igst_amount", 0.0), float(conversion_rate or 1.0))
+            line_ugst = 0.0
+            line_export = 0.0
+
+            if invoice_type == INVOICE_TYPE_UNION_TERRITORY:
+                line_ugst = line_sgst
+                line_sgst = 0.0
+            elif invoice_type == INVOICE_TYPE_EXPORT:
+                line_export = line_amount
+                line_cgst = 0.0
+                line_sgst = 0.0
+                line_igst = 0.0
+                line_ugst = 0.0
+
+            line_total_tax = _round_2(line_cgst + line_sgst + line_igst + line_ugst + line_export)
+
+            detail_rows.append(
+                {
+                    "s_no": detail_serial_no,
+                    "sales_invoice_date": _format_ddmmyyyy(credit_note.credit_note_date),
+                    "sales_invoice_no": invoice_number,
+                    "bill_to_party_name": bill_to_name,
+                    "bill_to_party_gstin_no": display_bill_to_gstin,
+                    "place_of_supply": place_of_supply,
+                    "ship_to_party_name": ship_to_name,
+                    "item_name_description": item_name,
+                    "hsn": (item.get("hsn_code") or ""),
+                    "quantity": item.get("quantity", 0.0),
+                    "invoice_amount": line_amount,
+                    "currency": GST_REPORT_BASE_CURRENCY,
+                    "tax_percent": item.get("gst_rate"),
+                    "cgst_amount": line_cgst,
+                    "sgst_amount": line_sgst,
+                    "igst_amount": line_igst,
+                    "ugst_amount": line_ugst,
+                    "export_amount": line_export,
+                    "total_tax_amount": line_total_tax,
+                }
+            )
+            detail_serial_no += 1
+
+            detail_subtotal["invoice_amount"] = _round_2(detail_subtotal["invoice_amount"] + line_amount)
+            detail_subtotal["cgst_amount"] = _round_2(detail_subtotal["cgst_amount"] + line_cgst)
+            detail_subtotal["sgst_amount"] = _round_2(detail_subtotal["sgst_amount"] + line_sgst)
+            detail_subtotal["igst_amount"] = _round_2(detail_subtotal["igst_amount"] + line_igst)
+            detail_subtotal["ugst_amount"] = _round_2(detail_subtotal["ugst_amount"] + line_ugst)
+            detail_subtotal["export_amount"] = _round_2(detail_subtotal["export_amount"] + line_export)
+            detail_subtotal["total_tax_amount"] = _round_2(detail_subtotal["total_tax_amount"] + line_total_tax)
+
         serial_no += 1
 
         subtotal["invoice_amount"] = _round_2(subtotal["invoice_amount"] + taxable_amount)

@@ -8,6 +8,8 @@ import type {
   RDNCustomizationOptions,
   RDNDetailResponse,
   RDNOverviewResponse,
+  RDNCreditNoteDetailResponse,
+  RDNCreditNoteOverviewResponse,
   RDNUpdatePayload,
 } from '../types';
 
@@ -49,6 +51,21 @@ export const rdnApi = {
 
   cancel: async (id: string): Promise<RDN> => {
     const response = await apiClient.post<RDN>(`/api/v2/rdn/${id}/cancel`, {});
+    return response.data;
+  },
+
+  listCreditNotes: async (params?: {
+    search?: string;
+    status?: string;
+    page?: number;
+    page_size?: number;
+  }): Promise<RDNCreditNoteOverviewResponse> => {
+    const response = await apiClient.get<RDNCreditNoteOverviewResponse>('/api/v2/rdn/credit-notes', { params });
+    return response.data;
+  },
+
+  getCreditNote: async (id: string): Promise<RDNCreditNoteDetailResponse> => {
+    const response = await apiClient.get<RDNCreditNoteDetailResponse>(`/api/v2/rdn/credit-notes/${id}`);
     return response.data;
   },
 };

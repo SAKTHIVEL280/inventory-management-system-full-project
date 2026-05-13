@@ -2,6 +2,42 @@
 
 ---
 
+## BE-164: RDN stock guard on confirm
+**Update**: Blocked duplicate/non-issued stock restore.
+
+## BE-165: Invoice/RDN stock idempotency
+**Update**: Locked issue/confirm + ledger guard.
+
+## BE-166: RDN stock vs issued guard
+**Update**: Enforced per-product issued-vs-returned.
+
+## BE-167: Returned invoices in stock
+**Update**: Stock snapshots treat returned as issued.
+
+## BE-168: Stock status normalization
+**Update**: Case-insensitive invoice status.
+
+## BE-163: Returned status + net invoice view
+**Update**: RDN updates invoice totals and status.
+
+## BE-162: Returned status after RDN
+**Update**: RDN updates invoice due/status safely.
+
+## BE-161: Batch stock includes RDN returns
+**Update**: Batch snapshot now adds RDN returns.
+
+## BE-160: RDN credit note round-off total
+**Update**: Rounded credit note total to nearest 5.
+
+## BE-159: RDN confirm credit note fix
+**Update**: Prevented duplicate credit note create.
+
+## BE-158: RDN over-return validation
+**Update**: Blocked RDN returns beyond invoiced batch qty.
+
+## BE-157: RDN credit notes + GSTR1
+**Update**: Auto-created RDN credit notes on confirm, reduced linked invoice totals/taxes, and included credit note offsets in GSTR-1 output.
+
 ## BE-131: General manager access for sales/GST reports
 **Update**: Allowed general managers to access GST report generation and corrected report endpoints to use `reports_read` instead of action-log permissions. Updated GST guard messaging accordingly.
 

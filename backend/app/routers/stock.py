@@ -206,7 +206,7 @@ def _build_product_batch_snapshot(db: Session, product_id: UUID) -> dict[str, di
         .join(SalesInvoice, SalesInvoiceItem.invoice_id == SalesInvoice.id)
         .filter(
             SalesInvoiceItem.product_id == product_id,
-            SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
+            func.lower(func.trim(SalesInvoice.status)).in_(["issued", "partial_paid", "paid", "returned"]),
             SalesInvoice.is_deleted == False,
             SalesInvoiceItem.is_deleted == False,
         )

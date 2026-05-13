@@ -21,6 +21,7 @@ import PurchaseOrderPage from './pages/PurchaseOrderPage';
 import QuotationsPage from './pages/QuotationsPage';
 import InvoicesPage from './pages/InvoicesPage';
 import RDNPage from './pages/RDNPage';
+import RDNCreditNotePage from './pages/RDNCreditNotePage';
 import GRNPage from './pages/GRNPage';
 import StockPage from './pages/StockPage';
 import InventoryCountPage from './pages/InventoryCountPage';
@@ -235,6 +236,14 @@ function App() {
           element={
             <ProtectedRoute requiredPermission={PERMISSION_SCOPES.RDN_READ}>
               <RDNPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/sales/rdn-credit-notes"
+          element={
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.RDN_READ}>
+              <RDNCreditNotePage />
             </ProtectedRoute>
           }
         />

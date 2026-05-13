@@ -153,11 +153,18 @@ export interface SalesInvoiceItem {
   expiry_date?: string;
   free_quantity?: number;
   quantity: number;
+  returned_quantity?: number;
+  net_quantity?: number;
   unit_price: number;
   mrp?: number;
   discount_percent?: number;
   gst_rate: number;
+  net_taxable_amount?: number;
+  net_cgst_amount?: number;
+  net_sgst_amount?: number;
+  net_igst_amount?: number;
   total_amount: number;
+  net_total_amount?: number;
 }
 
 export interface InvoiceBatchOption {

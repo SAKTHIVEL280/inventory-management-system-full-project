@@ -2,6 +2,10 @@
 
 ---
 
+## DB-54: Invoice returned status
+**Update**: Allowed `returned` in sales invoice status check.
+**Files**: `database/01_schema.sql`, `database/migrations/0009_invoice_returned_status_2026_05_12.sql`, `database/ALL_UPDATES_2.sql`, `backend/run_migration.py`
+
 ## DB-49: Role cleanup for access control
 **Update**: Updated `users.role` constraint to the new roles (`admin`, `inventory manager`, `general manager`) and backfilled legacy roles (`doctor`, `accounts`, `billing`, `accounting`, `sales`, `inventory`). Added migration and consolidated pack updates.
 **Files**: `database/01_schema.sql`, `database/migrations/0004_user_roles_2026_05_04.sql`, `database/ALL_UPDATES_2.sql`
@@ -109,6 +113,30 @@ Added Return Delivery Note (RDN) tables, company numbering fields, and seeded re
 ### Files Modified
 - `database/01_schema.sql`
 - `database/migrations/0007_rdn_feature_2026_05_12.sql`
+- `database/ALL_UPDATES_2.sql`
+- `backend/run_migration.py`
+
+### Validation
+- Verified no SQL/editor errors in modified files.
+
+---
+
+## DB-53: RDN credit note tables
+**Date**: May 12, 2026
+**Status**: ✅ Completed
+**Module**: Sales
+**Type**: Feature
+
+### Overview
+Added credit note storage for Return Delivery Notes with item-level tax and totals.
+
+### Changes Made
+- Added `rdn_credit_notes` and `rdn_credit_note_items` tables with indexes.
+- Added migration script and consolidated compatibility updates.
+
+### Files Modified
+- `database/01_schema.sql`
+- `database/migrations/0008_rdn_credit_notes_2026_05_12.sql`
 - `database/ALL_UPDATES_2.sql`
 - `backend/run_migration.py`
 

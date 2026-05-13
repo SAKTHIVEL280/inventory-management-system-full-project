@@ -16,6 +16,7 @@ import re
 import smtplib
 import ssl
 from typing import Any
+from types import SimpleNamespace
 from uuid import UUID
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.encoders import jsonable_encoder
@@ -25,10 +26,11 @@ from sqlalchemy import func, or_
 from app.database import get_db
 from app.dependencies import enforce_resource_ownership, require_permissions, require_role, scope_query_to_company
 from app.models.user import User
-from app.models.product import Product
+from app.models.product import Product, StockLedger
 from app.models.customer import Customer
 from app.models.inventory_count import InventoryCountDifferenceAudit, InventoryCountItem
 from app.models.purchase import GoodsReceiptNote, GRNItem, PurchaseReturn, PurchaseReturnItem
+from app.models.rdn import ReturnDeliveryNote, ReturnDeliveryNoteItem, RdnCreditNote, RdnCreditNoteItem
 from app.models.sales import (
     Quotation,
     QuotationItem,
@@ -96,7 +98,7 @@ def _compute_invoice_status(amount_paid: int, total_amount: int) -> str:
 
 def _derive_invoice_status(raw_status: str | None, amount_paid: int, total_amount: int) -> str:
     token = (raw_status or "").strip().lower()
-    if token in {"draft", "cancelled"}:
+    if token in {"draft", "cancelled", "returned"}:
         return token
     return _compute_invoice_status(int(amount_paid or 0), int(total_amount or 0))
 
@@ -323,7 +325,7 @@ def _build_product_batch_snapshot(db: Session, product_id: UUID) -> dict[str, di
         .join(SalesInvoice, SalesInvoiceItem.invoice_id == SalesInvoice.id)
         .filter(
             SalesInvoiceItem.product_id == product_id,
-            SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
+            func.lower(func.trim(SalesInvoice.status)).in_(["issued", "partial_paid", "paid", "returned"]),
             SalesInvoice.is_deleted == False,
             SalesInvoiceItem.is_deleted == False,
         )
@@ -365,6 +367,35 @@ def _build_product_batch_snapshot(db: Session, product_id: UUID) -> dict[str, di
         .all()
     )
     for row in sales_return_rows:
+        _accumulate(
+            row.batch_no,
+            row.manufacture_date,
+            row.expiry_date,
+            float(row.qty or 0),
+        )
+
+    rdn_rows = (
+        db.query(
+            ReturnDeliveryNoteItem.batch_no,
+            ReturnDeliveryNoteItem.manufacture_date,
+            ReturnDeliveryNoteItem.expiry_date,
+            func.coalesce(func.sum(ReturnDeliveryNoteItem.return_quantity), 0).label("qty"),
+        )
+        .join(ReturnDeliveryNote, ReturnDeliveryNoteItem.rdn_id == ReturnDeliveryNote.id)
+        .filter(
+            ReturnDeliveryNoteItem.product_id == product_id,
+            ReturnDeliveryNote.status == "confirmed",
+            ReturnDeliveryNote.is_deleted == False,
+            ReturnDeliveryNoteItem.is_deleted == False,
+        )
+        .group_by(
+            ReturnDeliveryNoteItem.batch_no,
+            ReturnDeliveryNoteItem.manufacture_date,
+            ReturnDeliveryNoteItem.expiry_date,
+        )
+        .all()
+    )
+    for row in rdn_rows:
         _accumulate(
             row.batch_no,
             row.manufacture_date,
@@ -1323,9 +1354,13 @@ async def convert_so_to_invoice(
         is_igst = False
         gst_applicable = False
 
+    payload_stub = SimpleNamespace(
+        customer_id=so.customer_id,
+        bill_to_customer_id=so.bill_to_customer_id,
+    )
     _enforce_bill_to_gstin_for_gst_invoice(
         db,
-        payload,
+        payload_stub,
         current_user,
         primary_customer=customer,
         gst_applicable=gst_applicable,
@@ -1418,7 +1453,7 @@ async def list_invoices(
     status = validate_optional_token(
         status,
         field_name="status",
-        allowed={"draft", "issued", "partial_paid", "paid", "cancelled"},
+        allowed={"draft", "issued", "partial_paid", "paid", "cancelled", "returned"},
     )
 
     query = db.query(SalesInvoice).filter(SalesInvoice.is_deleted == False)
@@ -1616,7 +1651,57 @@ async def get_invoice(
     _enforce_owner(invoice, current_user)
     invoice.status = _derive_invoice_status(invoice.status, int(invoice.amount_paid or 0), int(invoice.total_amount or 0))
     items = db.query(SalesInvoiceItem).filter(SalesInvoiceItem.invoice_id == invoice_id).all()
-    return {"invoice": invoice, "items": items}
+
+    return_rows = (
+        db.query(
+            RdnCreditNoteItem.invoice_item_id,
+            func.coalesce(func.sum(RdnCreditNoteItem.return_quantity), 0).label("qty"),
+            func.coalesce(func.sum(RdnCreditNoteItem.taxable_amount), 0).label("taxable"),
+            func.coalesce(func.sum(RdnCreditNoteItem.cgst_amount), 0).label("cgst"),
+            func.coalesce(func.sum(RdnCreditNoteItem.sgst_amount), 0).label("sgst"),
+            func.coalesce(func.sum(RdnCreditNoteItem.igst_amount), 0).label("igst"),
+            func.coalesce(func.sum(RdnCreditNoteItem.total_amount), 0).label("total"),
+        )
+        .join(RdnCreditNote, RdnCreditNoteItem.credit_note_id == RdnCreditNote.id)
+        .filter(
+            RdnCreditNote.sales_invoice_id == invoice_id,
+            RdnCreditNote.status == "posted",
+            RdnCreditNote.is_deleted == False,
+            RdnCreditNoteItem.is_deleted == False,
+            RdnCreditNoteItem.invoice_item_id.isnot(None),
+        )
+        .group_by(RdnCreditNoteItem.invoice_item_id)
+        .all()
+    )
+    returned_by_item = {
+        str(row.invoice_item_id): {
+            "qty": float(row.qty or 0),
+            "taxable": int(row.taxable or 0),
+            "cgst": int(row.cgst or 0),
+            "sgst": int(row.sgst or 0),
+            "igst": int(row.igst or 0),
+            "total": int(row.total or 0),
+        }
+        for row in return_rows
+        if row.invoice_item_id is not None
+    }
+
+    items_payload = []
+    for item in items:
+        payload = jsonable_encoder(item)
+        returned = returned_by_item.get(str(item.id))
+        if returned:
+            returned_qty = float(returned.get("qty", 0.0))
+            payload["returned_quantity"] = returned_qty
+            payload["net_quantity"] = max(0.0, float(item.quantity or 0) - returned_qty)
+            payload["net_taxable_amount"] = max(0, int(item.taxable_amount or 0) - int(returned.get("taxable", 0)))
+            payload["net_cgst_amount"] = max(0, int(item.cgst_amount or 0) - int(returned.get("cgst", 0)))
+            payload["net_sgst_amount"] = max(0, int(item.sgst_amount or 0) - int(returned.get("sgst", 0)))
+            payload["net_igst_amount"] = max(0, int(item.igst_amount or 0) - int(returned.get("igst", 0)))
+            payload["net_total_amount"] = max(0, int(item.total_amount or 0) - int(returned.get("total", 0)))
+        items_payload.append(payload)
+
+    return {"invoice": invoice, "items": items_payload}
 
 
 @router.put("/api/v1/invoices/{invoice_id}")
@@ -1744,12 +1829,30 @@ async def issue_invoice(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("admin")),
 ):
-    invoice = db.query(SalesInvoice).filter(SalesInvoice.id == invoice_id, SalesInvoice.is_deleted == False).first()
+    invoice = (
+        db.query(SalesInvoice)
+        .filter(SalesInvoice.id == invoice_id, SalesInvoice.is_deleted == False)
+        .with_for_update()
+        .first()
+    )
     if not invoice:
         raise HTTPException(status_code=404, detail="Invoice not found")
     _enforce_owner(invoice, current_user)
     if invoice.status != "draft":
         raise HTTPException(status_code=400, detail="Only draft invoices can be issued")
+
+    existing_issue = (
+        db.query(StockLedger.id)
+        .filter(
+            StockLedger.reference_type == "invoice",
+            StockLedger.reference_id == invoice.id,
+            StockLedger.transaction_type == "sale",
+            StockLedger.is_deleted == False,
+        )
+        .first()
+    )
+    if existing_issue:
+        raise HTTPException(status_code=400, detail="Stock already deducted for this invoice")
 
     items = db.query(SalesInvoiceItem).filter(SalesInvoiceItem.invoice_id == invoice.id).all()
 

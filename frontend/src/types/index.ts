@@ -397,6 +397,83 @@ export interface RDNCreatePayload {
 export interface RDNUpdatePayload extends RDNCreatePayload {}
 
 // ============================================================================
+// RDN Credit Notes
+// ============================================================================
+
+export interface RDNCreditNoteOverviewItem {
+  credit_note_id: string;
+  credit_note_number: string;
+  rdn_id: string;
+  sales_invoice_id: string;
+  invoice_number: string;
+  customer_id: string;
+  customer_name: string;
+  credit_note_date: string;
+  product_id: string;
+  product_code?: string | null;
+  product_name?: string | null;
+  mrp?: number | null;
+  gst_rate: number;
+  status: string;
+}
+
+export interface RDNCreditNoteOverviewResponse {
+  items: RDNCreditNoteOverviewItem[];
+  total: number;
+  page: number;
+  page_size: number;
+  has_more: boolean;
+}
+
+export interface RDNCreditNote {
+  id: string;
+  credit_note_number: string;
+  rdn_id: string;
+  sales_invoice_id: string;
+  customer_id: string;
+  credit_note_date: string;
+  status: string;
+  subtotal: number;
+  total_discount: number;
+  total_taxable_amount: number;
+  total_cgst: number;
+  total_sgst: number;
+  total_igst: number;
+  total_gst: number;
+  total_amount: number;
+  invoice_number?: string | null;
+  invoice_date?: string | null;
+  customer_name?: string | null;
+  rdn_created_at?: string | null;
+  created_at?: string | null;
+}
+
+export interface RDNCreditNoteItem {
+  id: string;
+  credit_note_id: string;
+  product_id: string;
+  product_code?: string | null;
+  product_name?: string | null;
+  invoice_item_id?: string | null;
+  return_quantity: number;
+  unit_price: number;
+  mrp?: number | null;
+  discount_percent: number;
+  discount_amount: number;
+  taxable_amount: number;
+  gst_rate: number;
+  cgst_amount: number;
+  sgst_amount: number;
+  igst_amount: number;
+  total_amount: number;
+}
+
+export interface RDNCreditNoteDetailResponse {
+  credit_note: RDNCreditNote;
+  items: RDNCreditNoteItem[];
+}
+
+// ============================================================================
 // Constants
 // ============================================================================
 

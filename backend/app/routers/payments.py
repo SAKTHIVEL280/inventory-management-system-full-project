@@ -159,17 +159,24 @@ def _derive_payment_status_token(db: Session, payment: Payment) -> str:
 def _derive_customer_receipt_status_display(db: Session, payment: Payment) -> str | None:
     has_invoice = False
     all_settled = True
+    returned_invoices = 0
+    invoice_count = 0
     for allocation in payment.allocations or []:
         if allocation.is_deleted or not allocation.invoice_id:
             continue
         has_invoice = True
+        invoice_count += 1
         invoice = allocation.invoice or db.query(SalesInvoice).filter(SalesInvoice.id == allocation.invoice_id).first()
         if not invoice:
             continue
         if (invoice.amount_due or 0) > 0:
             all_settled = False
+        if (invoice.status or "").strip().lower() == "returned":
+            returned_invoices += 1
     if not has_invoice:
         return None
+    if invoice_count > 0 and returned_invoices == invoice_count:
+        return "Returned"
     return "Fully Received" if all_settled else "Partially Received"
 
 

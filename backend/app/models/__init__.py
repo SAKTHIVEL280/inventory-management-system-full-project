@@ -23,7 +23,7 @@ from app.models.sales import (
 	SalesReturn,
 	SalesReturnItem,
 )
-from app.models.rdn import ReturnDeliveryNote, ReturnDeliveryNoteItem
+from app.models.rdn import ReturnDeliveryNote, ReturnDeliveryNoteItem, RdnCreditNote, RdnCreditNoteItem
 from app.models.payment import Payment, PaymentAllocation
 from app.models.customization_option import CustomizationOption
 from app.models.inventory_count import InventoryCount, InventoryCountDifferenceAudit, InventoryCountItem
@@ -54,6 +54,8 @@ __all__ = [
 	"SalesReturnItem",
 	"ReturnDeliveryNote",
 	"ReturnDeliveryNoteItem",
+	"RdnCreditNote",
+	"RdnCreditNoteItem",
 	"Payment",
 	"PaymentAllocation",
 	"CustomizationOption",

@@ -145,6 +145,7 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
         { to: '/sales/quotations', label: 'Quotations', visible: can('quotations_read'), icon: 'request_quote' },
         { to: '/sales/invoices', label: 'Sales Invoice', visible: can('sales_invoices_read'), icon: 'receipt' },
         { to: '/sales/rdn', label: 'Return Delivery Note', visible: can('rdn_read'), icon: 'assignment_return' },
+        { to: '/sales/rdn-credit-notes', label: 'RDN Credit Note', visible: can('rdn_read'), icon: 'note_alt' },
       ],
     },
     {

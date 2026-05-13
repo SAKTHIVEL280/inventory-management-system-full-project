@@ -411,6 +411,7 @@ const InvoicesPage = () => {
     const token = (invoice.status || '').trim().toLowerCase();
     if (token === 'draft') return 'Draft';
     if (token === 'cancelled') return 'Cancelled';
+    if (token === 'returned') return 'Returned';
 
     const paid = Number(invoice.amount_paid || 0);
     const total = Number(invoice.total_amount || 0);
@@ -425,6 +426,7 @@ const InvoicesPage = () => {
     const token = (invoice.status || '').trim().toLowerCase();
     if (token === 'draft') return 'bg-gray-100 text-gray-700';
     if (token === 'cancelled') return 'bg-red-100 text-red-700';
+    if (token === 'returned') return 'bg-emerald-100 text-emerald-700';
 
     const paid = Number(invoice.amount_paid || 0);
     const total = Number(invoice.total_amount || 0);
@@ -710,7 +712,7 @@ const InvoicesPage = () => {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3">
             <select className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-              <option value="">All</option><option value="draft">Draft</option><option value="issued">Issued</option><option value="partial_paid">Partial Paid</option><option value="paid">Paid</option><option value="cancelled">Cancelled</option>
+              <option value="">All</option><option value="draft">Draft</option><option value="issued">Issued</option><option value="partial_paid">Partial Paid</option><option value="paid">Paid</option><option value="returned">Returned</option><option value="cancelled">Cancelled</option>
             </select>
             <input
               type="text"
@@ -1142,16 +1144,20 @@ const InvoicesPage = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {selectedInvoiceItems.map((item) => (
+                        {selectedInvoiceItems.map((item) => {
+                          const displayQty = item.net_quantity ?? item.quantity;
+                          const displayTotal = item.net_total_amount ?? item.total_amount;
+                          return (
                           <tr key={item.id} className="border-t border-neutral-100">
                             <td className="px-3 py-2">{item.description || productNameById(item.product_id)}</td>
-                            <td className="px-3 py-2 text-right">{item.quantity}</td>
+                            <td className="px-3 py-2 text-right">{displayQty}</td>
                             <td className="px-3 py-2 text-right">{formatAmount(item.unit_price)}</td>
                             <td className="px-3 py-2 text-right">{item.discount_percent || 0}</td>
                             {selectedInvoice.invoice_type !== 'export_invoice' && <td className="px-3 py-2 text-right">{item.gst_rate}</td>}
-                            <td className="px-3 py-2 text-right font-medium">{formatAmount(item.total_amount)}</td>
+                            <td className="px-3 py-2 text-right font-medium">{formatAmount(displayTotal)}</td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                       <tfoot>
                         <tr className="border-t-2 bg-neutral-50">

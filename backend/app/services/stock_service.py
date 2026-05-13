@@ -108,7 +108,7 @@ def get_product_batch_snapshot(db: Session, product_id: UUID) -> dict[str, dict[
         .join(SalesInvoice, SalesInvoiceItem.invoice_id == SalesInvoice.id)
         .filter(
             SalesInvoiceItem.product_id == product_id,
-            SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
+            func.lower(func.trim(SalesInvoice.status)).in_(["issued", "partial_paid", "paid", "returned"]),
             SalesInvoice.is_deleted == False,
             SalesInvoiceItem.is_deleted == False,
         )
@@ -156,6 +156,12 @@ def get_product_batch_snapshot(db: Session, product_id: UUID) -> dict[str, dict[
             row.expiry_date,
             float(row.qty or 0),
         )
+
+    # NOTE: RDN return quantities are NOT accumulated here because the RDN confirm
+    # flow already creates stock_ledger entries (transaction_type='sale_return',
+    # reference_type='rdn').  Adding RDN quantities again at the batch level would
+    # double-count them.
+
 
     inventory_count_diff_rows = (
         db.query(

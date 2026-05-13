@@ -74,3 +74,78 @@ class RDNOverviewResponse(BaseModel):
     page: int
     page_size: int
     has_more: bool
+
+
+class RDNCreditNoteResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    credit_note_number: str
+    rdn_id: UUID
+    sales_invoice_id: UUID
+    customer_id: UUID
+    credit_note_date: date
+    status: str
+    subtotal: int
+    total_discount: int
+    total_taxable_amount: int
+    total_cgst: int
+    total_sgst: int
+    total_igst: int
+    total_gst: int
+    total_amount: int
+    invoice_number: Optional[str] = None
+    invoice_date: Optional[date] = None
+    customer_name: Optional[str] = None
+    rdn_created_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+
+
+class RDNCreditNoteItemResponse(BaseModel):
+    id: UUID
+    credit_note_id: UUID
+    product_id: UUID
+    product_code: Optional[str] = None
+    product_name: Optional[str] = None
+    invoice_item_id: Optional[UUID] = None
+    return_quantity: float
+    unit_price: int
+    mrp: Optional[int] = None
+    discount_percent: float
+    discount_amount: int
+    taxable_amount: int
+    gst_rate: int
+    cgst_amount: int
+    sgst_amount: int
+    igst_amount: int
+    total_amount: int
+
+
+class RDNCreditNoteDetailResponse(BaseModel):
+    credit_note: RDNCreditNoteResponse
+    items: List[RDNCreditNoteItemResponse]
+
+
+class RDNCreditNoteOverviewItem(BaseModel):
+    credit_note_id: UUID
+    credit_note_number: str
+    rdn_id: UUID
+    sales_invoice_id: UUID
+    invoice_number: str
+    customer_id: UUID
+    customer_name: str
+    credit_note_date: date
+    product_id: UUID
+    product_code: Optional[str] = None
+    product_name: Optional[str] = None
+    mrp: Optional[int] = None
+    gst_rate: int
+    status: str
+
+
+class RDNCreditNoteOverviewResponse(BaseModel):
+    items: List[RDNCreditNoteOverviewItem]
+    total: int
+    page: int
+    page_size: int
+    has_more: bool
