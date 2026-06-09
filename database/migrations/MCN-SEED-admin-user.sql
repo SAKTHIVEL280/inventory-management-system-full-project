@@ -16,7 +16,7 @@ VALUES (
     'admin',
     TRUE,
     FALSE,
-    (SELECT id FROM companies ORDER BY created_at NULLS FIRST LIMIT 1)
+    (SELECT id FROM company ORDER BY created_at NULLS FIRST LIMIT 1)
 )
 ON CONFLICT (email) DO UPDATE
 SET hashed_password        = EXCLUDED.hashed_password,
