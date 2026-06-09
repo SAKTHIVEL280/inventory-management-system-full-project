@@ -161,6 +161,13 @@ const ReceivablesPage = () => {
       return;
     }
 
+    // MCN-BUG-003: invoice allocation is mandatory — block floating receipts
+    const totalAllocated = Object.values(allocations).reduce((sum, amt) => sum + (amt > 0 ? amt : 0), 0);
+    if (totalAllocated <= 0) {
+      setError('Please allocate the payment against at least one invoice before saving.');
+      return;
+    }
+
     // REC-005: Validate that total allocations do not exceed any individual invoice's due amount
     for (const [invoiceId, allocAmt] of Object.entries(allocations)) {
       if (allocAmt > 0) {
@@ -266,6 +273,9 @@ const ReceivablesPage = () => {
 
   const sc: Record<string, string> = { pending: 'bg-amber-100 text-amber-700', cleared: 'bg-green-100 text-green-700', bounced: 'bg-red-100 text-red-700', cancelled: 'bg-gray-100 text-gray-700' };
 
+  // MCN-BUG-003: total allocated drives mandatory-allocation gating on the Save button
+  const totalAllocatedPaise = Object.values(allocations).reduce((sum, amt) => sum + (amt > 0 ? amt : 0), 0);
+
   return (
     <AppLayout title="Receivables (Customer Payments)">
       <div className="space-y-6">
@@ -327,7 +337,13 @@ const ReceivablesPage = () => {
                 : filteredPayments.map(p => (
                   <tr key={p.id} className="border-b border-neutral-100 hover:bg-neutral-50">
                     <td className="px-4 py-3 font-medium">
-                      {p.allocations?.map((a) => a.invoice_number).filter(Boolean).join(', ') || 'Unallocated'}
+                      {p.allocations?.map((a) => a.invoice_number).filter(Boolean).join(', ') || (
+                        // MCN-BUG-003: flag legacy unallocated receipts for manual reconciliation
+                        <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700" title="No invoice allocated — needs manual reconciliation">
+                          <span className="material-icons text-sm" aria-hidden="true">warning</span>
+                          Unallocated
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3">{customerNameById(p.customer_id)}</td>
                     <td className="px-4 py-3">{p.payment_date}</td>
@@ -382,7 +398,7 @@ const ReceivablesPage = () => {
 
               {outstandingInvoices.length > 0 && (
                 <div>
-                  <h3 className="mb-2 text-sm font-semibold text-neutral-700">Allocate to Invoices</h3>
+                  <h3 className="mb-2 text-sm font-semibold text-neutral-700">Allocate to Invoices <span className="text-red-500">*</span></h3>
                   <div className="rounded-lg border border-neutral-200">
                     <table className="w-full text-sm">
                       <thead><tr className="bg-neutral-50"><th className="px-3 py-2 text-left">Invoice</th><th className="px-3 py-2 text-right">Due</th><th className="px-3 py-2 text-right w-32">Allocate</th></tr></thead>
@@ -402,13 +418,19 @@ const ReceivablesPage = () => {
                       </tbody>
                     </table>
                   </div>
+                  {/* MCN-BUG-003: inline mandatory-allocation hint */}
+                  {totalAllocatedPaise <= 0 && (
+                    <p className="mt-2 text-xs font-medium text-red-600">
+                      Please allocate the payment against at least one invoice before saving.
+                    </p>
+                  )}
                 </div>
               )}
 
               <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Notes</label><textarea className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></div>
               <div className="flex justify-end gap-3">
                 <button onClick={() => { setShowForm(false); resetForm(); }} className="rounded-lg border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-600">Cancel</button>
-                <button onClick={handleSubmit} disabled={submitting || (customerId !== '' && outstandingInvoices.length === 0)} className="rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/20 disabled:opacity-50">{submitting ? 'Recording...' : 'Record Payment'}</button>
+                <button onClick={handleSubmit} disabled={submitting || (customerId !== '' && outstandingInvoices.length === 0) || totalAllocatedPaise <= 0} className="rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/20 disabled:opacity-50">{submitting ? 'Recording...' : 'Record Payment'}</button>
               </div>
             </div>
           </div>,

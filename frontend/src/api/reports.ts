@@ -20,6 +20,19 @@ export interface CashInFlowSummary {
   partially_settled_amount: number;
 }
 
+// MCN-BUG-002: revenue generation rows per Sales Manager / Stockist
+export interface RevenueRow {
+  id: string;
+  name: string;
+  revenue: number;
+}
+
+export interface RevenueGeneration {
+  daily: RevenueRow[];
+  weekly: RevenueRow[];
+  monthly: RevenueRow[];
+}
+
 export interface DashboardStats {
   total_products: number;
   total_customers: number;
@@ -45,7 +58,11 @@ export interface DashboardStats {
     weekly: CashInFlowSummary;
     monthly: CashInFlowSummary;
   };
-  recent_invoices: { invoice_number: string; customer_name: string; amount: number; status: string; date: string }[];
+  // MCN-BUG-002: replaced the Recent Invoices widget
+  revenue_generation: {
+    sales_manager: RevenueGeneration;
+    stockist: RevenueGeneration;
+  };
 }
 
 export interface StockReportItem {

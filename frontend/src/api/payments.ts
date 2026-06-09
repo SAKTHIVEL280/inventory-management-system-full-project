@@ -70,6 +70,7 @@ export interface Payment {
   notes_display?: string;
   purchase_order_id?: string;
   po_number?: string;
+  is_unallocated?: boolean;
   created_at: string;
   allocations?: PaymentAllocation[];
 }

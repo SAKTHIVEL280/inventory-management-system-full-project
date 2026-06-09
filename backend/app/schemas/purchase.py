@@ -64,6 +64,17 @@ class GRNCreateRequest(BaseModel):
         return self
 
 
+class GRNReverseRequest(BaseModel):
+    """MCN-BUG-004: mandatory reason captured when reversing a confirmed GRN."""
+    reason: str
+
+    @model_validator(mode="after")
+    def _validate_reason(self):
+        if not (self.reason or "").strip():
+            raise ValueError("A reversal reason is required")
+        return self
+
+
 class PurchaseReturnLineItemRequest(BaseModel):
     product_id: UUID
     grn_item_id: Optional[UUID] = None

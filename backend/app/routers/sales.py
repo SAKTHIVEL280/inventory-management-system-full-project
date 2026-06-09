@@ -1445,8 +1445,11 @@ async def convert_so_to_invoice(
 @router.get("/api/v1/invoices", response_model=SalesInvoicesListResponse)
 async def list_invoices(
     status: str | None = Query(default=None),
+    search: str | None = Query(default=None),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
     page: int = Query(default=1, ge=1),
-    page_size: int = Query(default=20, ge=1, le=500),
+    page_size: int = Query(default=50, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("sales_invoices_read")),
 ):
@@ -1470,6 +1473,25 @@ async def list_invoices(
                 query = query.filter(SalesInvoice.total_amount > 0, SalesInvoice.amount_paid >= SalesInvoice.total_amount)
         else:
             query = query.filter(SalesInvoice.status == normalized_status)
+
+    # MCN-BUG-001: server-side date-range filter (keeps pagination counts correct)
+    if date_from:
+        query = query.filter(SalesInvoice.invoice_date >= date_from)
+    if date_to:
+        query = query.filter(SalesInvoice.invoice_date <= date_to)
+
+    # MCN-BUG-001: server-side search across invoice number, customer name and status
+    search_term = (search or "").strip()
+    if search_term:
+        like = f"%{search_term}%"
+        query = query.outerjoin(Customer, SalesInvoice.customer_id == Customer.id).filter(
+            or_(
+                SalesInvoice.invoice_number.ilike(like),
+                SalesInvoice.status.ilike(like),
+                Customer.company_name.ilike(like),
+            )
+        )
+
     total = query.count()
     rows = query.order_by(SalesInvoice.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
 

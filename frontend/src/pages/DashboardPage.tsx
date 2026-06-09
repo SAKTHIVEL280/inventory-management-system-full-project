@@ -11,9 +11,26 @@ import {
   IndianRupee,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { getDashboardStats, type DashboardStats as APIDashboardStats } from '../api/reports';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { getDashboardStats, type DashboardStats as APIDashboardStats, type RevenueGeneration } from '../api/reports';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { FileQuestion } from 'lucide-react';
+
+const formatAmount = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+const formatAmountShort = (paise: number) => {
+  const val = paise / 100;
+  if (val >= 100000) return `₹${(val / 100000).toFixed(1)}L`;
+  if (val >= 1000) return `₹${(val / 1000).toFixed(1)}K`;
+  return `₹${val.toFixed(0)}`;
+};
+
+// MCN-BUG-002: distinct colour per Sales Manager / Stockist
+const REVENUE_COLORS = ['#1E3A5F', '#2563eb', '#16a34a', '#f59e0b', '#db2777', '#7c3aed', '#0891b2', '#dc2626', '#65a30d', '#ea580c', '#0d9488', '#9333ea'];
+
+const REVENUE_VIEW_LABELS: Record<'daily' | 'weekly' | 'monthly', string> = {
+  daily: 'Today',
+  weekly: 'This Week',
+  monthly: 'This Month',
+};
 
 const NoDataPlaceholder = ({ message }: { message: string }) => (
   <div className="flex h-full min-h-[150px] w-full flex-col items-center justify-center rounded-xl bg-neutral-50/50 border border-dashed border-neutral-200 p-6 text-center">
@@ -23,6 +40,81 @@ const NoDataPlaceholder = ({ message }: { message: string }) => (
     <p className="max-w-[200px] text-xs font-semibold leading-relaxed text-neutral-500">{message}</p>
   </div>
 );
+
+// MCN-BUG-002: reusable revenue panel with an independent Day/Week/Month toggle.
+const RevenuePanel = ({
+  title,
+  subtitle,
+  data,
+  loading,
+  emptyMessage,
+}: {
+  title: string;
+  subtitle: string;
+  data?: RevenueGeneration;
+  loading: boolean;
+  emptyMessage: string;
+}) => {
+  const [view, setView] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
+  const rows = (data?.[view] || []).map((row, idx) => {
+    const fullName = row.name || row.id.slice(0, 8);
+    return {
+      ...row,
+      full_name: fullName,
+      label: fullName.length > 14 ? `${fullName.slice(0, 14)}…` : fullName,
+      color: REVENUE_COLORS[idx % REVENUE_COLORS.length],
+    };
+  });
+
+  return (
+    <div className="hms-card overflow-hidden p-6">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-bold text-neutral-700">{title}</h3>
+          <p className="mt-0.5 text-xs text-neutral-500">{subtitle}</p>
+        </div>
+        <div className="flex rounded-lg border border-neutral-200 bg-neutral-50 p-1">
+          {(['daily', 'weekly', 'monthly'] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => setView(option)}
+              className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                view === option ? 'bg-white text-primary shadow-sm' : 'text-neutral-600 hover:text-neutral-900'
+              }`}
+            >
+              {option === 'daily' ? 'Day' : option === 'weekly' ? 'Week' : 'Month'}
+            </button>
+          ))}
+        </div>
+      </div>
+      {!loading && rows.length > 0 ? (
+        <ResponsiveContainer width="100%" height={260}>
+          <BarChart data={rows} margin={{ top: 6, right: 8, left: 6, bottom: 20 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+            <XAxis dataKey="label" tick={{ fontSize: 11 }} interval={0} height={48} angle={-20} textAnchor="end" tickMargin={8} />
+            <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => formatAmountShort(Number(v ?? 0))} />
+            <Tooltip
+              formatter={(value) => [formatAmount(Number(value ?? 0)), 'Revenue']}
+              labelFormatter={(label, payload) => {
+                const name = payload && payload.length ? (payload[0].payload.full_name as string) : label;
+                return `${name} — ${REVENUE_VIEW_LABELS[view]}`;
+              }}
+              labelStyle={{ fontWeight: 600 }}
+            />
+            <Bar dataKey="revenue" name="Revenue" radius={[4, 4, 0, 0]}>
+              {rows.map((row) => (
+                <Cell key={row.id} fill={row.color} />
+              ))}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      ) : (
+        <NoDataPlaceholder message={emptyMessage} />
+      )}
+    </div>
+  );
+};
 
 const DashboardPage = () => {
   const [stats, setStats] = useState<APIDashboardStats | null>(null);
@@ -46,16 +138,6 @@ const DashboardPage = () => {
     fetchStats();
   }, []);
 
-  const formatAmount = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
-  const formatAmountShort = (paise: number) => {
-    const val = paise / 100;
-    if (val >= 100000) return `₹${(val / 100000).toFixed(1)}L`;
-    if (val >= 1000) return `₹${(val / 1000).toFixed(1)}K`;
-    return `₹${val.toFixed(0)}`;
-  };
-
-
-
   const salesTrend = stats?.sales_trend || [];
   const cashInFlowRows = stats?.cash_in_flow?.[cashInFlowView] || [];
   const cashInFlowSummary = stats?.cash_in_flow_summary?.[cashInFlowView] || {
@@ -70,32 +152,7 @@ const DashboardPage = () => {
       : (item.customer_name || item.customer_id.slice(0, 8)),
     customer_full_name: item.customer_name || item.customer_id.slice(0, 8),
   }));
-  const recentInvoices = stats?.recent_invoices || [];
-
-  const toTitleCase = (value: string) =>
-    value
-      .replace(/_/g, ' ')
-      .toLowerCase()
-      .replace(/\b\w/g, (ch) => ch.toUpperCase());
-
-  const dashboardInvoiceStatusLabel = (status: string) => {
-    const token = (status || '').trim().toLowerCase();
-    if (token === 'issued') return 'Issued';
-    if (token === 'partial_paid') return 'Partially Paid';
-    if (token === 'paid') return 'Fully Paid';
-    if (token === 'draft') return 'Draft';
-    if (token === 'cancelled') return 'Cancelled';
-    return toTitleCase(token || '-');
-  };
-
-  const dashboardInvoiceStatusClass = (status: string) => {
-    const token = (status || '').trim().toLowerCase();
-    if (token === 'paid') return 'bg-green-100 text-green-700';
-    if (token === 'issued') return 'bg-blue-100 text-blue-700';
-    if (token === 'partial_paid') return 'bg-amber-100 text-amber-700';
-    if (token === 'cancelled') return 'bg-red-100 text-red-700';
-    return 'bg-gray-100 text-gray-700';
-  };
+  const revenueGeneration = stats?.revenue_generation;
 
   return (
     <AppLayout title="Dashboard">
@@ -283,43 +340,22 @@ const DashboardPage = () => {
           </div>
         </section>
 
-        {/* Recent Invoices */}
-        <section className="hms-card overflow-hidden">
-          <div className="border-b border-neutral-200 bg-gradient-to-r from-neutral-50 to-white px-6 py-4">
-            <h3 className="text-sm font-bold text-neutral-700">Recent Invoices</h3>
-          </div>
-          {!loading && recentInvoices.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead><tr className="bg-neutral-50">
-                  <th className="px-4 py-2 text-left font-semibold text-neutral-600">Invoice</th>
-                  <th className="px-4 py-2 text-left font-semibold text-neutral-600">Customer</th>
-                  <th className="px-4 py-2 text-right font-semibold text-neutral-600">Amount</th>
-                  <th className="px-4 py-2 text-center font-semibold text-neutral-600">Status</th>
-                  <th className="px-4 py-2 text-left font-semibold text-neutral-600">Date</th>
-                </tr></thead>
-                <tbody>
-                  {recentInvoices.map((inv, idx) => (
-                    <tr key={idx} className="border-t border-neutral-100">
-                      <td className="px-4 py-2 font-medium">{inv.invoice_number}</td>
-                      <td className="px-4 py-2">{inv.customer_name}</td>
-                      <td className="px-4 py-2 text-right">{formatAmount(inv.amount)}</td>
-                      <td className="px-4 py-2 text-center">
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${dashboardInvoiceStatusClass(inv.status)}`}>
-                          {dashboardInvoiceStatusLabel(inv.status)}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2 text-neutral-500">{inv.date}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="p-8">
-              <NoDataPlaceholder message="No recent invoices found. Once you issue your first tax invoice, it will appear here." />
-            </div>
-          )}
+        {/* MCN-BUG-002: Revenue Generation — Sales Manager (left) & Stockist (right) */}
+        <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <RevenuePanel
+            title="Sales Manager → Revenue Generation"
+            subtitle="Revenue from issued invoices, by the user who raised them"
+            data={revenueGeneration?.sales_manager}
+            loading={loading}
+            emptyMessage="No sales-manager revenue for the selected period yet."
+          />
+          <RevenuePanel
+            title="Stockist → Revenue Generation"
+            subtitle="Revenue from issued invoices, by stockist (customer)"
+            data={revenueGeneration?.stockist}
+            loading={loading}
+            emptyMessage="No stockist revenue for the selected period yet."
+          />
         </section>
 
       </div>

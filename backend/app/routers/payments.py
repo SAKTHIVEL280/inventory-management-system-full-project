@@ -443,6 +443,12 @@ async def list_payments(
             "purchase_order_id": str(po_id_from_notes) if po_id_from_notes else None,
             "po_number": po_number_from_notes,
             "grn_value": None,
+            # MCN-BUG-003: flag legacy customer receipts that have no invoice allocation
+            # so Finance can reconcile them manually.
+            "is_unallocated": (
+                p.party_type == "customer"
+                and not any((a.invoice_id is not None) and (not a.is_deleted) for a in (p.allocations or []))
+            ),
             "allocations": []
         }
         for a in p.allocations:
@@ -511,6 +517,18 @@ async def create_payment(
             raise HTTPException(status_code=400, detail="No Open Invoice")
         for invoice in open_invoices:
             _enforce_owner(invoice, current_user)
+
+        # MCN-BUG-003: invoice allocation is mandatory for customer payments — block
+        # "floating" receipts that distort accounts receivable balances.
+        invoice_allocations = [
+            a for a in payload.allocations
+            if a.invoice_id and _to_minor_units(a.allocated_amount) > 0
+        ]
+        if not invoice_allocations:
+            raise HTTPException(
+                status_code=400,
+                detail="Please allocate the payment against at least one invoice before saving.",
+            )
 
         open_invoice_ids = {invoice.id for invoice in open_invoices}
         for allocation in payload.allocations:

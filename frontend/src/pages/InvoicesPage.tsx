@@ -163,8 +163,13 @@ const InvoicesPage = () => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  // MCN-BUG-001: server-side pagination state
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number | 'all'>(50);
+  const [total, setTotal] = useState(0);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [products, setProducts] = useState<ProductOption[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -251,9 +256,42 @@ const InvoicesPage = () => {
     return addDaysToDateInputValue(selectedInvoiceDate, paymentTermsDays);
   }, [customers]);
 
-  const fetchInvoices = async () => {
-    try { setLoading(true); const res = await salesApi.listInvoices(statusFilter || undefined); setInvoices(res.data.items || []); } catch { setError('Failed to load'); } finally { setLoading(false); }
-  };
+  // MCN-BUG-001: server-side paged/searched/filtered fetch. "All" loops through
+  // every page so no record is truncated while still using the paginated API.
+  const fetchInvoices = useCallback(async () => {
+    const filters = {
+      search: debouncedSearch || undefined,
+      date_from: dateFrom || undefined,
+      date_to: dateTo || undefined,
+    };
+    try {
+      setLoading(true);
+      if (pageSize === 'all') {
+        const collected: SalesInvoice[] = [];
+        const chunk = 500;
+        let current = 1;
+        let fetchedTotal = 0;
+        for (;;) {
+          const res = await salesApi.listInvoices(statusFilter || undefined, current, chunk, filters);
+          const batch = res.data.items || [];
+          collected.push(...batch);
+          fetchedTotal = res.data.total ?? collected.length;
+          if (batch.length === 0 || collected.length >= fetchedTotal) break;
+          current += 1;
+        }
+        setInvoices(collected);
+        setTotal(fetchedTotal);
+      } else {
+        const res = await salesApi.listInvoices(statusFilter || undefined, page, pageSize, filters);
+        setInvoices(res.data.items || []);
+        setTotal(res.data.total ?? (res.data.items || []).length);
+      }
+    } catch {
+      setError('Failed to load');
+    } finally {
+      setLoading(false);
+    }
+  }, [statusFilter, page, pageSize, debouncedSearch, dateFrom, dateTo]);
   const fetchMasterData = async () => {
     try {
       const [c, p, comp, uom] = await Promise.all([
@@ -271,9 +309,17 @@ const InvoicesPage = () => {
     }
   };
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchInvoices should run when statusFilter changes
-  useEffect(() => { fetchInvoices(); }, [statusFilter]);
+  useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
   useEffect(() => { fetchMasterData(); }, []);
+
+  // MCN-BUG-001: debounce search box to avoid a request per keystroke
+  useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300);
+    return () => clearTimeout(handle);
+  }, [searchQuery]);
+
+  // MCN-BUG-001: any filter/page-size change returns to the first page
+  useEffect(() => { setPage(1); }, [statusFilter, debouncedSearch, dateFrom, dateTo, pageSize]);
 
   const resetForm = () => { setCustomerId(''); setInvoiceType('within_state'); setImportExportCode(''); setInvoiceDate(todayLocalDateInputValue()); setDueDate(''); setIsDueDateManuallyEdited(false); setNotes(''); setItems([]); setBatchOptionsByRow({}); setEditingId(null); setError(''); };
   const addItem = () => {
@@ -691,20 +737,10 @@ const InvoicesPage = () => {
     return products.find((p) => p.id === productId)?.name || productId;
   };
 
-  const filteredInvoices = invoices.filter((inv) => {
-    const q = searchQuery.trim().toLowerCase();
-    const customerName = customerNameById(inv.customer_id).toLowerCase();
-    const matchesSearch =
-      !q ||
-      inv.invoice_number.toLowerCase().includes(q) ||
-      customerName.includes(q) ||
-      inv.status.toLowerCase().includes(q) ||
-      inv.invoice_date.toLowerCase().includes(q) ||
-      (inv.due_date || '').toLowerCase().includes(q);
-    const matchesFrom = !dateFrom || inv.invoice_date >= dateFrom;
-    const matchesTo = !dateTo || inv.invoice_date <= dateTo;
-    return matchesSearch && matchesFrom && matchesTo;
-  });
+  // MCN-BUG-001: filtering/searching now happens server-side; derive paging summary
+  const totalPages = pageSize === 'all' ? 1 : Math.max(1, Math.ceil(total / pageSize));
+  const rangeStart = total === 0 ? 0 : pageSize === 'all' ? 1 : (page - 1) * pageSize + 1;
+  const rangeEnd = pageSize === 'all' ? total : Math.min(page * pageSize, total);
 
   return (
     <AppLayout title="Sales Invoices">
@@ -763,8 +799,8 @@ const InvoicesPage = () => {
               </tr></thead>
               <tbody>
                 {loading ? <tr><td colSpan={9} className="px-4 py-8 text-center text-neutral-500">Loading...</td></tr>
-                : filteredInvoices.length === 0 ? <tr><td colSpan={9} className="px-4 py-8 text-center text-neutral-500">No invoices</td></tr>
-                : filteredInvoices.map(inv => (
+                : invoices.length === 0 ? <tr><td colSpan={9} className="px-4 py-8 text-center text-neutral-500">No invoices</td></tr>
+                : invoices.map(inv => (
                   <tr key={inv.id} className="border-b border-neutral-100 hover:bg-neutral-50">
                     <td className="px-4 py-3 font-medium">{inv.invoice_number}</td>
                     <td className="px-4 py-3">{customerNameById(inv.customer_id)}</td>
@@ -793,7 +829,46 @@ const InvoicesPage = () => {
               </tbody>
             </table>
           </div>
-          {!loading && <p className="border-t border-neutral-200 px-4 py-3 text-xs text-neutral-500">Showing {filteredInvoices.length} of {invoices.length}</p>}
+          {/* MCN-BUG-001: pagination controls — rows-per-page selector + Prev/Next + page indicator */}
+          {!loading && (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-200 px-4 py-3 text-xs text-neutral-600">
+              <div className="flex items-center gap-2">
+                <span className="font-medium">Rows per page</span>
+                <select
+                  className="rounded border border-neutral-200 bg-white px-2 py-1 text-xs"
+                  value={pageSize === 'all' ? 'all' : String(pageSize)}
+                  onChange={(e) => setPageSize(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                >
+                  <option value="20">20</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                  <option value="all">All</option>
+                </select>
+                <span className="text-neutral-500">
+                  {total === 0 ? 'No invoices' : `Showing ${rangeStart}-${rangeEnd} of ${total}`}
+                </span>
+              </div>
+              {pageSize !== 'all' && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page <= 1}
+                    className="rounded border border-neutral-200 bg-white px-3 py-1 font-semibold text-neutral-700 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-neutral-50"
+                  >
+                    Previous
+                  </button>
+                  <span className="font-medium">Page {page} of {totalPages}</span>
+                  <button
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page >= totalPages}
+                    className="rounded border border-neutral-200 bg-white px-3 py-1 font-semibold text-neutral-700 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-neutral-50"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {showForm && createPortal(

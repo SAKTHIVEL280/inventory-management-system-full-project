@@ -196,6 +196,13 @@ def main() -> int:
         "ALTER TABLE grn_items ADD COLUMN IF NOT EXISTS expiry_date DATE",
         "ALTER TABLE grn_items ADD COLUMN IF NOT EXISTS free_quantity NUMERIC(12, 4) NOT NULL DEFAULT 0",
 
+        # MCN-BUG-004: Reverse GRN support
+        "ALTER TABLE goods_receipt_notes DROP CONSTRAINT IF EXISTS goods_receipt_notes_status_check",
+        "ALTER TABLE goods_receipt_notes ADD CONSTRAINT goods_receipt_notes_status_check CHECK (status IN ('draft','confirmed','cancelled','reversed'))",
+        "ALTER TABLE goods_receipt_notes ADD COLUMN IF NOT EXISTS reversal_reason TEXT",
+        "ALTER TABLE goods_receipt_notes ADD COLUMN IF NOT EXISTS reversed_at TIMESTAMPTZ",
+        "ALTER TABLE goods_receipt_notes ADD COLUMN IF NOT EXISTS reversed_by UUID REFERENCES users(id)",
+
         # Sales invoice item extended fields
         "ALTER TABLE sales_invoice_items ADD COLUMN IF NOT EXISTS order_unit VARCHAR(50)",
         "ALTER TABLE sales_invoice_items ADD COLUMN IF NOT EXISTS batch_no VARCHAR(50)",

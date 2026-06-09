@@ -129,6 +129,12 @@ export interface GoodsReceiptNote {
   total_gst: number;
   total_amount: number;
   notes?: string;
+  reversal_reason?: string;
+  reversed_at?: string;
+  reversed_by?: string;
+  reversed_by_name?: string;
+  created_by?: string;
+  created_by_name?: string;
   created_at: string;
 }
 
@@ -247,6 +253,11 @@ class PurchaseApiClient {
 
   async cancelGRN(id: string) {
     return apiClient.post<GoodsReceiptNote>(`/api/v2/grn/${id}/cancel`, {});
+  }
+
+  // MCN-BUG-004: reverse a confirmed GRN with a mandatory reason
+  async reverseGRN(id: string, reason: string) {
+    return apiClient.post<GoodsReceiptNote>(`/api/v2/grn/${id}/reverse`, { reason });
   }
 
   async archiveGRN(id: string) {

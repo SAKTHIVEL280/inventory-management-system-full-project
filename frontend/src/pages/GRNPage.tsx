@@ -89,6 +89,11 @@ const GRNPage = () => {
   const [detailItems, setDetailItems] = useState<GRNItemResponse[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
+  // MCN-BUG-004: Reverse GRN modal state
+  const [reverseTarget, setReverseTarget] = useState<GoodsReceiptNote | null>(null);
+  const [reverseReason, setReverseReason] = useState('');
+  const [reversing, setReversing] = useState(false);
+
   const [supplierId, setSupplierId] = useState('');
   const [paymentTermsDays, setPaymentTermsDays] = useState(30);
   const [paymentDueDate, setPaymentDueDate] = useState('');
@@ -530,6 +535,40 @@ const GRNPage = () => {
     } catch { toast.error('Failed to cancel GRN'); }
   };
 
+  // MCN-BUG-004: open reverse modal (reason mandatory)
+  const openReverseModal = (grn: GoodsReceiptNote) => {
+    setReverseTarget(grn);
+    setReverseReason('');
+  };
+
+  const handleReverseConfirm = async () => {
+    if (!reverseTarget) return;
+    const reason = reverseReason.trim();
+    if (!reason) {
+      toast.error('Please enter a reversal reason');
+      return;
+    }
+    setReversing(true);
+    try {
+      await purchaseApi.reverseGRN(reverseTarget.id, reason);
+      toast.success('GRN reversed — stock and ledger entries rolled back');
+      const reversedId = reverseTarget.id;
+      setReverseTarget(null);
+      setReverseReason('');
+      fetchGRNs();
+      fetchPOs();
+      if (detailGRN?.id === reversedId) {
+        const res = await purchaseApi.getGRN(reversedId);
+        setDetailGRN(res.data.grn);
+      }
+    } catch (err: unknown) {
+      const m = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(typeof m === 'string' ? m : 'Failed to reverse GRN');
+    } finally {
+      setReversing(false);
+    }
+  };
+
   const handleArchiveToggle = async (id: string, archived: boolean) => {
     try {
       if (archived) {
@@ -550,6 +589,7 @@ const GRNPage = () => {
   const statusChipClass = (grn: GoodsReceiptNote) => {
     const status = (grn.status || '').toLowerCase();
     if (status === 'cancelled') return 'bg-red-100 text-red-700';
+    if (status === 'reversed') return 'bg-purple-100 text-purple-700';
     if (grn.is_partial_qty && status === 'confirmed') return 'bg-amber-100 text-amber-800';
     if (grn.is_partial_qty && status === 'draft') return 'bg-orange-100 text-orange-800';
     if (status === 'confirmed') return 'bg-green-100 text-green-700';
@@ -563,6 +603,7 @@ const GRNPage = () => {
     if (status === 'draft') return grn.is_partial_qty ? 'Partial Receipt (Draft)' : 'Draft';
     if (status === 'confirmed') return grn.is_partial_qty ? 'Partial Receipt (Confirmed)' : 'Confirmed';
     if (status === 'cancelled') return 'Cancelled';
+    if (status === 'reversed') return 'Reversed';
     return grn.status;
   };
 
@@ -696,7 +737,7 @@ const GRNPage = () => {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-3">
             <select className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-              <option value="">All</option><option value="draft">Draft</option><option value="confirmed">Confirmed</option><option value="cancelled">Cancelled</option>
+              <option value="">All</option><option value="draft">Draft</option><option value="confirmed">Confirmed</option><option value="reversed">Reversed</option><option value="cancelled">Cancelled</option>
             </select>
             <select className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm" value={archiveView} onChange={e => setArchiveView(e.target.value as 'active' | 'archived')}>
               <option value="active">Active Only</option>
@@ -779,6 +820,10 @@ const GRNPage = () => {
                             <button onClick={(e) => { e.stopPropagation(); handleCancel(g.id); }} className="rounded px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50">Cancel</button>
                           </>
                         )}
+                        {/* MCN-BUG-004: Reverse confirmed GRN (authorised users only) */}
+                        {archiveView === 'active' && isAdmin && g.status === 'confirmed' && (
+                          <button onClick={(e) => { e.stopPropagation(); openReverseModal(g); }} className="rounded px-2 py-1 text-xs font-medium text-purple-600 hover:bg-purple-50">Reverse</button>
+                        )}
                         <button onClick={(e) => { e.stopPropagation(); handleOpenDetail(g); }} className="rounded px-2 py-1 text-xs font-medium text-primary hover:bg-primary/10">View</button>
                         <button onClick={(e) => { e.stopPropagation(); void handleArchiveToggle(g.id, archiveView === 'archived'); }} className={`rounded px-2 py-1 text-xs font-medium ${archiveView === 'archived' ? 'text-emerald-700 hover:bg-emerald-50' : 'text-red-600 hover:bg-red-50'}`}>{archiveView === 'archived' ? 'Restore' : 'Archive'}</button>
                       </div>
@@ -811,6 +856,34 @@ const GRNPage = () => {
                 <div><p className="text-xs text-neutral-600">Supplier Invoice</p><p className="font-medium">{detailGRN.supplier_invoice_number || '—'}</p></div>
                 <div><p className="text-xs text-neutral-600">Under Delivery Tol. (Qty)</p><p className="font-medium">{Number(detailGRN.under_delivery_tolerance || 0).toFixed(2)}</p></div>
                 <div><p className="text-xs text-neutral-600">Over Delivery Tol. (Qty)</p><p className="font-medium">{Number(detailGRN.over_delivery_tolerance || 0).toFixed(2)}</p></div>
+              </div>
+
+              {/* MCN-BUG-004: read-only audit trail — Created Date & Created By */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-neutral-50 p-4 rounded-lg">
+                <div>
+                  <p className="text-xs text-neutral-600">Created Date</p>
+                  <p className="font-medium">{detailGRN.created_at ? new Date(detailGRN.created_at).toLocaleString('en-IN') : '-'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-neutral-600">Created By</p>
+                  <p className="font-medium">{detailGRN.created_by_name || '-'}</p>
+                </div>
+                {detailGRN.status === 'reversed' && (
+                  <>
+                    <div>
+                      <p className="text-xs text-neutral-600">Reversed On</p>
+                      <p className="font-medium">{detailGRN.reversed_at ? new Date(detailGRN.reversed_at).toLocaleString('en-IN') : '-'}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-neutral-600">Reversed By</p>
+                      <p className="font-medium">{detailGRN.reversed_by_name || '-'}</p>
+                    </div>
+                    <div className="col-span-2 md:col-span-4">
+                      <p className="text-xs text-neutral-600">Reversal Reason</p>
+                      <p className="font-medium text-purple-700">{detailGRN.reversal_reason || '-'}</p>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Tax Breakdown */}
@@ -886,8 +959,19 @@ const GRNPage = () => {
                   </>
                 )}
                 {detailGRN.status === 'confirmed' && (
-                  <span className="inline-flex items-center gap-1 text-sm text-green-600 font-medium">
-                    <span className="material-icons text-sm">check_circle</span> Stock has been added to inventory
+                  <>
+                    <span className="inline-flex items-center gap-1 text-sm text-green-600 font-medium">
+                      <span className="material-icons text-sm">check_circle</span> Stock has been added to inventory
+                    </span>
+                    {/* MCN-BUG-004: Reverse confirmed GRN */}
+                    {isAdmin && (
+                      <button onClick={() => openReverseModal(detailGRN)} className="inline-flex items-center gap-1 bg-purple-50 text-purple-700 border border-purple-200 px-4 py-2 rounded-lg text-sm font-semibold hover:bg-purple-100"><span className="material-icons text-sm" aria-hidden="true">undo</span>Reverse GRN</button>
+                    )}
+                  </>
+                )}
+                {detailGRN.status === 'reversed' && (
+                  <span className="inline-flex items-center gap-1 text-sm text-purple-700 font-medium">
+                    <span className="material-icons text-sm">undo</span> This GRN was reversed — stock and ledger entries were rolled back
                   </span>
                 )}
                 <div className="flex-1" />
@@ -1176,6 +1260,37 @@ const GRNPage = () => {
               <div className="flex justify-end gap-3">
                 <button onClick={() => { setShowForm(false); resetForm(); }} className="rounded-lg border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-600">Cancel</button>
                 <button onClick={handleSubmit} disabled={submitting || suppliers.length === 0} className="rounded-lg bg-primary px-6 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/20 disabled:opacity-50">{submitting ? 'Saving...' : 'Create GRN'}</button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+        {/* MCN-BUG-004: Reverse GRN reason-capture modal */}
+        {reverseTarget && createPortal(
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm" onClick={() => { if (!reversing) { setReverseTarget(null); setReverseReason(''); } }}>
+            <div className="hms-card w-full max-w-lg space-y-4 p-6" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-start justify-between gap-3">
+                <h3 className="text-base font-bold text-purple-700">Reverse GRN: {reverseTarget.grn_number}</h3>
+                <button onClick={() => { setReverseTarget(null); setReverseReason(''); }} disabled={reversing} className="text-xl leading-none text-neutral-400 hover:text-neutral-700 disabled:opacity-40" aria-label="Close reverse dialog">&times;</button>
+              </div>
+              <p className="text-sm text-neutral-600">
+                Reversing will roll back the stock added by this GRN and remove it from purchase ledger/payables. This action is logged. A reason is mandatory.
+              </p>
+              <div>
+                <label className="mb-1 block text-sm font-semibold text-neutral-700">Reversal Reason <span className="text-red-500">*</span></label>
+                <textarea
+                  className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm"
+                  rows={3}
+                  value={reverseReason}
+                  onChange={(e) => setReverseReason(e.target.value)}
+                  placeholder="e.g. Goods received in error / wrong supplier invoice"
+                  autoFocus
+                />
+              </div>
+              <div className="flex justify-end gap-3">
+                <button onClick={() => { setReverseTarget(null); setReverseReason(''); }} disabled={reversing} className="rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm font-semibold text-neutral-600 disabled:opacity-50">Cancel</button>
+                <button onClick={handleReverseConfirm} disabled={reversing || !reverseReason.trim()} className="rounded-lg bg-purple-600 px-5 py-2 text-sm font-semibold text-white hover:bg-purple-700 disabled:opacity-50">{reversing ? 'Reversing...' : 'Confirm Reverse'}</button>
               </div>
             </div>
           </div>,

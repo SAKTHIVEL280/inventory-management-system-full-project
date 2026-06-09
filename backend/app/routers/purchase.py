@@ -31,10 +31,12 @@ from app.models.purchase import (
     PurchaseReturn,
     PurchaseReturnItem,
 )
+from app.models.payment import Payment, PaymentAllocation
 from app.schemas.purchase import (
     PurchaseOrderCreateRequest,
     PurchaseOrderStatusRequest,
     GRNCreateRequest,
+    GRNReverseRequest,
     PurchaseReturnCreateRequest,
 )
 from app.services.order_number_service import (
@@ -103,6 +105,8 @@ def _derive_grn_status_display(raw_status: str | None, is_partial_qty: bool) -> 
         return "Partial Receipt (Confirmed)" if is_partial_qty else "Confirmed"
     if status == "cancelled":
         return "Cancelled"
+    if status == "reversed":
+        return "Reversed"
     return (raw_status or "-").strip() or "-"
 
 
@@ -772,6 +776,16 @@ async def get_grn(
     grn_dict["is_partial_qty"] = is_partial_qty
     grn_dict["status_display"] = _derive_grn_status_display(grn.status, is_partial_qty)
 
+    # MCN-BUG-004: surface creator / reverser usernames (read-only) for the GRN view
+    def _user_name(user_id) -> str | None:
+        if not user_id:
+            return None
+        user = db.query(User).filter(User.id == user_id).first()
+        return user.full_name if user else None
+
+    grn_dict["created_by_name"] = _user_name(grn.created_by)
+    grn_dict["reversed_by_name"] = _user_name(grn.reversed_by)
+
     return {"grn": grn_dict, "items": items}
 
 
@@ -1058,6 +1072,161 @@ async def confirm_grn(
         ip_address=request.client.host if request.client else None,
     )
     
+    return grn
+
+
+@router.post("/api/v1/grn/{grn_id}/reverse")
+async def reverse_grn(
+    request: Request,
+    grn_id: UUID,
+    payload: GRNReverseRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """MCN-BUG-004: Reverse a confirmed GRN — undo stock & ledger impact with reason + audit."""
+    grn = db.query(GoodsReceiptNote).filter(GoodsReceiptNote.id == grn_id, GoodsReceiptNote.is_deleted == False).first()
+    if not grn:
+        raise HTTPException(status_code=404, detail="GRN not found")
+    _enforce_owner(grn, current_user)
+    if grn.status != "confirmed":
+        raise HTTPException(status_code=400, detail="Only confirmed GRNs can be reversed")
+
+    reason = (payload.reason or "").strip()
+    if not reason:
+        raise HTTPException(status_code=400, detail="A reversal reason is required")
+
+    items = db.query(GRNItem).filter(GRNItem.grn_id == grn_id, GRNItem.is_deleted == False).all()
+
+    # Guard 1: block reversal when payments are allocated against this GRN (financial integrity).
+    has_payment = (
+        db.query(PaymentAllocation)
+        .join(Payment, PaymentAllocation.payment_id == Payment.id)
+        .filter(
+            PaymentAllocation.purchase_grn_id == grn_id,
+            PaymentAllocation.is_deleted == False,
+            Payment.is_deleted == False,
+            Payment.status != "cancelled",
+        )
+        .first()
+    )
+    if has_payment:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot reverse: a payment is allocated to this GRN. Cancel/bounce the payment first.",
+        )
+
+    # Guard 2: block reversal when a confirmed purchase return exists against this GRN.
+    has_return = (
+        db.query(PurchaseReturn)
+        .filter(
+            PurchaseReturn.grn_id == grn_id,
+            PurchaseReturn.is_deleted == False,
+            PurchaseReturn.status == "confirmed",
+        )
+        .first()
+    )
+    if has_return:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot reverse: a confirmed purchase return exists for this GRN.",
+        )
+
+    # Guard 3: block reversal when the received stock has already been consumed (would go negative).
+    required_by_product: dict[UUID, float] = {}
+    for item in items:
+        qty = float(item.quantity or 0) + float(item.free_quantity or 0)
+        required_by_product[item.product_id] = required_by_product.get(item.product_id, 0.0) + qty
+    for product_id, qty_needed in required_by_product.items():
+        if get_current_stock(db, product_id) + 1e-6 < qty_needed:
+            product = db.query(Product).filter(Product.id == product_id).first()
+            label = product.name if product else str(product_id)
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot reverse: insufficient stock to undo receipt for '{label}' (already issued).",
+            )
+
+    # Reverse stock: negate the received and free quantities posted at confirm time.
+    for item in items:
+        add_stock_entry(
+            db=db,
+            product_id=item.product_id,
+            transaction_type="adjustment",
+            reference_type="grn_reversal",
+            reference_id=grn.id,
+            reference_number=f"{grn.grn_number}-REV",
+            quantity=-float(item.quantity),
+            rate=item.unit_price,
+            transaction_date=date.today(),
+            created_by=current_user.id,
+            notes=f"GRN reversal: {reason}",
+        )
+        if item.free_quantity and float(item.free_quantity) > 0:
+            add_stock_entry(
+                db=db,
+                product_id=item.product_id,
+                transaction_type="adjustment",
+                reference_type="grn_reversal",
+                reference_id=grn.id,
+                reference_number=f"{grn.grn_number}-FREE-REV",
+                quantity=-float(item.free_quantity),
+                rate=0,
+                transaction_date=date.today(),
+                created_by=current_user.id,
+                notes=f"GRN reversal (free qty): {reason}",
+            )
+        # Roll back PO item received_quantity.
+        if item.purchase_order_item_id:
+            po_item = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.id == item.purchase_order_item_id).first()
+            if po_item:
+                po_item.received_quantity = max(0.0, float(po_item.received_quantity or 0) - float(item.quantity))
+
+    # Recompute PO status from remaining received quantities.
+    if grn.purchase_order_id:
+        po = db.query(PurchaseOrder).filter(PurchaseOrder.id == grn.purchase_order_id).first()
+        if po:
+            _enforce_owner(po, current_user)
+            if po.status not in {"cancelled"}:
+                po_items = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.purchase_order_id == po.id).all()
+                if po_items:
+                    has_any_receipt = any(float(i.received_quantity or 0) > 0 for i in po_items)
+                    if not has_any_receipt:
+                        po.status = "sent"
+                    elif all(float(i.received_quantity or 0) >= float(i.quantity or 0) for i in po_items):
+                        po.status = "received"
+                    else:
+                        po.status = "partial"
+
+    grn.status = "reversed"
+    grn.reversal_reason = reason
+    grn.reversed_at = datetime.utcnow()
+    grn.reversed_by = current_user.id
+
+    refresh_materialized_view(db)
+    db.commit()
+    db.refresh(grn)
+
+    log_audit_event(
+        db,
+        action=f"POST:/api/v1/grn/{grn.id}/reverse",
+        resource_type="grn",
+        status="success",
+        user_id=current_user.id,
+        resource_id=grn.id,
+        details={
+            "grn_number": grn.grn_number,
+            "action": "reverse",
+            "previous_status": "confirmed",
+            "new_status": "reversed",
+            "reason": reason,
+            "supplier_id": str(grn.supplier_id),
+            "total_amount": grn.total_amount,
+            "purchase_order_id": str(grn.purchase_order_id) if grn.purchase_order_id else None,
+            "method": "POST",
+            "path": f"/api/v1/grn/{grn.id}/reverse",
+        },
+        ip_address=request.client.host if request.client else None,
+    )
+
     return grn
 
 

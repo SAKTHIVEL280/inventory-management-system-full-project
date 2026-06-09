@@ -254,10 +254,21 @@ class SalesApiClient {
 
   // ========== Sales Invoices ==========
 
-  async listInvoices(status?: string, page = 1, page_size = 20) {
+  async listInvoices(
+    status?: string,
+    page = 1,
+    page_size = 50,
+    filters?: { search?: string; date_from?: string; date_to?: string },
+  ) {
     const params: Record<string, string | number> = { page, page_size };
     if (status) params.status = status;
-    return apiClient.get<{ items: SalesInvoice[]; total: number }>('/api/v2/invoices', { params });
+    if (filters?.search) params.search = filters.search;
+    if (filters?.date_from) params.date_from = filters.date_from;
+    if (filters?.date_to) params.date_to = filters.date_to;
+    return apiClient.get<{ items: SalesInvoice[]; total: number; page: number; page_size: number; has_more: boolean }>(
+      '/api/v2/invoices',
+      { params },
+    );
   }
 
   async getInvoice(id: string) {

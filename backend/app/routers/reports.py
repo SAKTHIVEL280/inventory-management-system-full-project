@@ -943,28 +943,73 @@ async def dashboard_report(
         "monthly": monthly_summary,
     }
 
-    # Recent invoices with customer names
-    recent_invoices_rows = db.query(
-        SalesInvoice, 
-        Customer.company_name
-    ).join(
-        Customer, SalesInvoice.customer_id == Customer.id
-    ).filter(
-        SalesInvoice.is_deleted == False
-    ).order_by(
-        SalesInvoice.created_at.desc()
-    ).limit(5).all()
-    
-    recent_invoices = [
-        {
-            "invoice_number": invoice.invoice_number,
-            "customer_name": company_name,
-            "amount": invoice.total_amount,
-            "status": _derive_invoice_status(invoice.status, int(invoice.amount_paid or 0), int(invoice.total_amount or 0)),
-            "date": invoice.invoice_date.isoformat() if invoice.invoice_date else "",
-        }
-        for invoice, company_name in recent_invoices_rows
-    ]
+    # MCN-BUG-002: Revenue generation per Sales Manager (invoice creator) and per
+    # Stockist (customer), pre-computed for today / this week / this month windows so
+    # the two dashboard panels render from a single fetch with independent toggles.
+    def _build_revenue_generation_metrics(start_date: date):
+        revenue_filter = [
+            SalesInvoice.invoice_date >= start_date,
+            SalesInvoice.invoice_date <= today,
+            SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
+            SalesInvoice.is_deleted == False,
+        ]
+
+        sales_manager_query = (
+            db.query(
+                SalesInvoice.created_by.label("uid"),
+                User.full_name.label("name"),
+                func.coalesce(func.sum(SalesInvoice.total_amount), 0).label("revenue"),
+            )
+            .outerjoin(User, SalesInvoice.created_by == User.id)
+            .filter(*revenue_filter)
+        )
+        if cid:
+            sales_manager_query = sales_manager_query.filter(SalesInvoice.company_id == cid)
+        sales_manager_query = sales_manager_query.group_by(SalesInvoice.created_by, User.full_name).all()
+        sales_manager_rows = [
+            {
+                "id": str(row.uid) if row.uid else "unassigned",
+                "name": row.name or "Unassigned",
+                "revenue": int(row.revenue or 0),
+            }
+            for row in sales_manager_query
+            if int(row.revenue or 0) != 0
+        ]
+        sales_manager_rows.sort(key=lambda row: row["revenue"], reverse=True)
+
+        stockist_query = (
+            db.query(
+                SalesInvoice.customer_id.label("cust_id"),
+                Customer.company_name.label("name"),
+                func.coalesce(func.sum(SalesInvoice.total_amount), 0).label("revenue"),
+            )
+            .join(Customer, SalesInvoice.customer_id == Customer.id)
+            .filter(*revenue_filter)
+        )
+        if cid:
+            stockist_query = stockist_query.filter(SalesInvoice.company_id == cid)
+        stockist_query = stockist_query.group_by(SalesInvoice.customer_id, Customer.company_name).all()
+        stockist_rows = [
+            {
+                "id": str(row.cust_id),
+                "name": row.name or "Unknown",
+                "revenue": int(row.revenue or 0),
+            }
+            for row in stockist_query
+            if int(row.revenue or 0) != 0
+        ]
+        stockist_rows.sort(key=lambda row: row["revenue"], reverse=True)
+
+        return sales_manager_rows[:12], stockist_rows[:12]
+
+    sm_daily, st_daily = _build_revenue_generation_metrics(today)
+    sm_weekly, st_weekly = _build_revenue_generation_metrics(today - timedelta(days=6))
+    sm_monthly, st_monthly = _build_revenue_generation_metrics(month_start)
+
+    revenue_generation = {
+        "sales_manager": {"daily": sm_daily, "weekly": sm_weekly, "monthly": sm_monthly},
+        "stockist": {"daily": st_daily, "weekly": st_weekly, "monthly": st_monthly},
+    }
 
     # Outstanding payables
     outstanding_payables = db.query(func.coalesce(func.sum(GoodsReceiptNote.total_amount), 0)).filter(
@@ -989,7 +1034,7 @@ async def dashboard_report(
         "top_products": top_products,
         "cash_in_flow": cash_in_flow,
         "cash_in_flow_summary": cash_in_flow_summary,
-        "recent_invoices": recent_invoices,
+        "revenue_generation": revenue_generation,
     }
 
 
@@ -1120,7 +1165,7 @@ async def stock_report(
         )
         .join(SalesInvoice, SalesInvoiceItem.invoice_id == SalesInvoice.id)
         .filter(
-            SalesInvoice.status.in_(["issued", "partial_paid", "paid", "returned"]),
+            SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
             SalesInvoice.is_deleted == False,
             SalesInvoiceItem.is_deleted == False,
         )
@@ -1173,11 +1218,6 @@ async def stock_report(
             float(row.qty or 0),
         )
 
-    # RDN return quantities must be accumulated at the batch level so that batch
-    # rows correctly reflect restored stock.  The original double-count was caused
-    # by the sales_issue_rows filter missing the "returned" status — NOT by RDN
-    # being present here.  product_totals (stock_ledger) is the authoritative total;
-    # unassigned_qty reconciles any difference (opening stock, manual adjustments).
     rdn_rows = (
         db.query(
             ReturnDeliveryNoteItem.product_id,
@@ -1240,7 +1280,7 @@ async def stock_report(
 
     balances_by_product: dict[str, list[tuple[str, date | None, date | None, float]]] = {}
     for (product_id, batch_no), qty in batch_balances.items():
-        if qty < 1e-6:
+        if abs(qty) < 1e-6:
             continue
         manufacture_date, expiry_date = batch_meta.get((product_id, batch_no), (None, None))
         balances_by_product.setdefault(product_id, []).append(
@@ -1273,8 +1313,7 @@ async def stock_report(
         product_batches.sort(key=lambda entry: (entry[0] == NO_BATCH_TOKEN, entry[0]))
 
         for batch_no, manufacture_date, expiry_date, batch_qty in product_batches:
-            display_qty = max(0.0, float(batch_qty))
-            total_mrp_value = display_qty * float(product.mrp or 0)
+            total_mrp_value = float(batch_qty) * float(product.mrp or 0)
             grand_total_mrp_value += total_mrp_value
             rows.append({
                 "product_code": product.product_code,
@@ -1283,7 +1322,7 @@ async def stock_report(
                 "batch_no": None if batch_no == NO_BATCH_TOKEN else batch_no,
                 "manufacture_date": manufacture_date,
                 "expiry_date": expiry_date,
-                "closing_qty": display_qty,
+                "closing_qty": float(batch_qty),
                 "min_stock": float(safety),
                 "safety_stock": float(safety),
                 "status": status,

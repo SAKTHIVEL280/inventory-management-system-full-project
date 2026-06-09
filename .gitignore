@@ -69,6 +69,7 @@ backend/*.py[cod]
 backend/so_files/
 backend/.benchmarks/
 backend/.hypothesis/
+verify_db_files
 
 # ============================================
 # DATABASE FILES

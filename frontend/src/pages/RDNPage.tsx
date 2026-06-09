@@ -82,7 +82,7 @@ const RDNPage = () => {
     if (!selectedRdnId) return;
     await confirmWithToast('Confirm this RDN? Stock will be added to inventory.', {
       type: 'warning',
-      onConfirm: async () => { await confirmMutation.mutateAsync(selectedRdnId); },
+      onConfirm: () => confirmMutation.mutateAsync(selectedRdnId),
     });
   };
 
@@ -90,7 +90,7 @@ const RDNPage = () => {
     if (!selectedRdnId) return;
     await confirmWithToast('Cancel this RDN?', {
       type: 'danger',
-      onConfirm: async () => { await cancelMutation.mutateAsync(selectedRdnId); },
+      onConfirm: () => cancelMutation.mutateAsync(selectedRdnId),
     });
   };
 

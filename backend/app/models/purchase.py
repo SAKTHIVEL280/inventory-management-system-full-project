@@ -81,6 +81,10 @@ class GoodsReceiptNote(Base):
     total_gst = Column(Integer, nullable=False, default=0)
     total_amount = Column(Integer, nullable=False, default=0)
     notes = Column(Text, nullable=True)
+    # MCN-BUG-004: Reverse GRN audit trail
+    reversal_reason = Column(Text, nullable=True)
+    reversed_at = Column(DateTime(timezone=True), nullable=True)
+    reversed_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     is_deleted = Column(Boolean, nullable=False, default=False)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
