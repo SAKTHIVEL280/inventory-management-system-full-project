@@ -569,6 +569,52 @@ def main() -> int:
             "CREATE INDEX IF NOT EXISTS ix_proforma_invoices_company_id ON proforma_invoices (company_id)",
             "CREATE INDEX IF NOT EXISTS ix_proforma_invoice_items_proforma_id ON proforma_invoice_items (proforma_invoice_id)",
             "CREATE INDEX IF NOT EXISTS ix_proforma_invoice_items_product_id ON proforma_invoice_items (product_id)",
+
+            # --- Multi-tenant company_id sync for ALL scoped tables ---
+            # Earlier this runner only added company_id to users/products/customers/suppliers,
+            # but the models scope many more tables (purchase, sales, payments, stock, counts).
+            # Add the column + index idempotently everywhere so query filters on company_id
+            # never raise "column does not exist". Runs after all CREATE TABLE statements above
+            # so every target table is guaranteed to exist.
+            *[
+                stmt
+                for _table in (
+                    "purchase_orders", "goods_receipt_notes", "purchase_returns",
+                    "quotations", "sales_orders", "sales_invoices", "sales_returns",
+                    "payments", "stock_ledger", "inventory_counts",
+                    "inventory_count_difference_audits", "return_delivery_notes",
+                    "rdn_credit_notes", "proforma_invoices",
+                )
+                for stmt in (
+                    f"ALTER TABLE {_table} ADD COLUMN IF NOT EXISTS company_id UUID",
+                    f"CREATE INDEX IF NOT EXISTS ix_{_table}_company_id ON {_table} (company_id)",
+                )
+            ],
+            # Backfill existing rows to the single company so historical records stay visible
+            # under company_id scoping (NULL company_id would not match any scoped query).
+            """
+            DO $$
+            DECLARE company_uuid UUID;
+            BEGIN
+                SELECT id INTO company_uuid FROM company ORDER BY created_at ASC LIMIT 1;
+                IF company_uuid IS NOT NULL THEN
+                    UPDATE purchase_orders SET company_id = company_uuid WHERE company_id IS NULL;
+                    UPDATE goods_receipt_notes SET company_id = company_uuid WHERE company_id IS NULL;
+                    UPDATE purchase_returns SET company_id = company_uuid WHERE company_id IS NULL;
+                    UPDATE quotations SET company_id = company_uuid WHERE company_id IS NULL;
+                    UPDATE sales_orders SET company_id = company_uuid WHERE company_id IS NULL;
+                    UPDATE sales_invoices SET company_id = company_uuid WHERE company_id IS NULL;
+                    UPDATE sales_returns SET company_id = company_uuid WHERE company_id IS NULL;
+                    UPDATE payments SET company_id = company_uuid WHERE company_id IS NULL;
+                    UPDATE stock_ledger SET company_id = company_uuid WHERE company_id IS NULL;
+                    UPDATE inventory_counts SET company_id = company_uuid WHERE company_id IS NULL;
+                    UPDATE inventory_count_difference_audits SET company_id = company_uuid WHERE company_id IS NULL;
+                    UPDATE return_delivery_notes SET company_id = company_uuid WHERE company_id IS NULL;
+                    UPDATE rdn_credit_notes SET company_id = company_uuid WHERE company_id IS NULL;
+                    UPDATE proforma_invoices SET company_id = company_uuid WHERE company_id IS NULL;
+                END IF;
+            END $$
+            """,
     ]
 
     with engine.begin() as conn:
