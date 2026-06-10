@@ -112,7 +112,11 @@ class Settings(BaseSettings):
 
     model_config = {
         "env_file": ".env",
-        "case_sensitive": False
+        "case_sensitive": False,
+        # FRONTEND_ALLOWED_ORIGINS is consumed by a @property (not a field); without
+        # this, supplying it (or any other unknown var) as an env var crashes startup
+        # with pydantic 'extra_forbidden'.
+        "extra": "ignore",
     }
 
     @property
