@@ -37,9 +37,9 @@ def _set_csrf_cookie(response: Response) -> None:
         key=settings.csrf_cookie_name,
         value=csrf_token,
         max_age=settings.refresh_token_expire_minutes * 60,
-        secure=True,
+        secure=settings.cookie_secure,
         httponly=False,
-        samesite="strict",
+        samesite=settings.cookie_samesite,
         path="/",
     )
 
@@ -108,18 +108,18 @@ async def login(
         key="access_token",
         value=access_token,
         max_age=settings.access_token_expire_minutes * 60,
-        secure=True,
+        secure=settings.cookie_secure,
         httponly=True,
-        samesite="strict",
+        samesite=settings.cookie_samesite,
         path="/",
     )
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
         max_age=settings.refresh_token_expire_minutes * 60,
-        secure=True,
+        secure=settings.cookie_secure,
         httponly=True,
-        samesite="strict",
+        samesite=settings.cookie_samesite,
         path="/",
     )
     if settings.csrf_enabled:
@@ -226,9 +226,9 @@ async def refresh(
         key="access_token",
         value=access_token,
         max_age=settings.access_token_expire_minutes * 60,
-        secure=True,
+        secure=settings.cookie_secure,
         httponly=True,
-        samesite="strict",
+        samesite=settings.cookie_samesite,
         path="/",
     )
     if settings.csrf_enabled:
