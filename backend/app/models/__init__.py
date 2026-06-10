@@ -23,6 +23,7 @@ from app.models.sales import (
 	SalesReturn,
 	SalesReturnItem,
 )
+from app.models.proforma import ProformaInvoice, ProformaInvoiceItem
 from app.models.rdn import ReturnDeliveryNote, ReturnDeliveryNoteItem, RdnCreditNote, RdnCreditNoteItem
 from app.models.payment import Payment, PaymentAllocation
 from app.models.customization_option import CustomizationOption
@@ -52,6 +53,8 @@ __all__ = [
 	"SalesInvoiceItem",
 	"SalesReturn",
 	"SalesReturnItem",
+	"ProformaInvoice",
+	"ProformaInvoiceItem",
 	"ReturnDeliveryNote",
 	"ReturnDeliveryNoteItem",
 	"RdnCreditNote",

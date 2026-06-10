@@ -22,3 +22,7 @@
 - **BE-147**: Archive router — company_id scoping on archive stats and purge queries.
 - **BE-148**: Audit service auto-resolves company_id from user_id for all existing calls.
 - **BE-151**: GST reports allow non-registered GSTIN; invoice totals round down to 0/5 with PDF round-off.
+- **BE-152** (Proforma Invoice): New `ProformaInvoice`/`ProformaInvoiceItem` models + schemas; independent replica of Quotation.
+- **BE-153** (Proforma Invoice): New `routers/proforma.py` — list/create/get/update/status/archive/restore/PDF/email under `/api/v1/proforma-invoices`; registered in `main.py`.
+- **BE-154** (Proforma Invoice): `generate_proforma_invoice_number` (PFI sequence) and `generate_proforma_invoice_pdf` (relabeled clone of quotation PDF).
+- **BE-155** (Proforma Invoice): New `proforma_read`/`proforma_write` permissions added to admin and general manager role defaults.

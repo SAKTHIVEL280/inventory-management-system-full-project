@@ -11,7 +11,7 @@ INSERT INTO users (
 )
 VALUES (
     'Administrator',
-    'admin@mecandria.com',
+    'admin@billing.com',
     '$2b$12$synI0OJVXmpUC8FAIGnVpurmk5yfykjH7QpDoVEVIm4iKCIWkYxHG',  -- bcrypt('admin@123')
     'admin',
     TRUE,

@@ -44,6 +44,14 @@ def generate_quotation_number(db: Session) -> str:
     return number
 
 
+def generate_proforma_invoice_number(db: Session) -> str:
+    """Generate next proforma invoice number (thread-safe). e.g. PFI-00001."""
+    company = _get_company_locked(db)
+    number = f"{company.pfi_prefix}-{str(company.pfi_counter).zfill(5)}"
+    company.pfi_counter += 1
+    return number
+
+
 def generate_so_number(db: Session) -> str:
     """Generate next sales order number (thread-safe)."""
     company = _get_company_locked(db)

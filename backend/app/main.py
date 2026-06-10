@@ -42,7 +42,7 @@ app = FastAPI(
 limiter = Limiter(key_func=get_remote_address, default_limits=[settings.rate_limit_api])
 rate_limit_module.limiter = limiter
 
-from app.routers import auth, company, users, customers, suppliers, products, purchase, sales, payments, reports, stock, archive, compliance, rdn, customization_options
+from app.routers import auth, company, users, customers, suppliers, products, purchase, sales, payments, reports, stock, archive, compliance, rdn, customization_options, proforma
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -140,6 +140,7 @@ app.include_router(suppliers.router)
 app.include_router(products.router)
 app.include_router(purchase.router)
 app.include_router(sales.router)
+app.include_router(proforma.router)
 app.include_router(payments.router)
 app.include_router(reports.router)
 app.include_router(stock.router)

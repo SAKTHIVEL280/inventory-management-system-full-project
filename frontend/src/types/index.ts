@@ -521,6 +521,8 @@ export const PERMISSION_SCOPES = {
   // Sales
   QUOTATIONS_READ: 'quotations_read',
   QUOTATIONS_WRITE: 'quotations_write',
+  PROFORMA_READ: 'proforma_read',
+  PROFORMA_WRITE: 'proforma_write',
   SALES_ORDERS_READ: 'sales_orders_read',
   SALES_ORDERS_WRITE: 'sales_orders_write',
   SALES_INVOICES_READ: 'sales_invoices_read',

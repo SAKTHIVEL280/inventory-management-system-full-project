@@ -19,6 +19,7 @@ import ProductsPage from './pages/ProductsPage';
 import CustomizationOptionsPage from './pages/CustomizationOptionsPage';
 import PurchaseOrderPage from './pages/PurchaseOrderPage';
 import QuotationsPage from './pages/QuotationsPage';
+import ProformaInvoicesPage from './pages/ProformaInvoicesPage';
 import InvoicesPage from './pages/InvoicesPage';
 import RDNPage from './pages/RDNPage';
 import RDNCreditNotePage from './pages/RDNCreditNotePage';
@@ -222,6 +223,16 @@ function App() {
           }
         />
         <Route path="/quotations" element={<Navigate to="/sales/quotations" replace />} />
+
+        <Route
+          path="/sales/proforma-invoices"
+          element={
+            <ProtectedRoute requiredPermission={PERMISSION_SCOPES.PROFORMA_READ}>
+              <ProformaInvoicesPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/proforma-invoices" element={<Navigate to="/sales/proforma-invoices" replace />} />
 
         <Route
           path="/sales/invoices"

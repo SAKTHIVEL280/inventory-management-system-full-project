@@ -48,6 +48,8 @@ class Company(Base):
     so_counter = Column(Integer, nullable=False, default=1)
     qtn_prefix = Column(String(10), nullable=False, default="QTN")
     qtn_counter = Column(Integer, nullable=False, default=1)
+    pfi_prefix = Column(String(10), nullable=False, default="PFI")
+    pfi_counter = Column(Integer, nullable=False, default=1)
     grn_prefix = Column(String(10), nullable=False, default="GRN")
     grn_counter = Column(Integer, nullable=False, default=1)
     rdn_prefix = Column(String(10), nullable=False, default="RDN")

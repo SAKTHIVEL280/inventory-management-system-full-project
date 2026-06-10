@@ -22,6 +22,7 @@ from app.models.customer import Customer
 from app.models.product import Product, UnitOfMeasure
 from app.models.purchase import PurchaseOrder, PurchaseOrderItem
 from app.models.sales import SalesInvoice, SalesInvoiceItem, SalesOrder, Quotation, QuotationItem
+from app.models.proforma import ProformaInvoice, ProformaInvoiceItem
 from app.models.supplier import Supplier
 from app.services.gst_service import determine_default_invoice_type, determine_tax_mode, is_india_country
 from app.utils.rounding import round_paise_to_nearest_5
@@ -1688,6 +1689,173 @@ def generate_quotation_pdf(db: Session, quotation_id: UUID) -> bytes:
         "grand_total_rupee": _format_total_with_currency(int(quotation.total_amount or 0) / 100, cs),
         "balance_due_rupee": _format_total_with_currency(int(quotation.total_amount or 0) / 100, cs),
         "total_in_words": _amount_in_words(int(quotation.total_amount or 0), currency),
+        "notes": notes_text,
+        "watermark_text": watermark_text,
+    }
+    return _render_pdf_with_pagination(context, INVOICE_TEMPLATE, rows, items_per_page=BILLING_PDF_ITEMS_PER_PAGE)
+
+
+def generate_proforma_invoice_pdf(db: Session, proforma_id: UUID) -> bytes:
+    """Generate Proforma Invoice PDF.
+
+    Exact replica of generate_quotation_pdf (layout, styling, GST logic, totals,
+    pagination, formatting) — only the Quotation labels are replaced with
+    Proforma Invoice labels.
+    """
+    proforma = db.query(ProformaInvoice).filter(ProformaInvoice.id == proforma_id).first()
+    if not proforma:
+        raise ValueError("Proforma Invoice not found")
+
+    company = db.query(Company).first()
+    customer = db.query(Customer).filter(Customer.id == proforma.customer_id).first()
+    items = (
+        db.query(ProformaInvoiceItem)
+        .filter(ProformaInvoiceItem.proforma_invoice_id == proforma.id, ProformaInvoiceItem.is_deleted == False)
+        .all()
+    )
+
+    # Get currency from customer record — never hardcode
+    currency = "INR"
+    if customer and hasattr(customer, "currency_code") and customer.currency_code:
+        currency = customer.currency_code
+    currency_symbols = {"INR": "Rs.", "USD": "$", "EUR": "€", "GBP": "£"}
+    cs = currency_symbols.get(currency, currency)
+
+    rows: list[dict[str, str]] = []
+    proforma_invoice_type = determine_default_invoice_type(db, proforma.customer_id) if customer else "within_state"
+    export_invoice = proforma_invoice_type == "export_invoice"
+    show_igst = proforma_invoice_type == "other_states"
+    show_utgst = proforma_invoice_type == "union_territory"
+    invoice_type_label = _invoice_type_label(proforma_invoice_type)
+    tax_col_1_label = "CGST"
+    tax_col_2_label = "UTGST" if show_utgst else "SGST"
+    tax_secondary_label = "UTGST" if show_utgst else "SGST"
+
+    for idx, item in enumerate(items, start=1):
+        product = db.query(Product).filter(Product.id == item.product_id).first()
+        gst_rate = int(item.gst_rate or 0)
+        half_rate = gst_rate / 2
+
+        # Use DB-stored values directly — match website exactly
+        taxable_paise = int(item.taxable_amount or 0)
+        cgst_paise = int(item.cgst_amount or 0)
+        sgst_paise = int(item.sgst_amount or 0)
+        igst_paise = int(item.igst_amount or 0)
+        total_paise = int(item.total_amount or 0)
+
+        # Always split as CGST+SGST — convert any legacy IGST data
+        if cgst_paise == 0 and sgst_paise == 0 and igst_paise > 0:
+            cgst_paise = round(igst_paise / 2)
+            sgst_paise = igst_paise - cgst_paise
+
+        rate_val = f"{(int(item.unit_price or 0) / 100):,.2f}"
+        base_unit = _get_base_unit_label(product)
+        packing_unit = _get_packing_label(db, product)
+        free_quantity = getattr(item, "free_quantity", 0)
+
+        rows.append(
+            {
+                "sr": str(idx),
+                "description": _safe_text((item.description or (product.name if product else ""))),
+                "hsn": _safe_text(product.hsn_code if product else None),
+                "qty": f"{float(item.quantity):.2f}",
+                "free": _decimal_to_str(free_quantity),
+                "base_unit": base_unit,
+                "packing_unit": packing_unit,
+                "rate": rate_val,
+                "disc": f"{float(item.discount_percent or 0):.1f}%",
+                "cgst_pct": f"{half_rate:.1f}%",
+                "sgst_pct": f"{half_rate:.1f}%",
+                "igst_pct": f"{gst_rate}%",
+                "amount": f"{(total_paise / 100):,.2f}",
+            }
+        )
+
+    if not rows:
+        rows.append(
+            {
+                "sr": "1", "description": "-",
+                "hsn": "-", "qty": "0.00", "free": "0", "base_unit": "-", "packing_unit": "-",
+                "rate": "0.00", "disc": "0.0%", "cgst_pct": "0.0%", "sgst_pct": "0.0%", "igst_pct": "0%", "amount": "0.00",
+            }
+        )
+
+    billing_parts = [
+        customer.billing_address_line1 if customer else None,
+        customer.billing_address_line2 if customer else None,
+        customer.billing_city if customer else None,
+        customer.billing_state if customer else None,
+        customer.billing_pincode if customer else None,
+    ]
+    shipping_parts = [
+        customer.shipping_address_line1 if customer else None,
+        customer.shipping_address_line2 if customer else None,
+        customer.shipping_city if customer else None,
+        customer.shipping_state if customer else None,
+        customer.shipping_pincode if customer else None,
+    ]
+
+    ship_to_address = ", ".join([p.strip() for p in shipping_parts if p and p.strip()])
+    if not ship_to_address:
+        ship_to_address = ", ".join([p.strip() for p in billing_parts if p and p.strip()])
+
+    place_of_supply_value = _safe_text(
+        (customer.shipping_state if customer else None)
+        or (customer.billing_state if customer else None)
+    )
+
+    valid_until_text = _format_date(proforma.valid_until)
+    notes_text = _safe_text(proforma.notes)
+    watermark_text = "Approved" if (proforma.status or "").strip().lower() != "draft" else "Not Approved"
+
+    context = {
+        "doc_title": "PROFORMA INVOICE",
+        "export_invoice": export_invoice,
+        "show_igst": show_igst,
+        "tax_col_1_label": tax_col_1_label,
+        "tax_col_2_label": tax_col_2_label,
+        "unit_col_label": "Base Unit",
+        "show_batch_columns": False,
+        "doc_number_label": "Proforma Invoice Number",
+        "doc_date_label": "Proforma Invoice Date",
+        "doc_number": _safe_text(proforma.proforma_number),
+        "doc_date": _format_date(proforma.proforma_date),
+        "due_date": valid_until_text,
+        "payment_terms": _get_payment_terms_label(customer),
+        "order_currency": _format_order_currency_display(currency),
+        "raw_currency": _safe_text(currency),
+        "invoice_type_label": invoice_type_label,
+        "company_logo": _resolve_logo_src(company),
+        "company_ambassador_logo": _resolve_ambassador_logo_src(company),
+        "company_name": _safe_text(company.name if company else None),
+        "company_address": _build_company_address(company),
+        "company_gstin": _safe_text(company.gstin if company else None),
+        "company_contact": _safe_text(company.phone if company and company.phone else (company.email if company else None)),
+        "account_holder_name": _optional_text(company.account_holder_name if company else None),
+        "company_bank_name": _optional_text(company.bank_name if company else None),
+        "company_bank_account_no": _optional_text(company.bank_account_no if company else None),
+        "company_bank_ifsc": _optional_text(company.bank_ifsc if company else None),
+        "company_bank_branch": _optional_text(company.bank_branch if company else None),
+        "party_gstin": _safe_text(customer.gstin if customer else None),
+        "bill_to_state": _safe_text(customer.billing_state if customer else None),
+        "place_of_supply": place_of_supply_value,
+        "bill_to_name": _safe_text(customer.company_name if customer else None),
+        "bill_to_address": _safe_text(", ".join([p.strip() for p in billing_parts if p and p.strip()])),
+        "bill_to_gstin": _safe_text(customer.gstin if customer else None),
+        "ship_to_name": _safe_text(customer.company_name if customer else None),
+        "ship_to_address": _safe_text(ship_to_address),
+        "ship_to_gstin": _safe_text(customer.gstin if customer else None),
+        "rows": rows,
+        "subtotal": _format_total_with_currency(int(proforma.subtotal or 0) / 100, cs),
+        "cgst_label": "CGST",
+        "cgst_total": _format_total_with_currency(_get_corrected_cgst(proforma, should_be_igst=show_igst), cs),
+        "tax_secondary_label": tax_secondary_label,
+        "tax_secondary_total": _format_total_with_currency(_get_corrected_sgst(proforma, should_be_igst=show_igst), cs),
+        "igst_label": "IGST",
+        "igst_total": _format_total_with_currency(_get_corrected_igst(proforma, should_be_igst=show_igst), cs),
+        "grand_total_rupee": _format_total_with_currency(int(proforma.total_amount or 0) / 100, cs),
+        "balance_due_rupee": _format_total_with_currency(int(proforma.total_amount or 0) / 100, cs),
+        "total_in_words": _amount_in_words(int(proforma.total_amount or 0), currency),
         "notes": notes_text,
         "watermark_text": watermark_text,
     }

@@ -22,6 +22,7 @@ ROLE_DEFAULTS = {
         "stock_ledger_read", "stock_ledger_write",
         "stock_adjustment_read", "stock_adjustment_write",
         "quotations_read", "quotations_write",
+        "proforma_read", "proforma_write",
         "sales_orders_read", "sales_orders_write",
         "sales_invoices_read", "sales_invoices_write",
         "sales_returns_read", "sales_returns_write",
@@ -44,6 +45,7 @@ ROLE_DEFAULTS = {
     ],
     "general manager": [
         "quotations_read", "quotations_write",
+        "proforma_read", "proforma_write",
         "sales_invoices_read", "sales_invoices_write",
         "rdn_read", "rdn_write",
         "receipts_read", "receipts_write",

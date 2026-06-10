@@ -45,6 +45,8 @@ class CompanyBase(BaseModel):
     so_counter: int = 1
     qtn_prefix: str = "QTN"
     qtn_counter: int = 1
+    pfi_prefix: str = "PFI"
+    pfi_counter: int = 1
     grn_prefix: str = "GRN"
     grn_counter: int = 1
     rdn_prefix: str = "RDN"
