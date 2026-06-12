@@ -15,7 +15,7 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { useSearchParams } from 'react-router-dom';
 import { AppLayout } from '../components/AppLayout';
-import { purchaseApi, type GoodsReceiptNote, type CreateGRNPayload, type PurchaseOrder, type GRNItemResponse } from '../api/purchase';
+import { purchaseApi, type GoodsReceiptNote, type CreateGRNPayload, type PurchaseOrder, type GRNItemResponse, type ConfirmedGRNEditPayload } from '../api/purchase';
 import { apiClient } from '../api/client';
 import { toast } from 'sonner';
 import { confirmWithToast } from '../utils/toastHelper';
@@ -57,6 +57,18 @@ interface GRNLineItem {
   po_received_qty?: number;
 }
 
+/** MCN-BUG-004-ii: editable row for a confirmed GRN line (unit price held in rupees for input) */
+interface ConfirmedEditRow {
+  id: string;
+  product_id: string;
+  batch_no: string;
+  manufacture_date: string;
+  expiry_date: string;
+  quantity: number;
+  free_quantity: number;
+  unitPriceRupees: number;
+}
+
 interface TolerancePopupData {
   title: 'Under delivery exceeded allowed tolerance' | 'Over delivery exceeded allowed tolerance';
   itemLabel: string;
@@ -68,7 +80,7 @@ interface TolerancePopupData {
 
 const GRNPage = () => {
   const [searchParams] = useSearchParams();
-  const { isAdmin } = usePermissions();
+  const { isAdmin, canWrite } = usePermissions();
   const [grns, setGRNs] = useState<GoodsReceiptNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -88,6 +100,12 @@ const GRNPage = () => {
   const [detailGRN, setDetailGRN] = useState<GoodsReceiptNote | null>(null);
   const [detailItems, setDetailItems] = useState<GRNItemResponse[]>([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
+
+  // MCN-BUG-004-ii: post-confirmation GRN detail edit state
+  const [editingDetail, setEditingDetail] = useState(false);
+  const [editNotes, setEditNotes] = useState('');
+  const [editRows, setEditRows] = useState<ConfirmedEditRow[]>([]);
+  const [savingDetailEdit, setSavingDetailEdit] = useState(false);
 
   // MCN-BUG-004: Reverse GRN modal state
   const [reverseTarget, setReverseTarget] = useState<GoodsReceiptNote | null>(null);
@@ -499,6 +517,101 @@ const GRNPage = () => {
     }
   };
 
+  const closeDetail = () => {
+    setDetailGRN(null);
+    setEditingDetail(false);
+    setEditRows([]);
+  };
+
+  // MCN-BUG-004-ii: enter/exit/save post-confirmation edit mode
+  const beginDetailEdit = () => {
+    setEditNotes(detailGRN?.notes || '');
+    setEditRows(detailItems.map((item) => ({
+      id: item.id,
+      product_id: item.product_id,
+      batch_no: item.batch_no || '',
+      manufacture_date: item.manufacture_date || '',
+      expiry_date: item.expiry_date || '',
+      quantity: Number(item.quantity) || 0,
+      free_quantity: Number(item.free_quantity) || 0,
+      unitPriceRupees: (Number(item.unit_price) || 0) / 100,
+    })));
+    setEditingDetail(true);
+  };
+
+  const cancelDetailEdit = () => {
+    setEditingDetail(false);
+    setEditRows([]);
+  };
+
+  const updateEditRow = (id: string, patch: Partial<ConfirmedEditRow>) => {
+    setEditRows((prev) => prev.map((row) => (row.id === id ? { ...row, ...patch } : row)));
+  };
+
+  const handleSaveDetailEdit = async () => {
+    if (!detailGRN) return;
+    // Client-side validation mirroring the server rules for fast feedback.
+    const today = todayLocalDateInputValue();
+    for (const row of editRows) {
+      if (!(row.quantity > 0)) {
+        toast.error('Quantity must be greater than zero');
+        return;
+      }
+      if (row.free_quantity < 0) {
+        toast.error('Free quantity cannot be negative');
+        return;
+      }
+      if (row.manufacture_date && row.manufacture_date >= today) {
+        toast.error('MFG Date must be a past date');
+        return;
+      }
+      if (row.expiry_date && row.expiry_date <= today) {
+        toast.error('Expiry date must be a future date');
+        return;
+      }
+      if (row.manufacture_date && row.expiry_date && row.expiry_date < row.manufacture_date) {
+        toast.error('Expiry date cannot be earlier than manufacture date');
+        return;
+      }
+    }
+
+    const payload: ConfirmedGRNEditPayload = {
+      notes: editNotes.trim() ? editNotes.trim() : null,
+      items: editRows.map((row) => ({
+        id: row.id,
+        batch_no: row.batch_no.trim() ? row.batch_no.trim() : null,
+        manufacture_date: row.manufacture_date || null,
+        expiry_date: row.expiry_date || null,
+        quantity: row.quantity,
+        free_quantity: row.free_quantity,
+        unit_price: Math.round(row.unitPriceRupees * 100),
+      })),
+    };
+
+    setSavingDetailEdit(true);
+    try {
+      await purchaseApi.updateConfirmedGRN(detailGRN.id, payload);
+      toast.success('GRN updated — stock and ledger adjusted');
+      const res = await purchaseApi.getGRN(detailGRN.id);
+      setDetailGRN(res.data.grn);
+      setDetailItems(res.data.items || []);
+      setEditingDetail(false);
+      setEditRows([]);
+      fetchGRNs();
+      fetchPOs();
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+      const msg = typeof detail === 'string'
+        ? detail
+        : Array.isArray(detail)
+          ? detail.map((d) => (d && typeof d === 'object' && 'msg' in d ? (d as { msg?: string }).msg : '')).filter(Boolean).join(', ')
+          : 'Failed to update GRN';
+      toast.error(msg || 'Failed to update GRN');
+    } finally {
+      setSavingDetailEdit(false);
+    }
+  };
+
   const handleConfirm = async (id: string) => {
     const confirmed = await confirmWithToast('Confirm this GRN? Stock will be added to inventory.', {
       type: 'warning',
@@ -838,15 +951,31 @@ const GRNPage = () => {
 
         {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• GRN Detail Modal â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
         {detailGRN && createPortal(
-          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm" onClick={() => setDetailGRN(null)}>
+          <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm" onClick={() => closeDetail()}>
             <div className="hms-card my-8 w-full max-w-4xl space-y-6 p-6" onClick={(e) => e.stopPropagation()}>
               <div className="flex items-start justify-between">
                 <div>
                   <h2 className="font-display text-xl font-bold">GRN: {detailGRN.grn_number}</h2>
                   <p className="text-sm text-neutral-600 mt-1">Supplier: {suppliers.find(s => s.id === detailGRN.supplier_id)?.company_name || '-'}</p>
                 </div>
-                <button onClick={() => setDetailGRN(null)} className="text-neutral-400 hover:text-neutral-600 text-2xl">&times;</button>
+                <div className="flex items-center gap-2">
+                  {/* MCN-BUG-004-ii: Edit confirmed GRN details (authorised users only) */}
+                  {detailGRN.status === 'confirmed' && canWrite('grn') && !editingDetail && !loadingDetail && (
+                    <button
+                      onClick={beginDetailEdit}
+                      className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/5 px-3 py-1.5 text-sm font-semibold text-primary hover:bg-primary/10"
+                    >
+                      <span className="material-icons text-sm" aria-hidden="true">edit</span>Edit
+                    </button>
+                  )}
+                  <button onClick={() => closeDetail()} className="text-neutral-400 hover:text-neutral-600 text-2xl">&times;</button>
+                </div>
               </div>
+              {editingDetail && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  Editing a confirmed GRN. Saving will adjust stock and purchase ledger postings for any quantity/rate change, and every change is recorded in the audit trail. GRN number, supplier and created details are not editable.
+                </div>
+              )}
 
               <div className="grid grid-cols-2 md:grid-cols-7 gap-4 bg-neutral-50 p-4 rounded-lg">
                 <div><p className="text-xs text-neutral-600">Receipt Date</p><p className="font-medium">{detailGRN.receipt_date}</p></div>
@@ -922,34 +1051,87 @@ const GRNPage = () => {
                         <th className="px-3 py-2 text-right text-xs font-semibold">Total</th>
                       </tr></thead>
                       <tbody>
-                        {detailItems.map((item, idx) => {
-                          const product = products.find((p) => p.id === item.product_id);
-                          return (
-                            <tr key={idx} className="border-t border-neutral-100">
-                              <td className="px-3 py-2">
-                                <span className="text-xs font-semibold text-neutral-700">{product?.product_code || '-'}</span>
-                              </td>
-                              <td className="px-3 py-2 font-medium">{product?.name || 'Unknown'}</td>
-                              <td className="px-3 py-2 text-right font-medium">{item.quantity}</td>
-                              <td className="px-3 py-2 text-right font-medium">{item.free_quantity || 0}</td>
-                              <td className="px-3 py-2">{item.batch_no || '-'}</td>
-                              <td className="px-3 py-2">{item.manufacture_date || '-'}</td>
-                              <td className="px-3 py-2">{item.expiry_date || '-'}</td>
-                              <td className="px-3 py-2 text-right">{formatPaise(item.unit_price)}</td>
-                              <td className="px-3 py-2 text-right">{item.discount_percent || 0}%</td>
-                              <td className="px-3 py-2 text-right">{item.gst_rate}%</td>
-                              <td className="px-3 py-2 text-right font-medium">{formatPaise(item.total_amount)}</td>
-                            </tr>
-                          );
-                        })}
+                        {editingDetail
+                          ? editRows.map((row) => {
+                              const product = products.find((p) => p.id === row.product_id);
+                              const item = detailItems.find((i) => i.id === row.id);
+                              return (
+                                <tr key={row.id} className="border-t border-neutral-100">
+                                  <td className="px-3 py-2">
+                                    <span className="text-xs font-semibold text-neutral-700">{product?.product_code || '-'}</span>
+                                  </td>
+                                  <td className="px-3 py-2 font-medium">{product?.name || 'Unknown'}</td>
+                                  <td className="px-3 py-2 text-right">
+                                    <input type="number" min="0" step="0.01" value={emptyWhenZero(row.quantity)} onChange={(e) => updateEditRow(row.id, { quantity: Number(e.target.value) })} className="w-20 rounded border border-neutral-300 px-2 py-1 text-right text-sm" />
+                                  </td>
+                                  <td className="px-3 py-2 text-right">
+                                    <input type="number" min="0" step="0.01" value={emptyWhenZero(row.free_quantity)} onChange={(e) => updateEditRow(row.id, { free_quantity: Number(e.target.value) })} className="w-16 rounded border border-neutral-300 px-2 py-1 text-right text-sm" />
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <input type="text" value={row.batch_no} onChange={(e) => updateEditRow(row.id, { batch_no: e.target.value })} className="w-24 rounded border border-neutral-300 px-2 py-1 text-sm" />
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <input type="date" value={row.manufacture_date} onChange={(e) => updateEditRow(row.id, { manufacture_date: e.target.value })} className="rounded border border-neutral-300 px-2 py-1 text-sm" />
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <input type="date" value={row.expiry_date} onChange={(e) => updateEditRow(row.id, { expiry_date: e.target.value })} className="rounded border border-neutral-300 px-2 py-1 text-sm" />
+                                  </td>
+                                  <td className="px-3 py-2 text-right">
+                                    <input type="number" min="0" step="0.01" value={emptyWhenZero(row.unitPriceRupees)} onChange={(e) => updateEditRow(row.id, { unitPriceRupees: Number(e.target.value) })} className="w-24 rounded border border-neutral-300 px-2 py-1 text-right text-sm" />
+                                  </td>
+                                  <td className="px-3 py-2 text-right text-neutral-500">{item?.discount_percent || 0}%</td>
+                                  <td className="px-3 py-2 text-right text-neutral-500">{item?.gst_rate || 0}%</td>
+                                  <td className="px-3 py-2 text-right text-neutral-400">recalculated on save</td>
+                                </tr>
+                              );
+                            })
+                          : detailItems.map((item, idx) => {
+                              const product = products.find((p) => p.id === item.product_id);
+                              return (
+                                <tr key={idx} className="border-t border-neutral-100">
+                                  <td className="px-3 py-2">
+                                    <span className="text-xs font-semibold text-neutral-700">{product?.product_code || '-'}</span>
+                                  </td>
+                                  <td className="px-3 py-2 font-medium">{product?.name || 'Unknown'}</td>
+                                  <td className="px-3 py-2 text-right font-medium">{item.quantity}</td>
+                                  <td className="px-3 py-2 text-right font-medium">{item.free_quantity || 0}</td>
+                                  <td className="px-3 py-2">{item.batch_no || '-'}</td>
+                                  <td className="px-3 py-2">{item.manufacture_date || '-'}</td>
+                                  <td className="px-3 py-2">{item.expiry_date || '-'}</td>
+                                  <td className="px-3 py-2 text-right">{formatPaise(item.unit_price)}</td>
+                                  <td className="px-3 py-2 text-right">{item.discount_percent || 0}%</td>
+                                  <td className="px-3 py-2 text-right">{item.gst_rate}%</td>
+                                  <td className="px-3 py-2 text-right font-medium">{formatPaise(item.total_amount)}</td>
+                                </tr>
+                              );
+                            })}
                       </tbody>
                     </table>
                   </div>
                 )}
               </div>
 
+              {/* Remarks (editable in edit mode) */}
+              <div>
+                <p className="text-xs font-semibold text-neutral-600 mb-1">Remarks</p>
+                {editingDetail ? (
+                  <textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} rows={2} className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm" placeholder="Add remarks (optional)" />
+                ) : (
+                  <p className="text-sm text-neutral-700">{detailGRN.notes || '-'}</p>
+                )}
+              </div>
+
               {/* Actions */}
               <div className="flex gap-3">
+                {editingDetail ? (
+                  <>
+                    <button onClick={handleSaveDetailEdit} disabled={savingDetailEdit} className="inline-flex items-center gap-1 bg-primary text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-primary/90 disabled:opacity-60">
+                      <span className="material-icons text-sm" aria-hidden="true">save</span>{savingDetailEdit ? 'Saving...' : 'Save Changes'}
+                    </button>
+                    <button onClick={cancelDetailEdit} disabled={savingDetailEdit} className="rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm font-semibold hover:bg-neutral-50 disabled:opacity-60">Cancel</button>
+                  </>
+                ) : (
+                <>
                 {detailGRN.status === 'draft' && (
                   <>
                     {isAdmin && (
@@ -974,8 +1156,10 @@ const GRNPage = () => {
                     <span className="material-icons text-sm">undo</span> This GRN was reversed — stock and ledger entries were rolled back
                   </span>
                 )}
+                </>
+                )}
                 <div className="flex-1" />
-                <button onClick={() => setDetailGRN(null)} className="rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm font-semibold hover:bg-neutral-50">Close</button>
+                <button onClick={() => closeDetail()} className="rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm font-semibold hover:bg-neutral-50">Close</button>
               </div>
             </div>
           </div>,

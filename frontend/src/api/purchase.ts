@@ -143,6 +143,22 @@ export interface GRNDetail {
   items: GRNItemResponse[];
 }
 
+// MCN-BUG-004-ii: payload for editing a confirmed GRN's detail fields
+export interface ConfirmedGRNEditItem {
+  id: string;
+  batch_no?: string | null;
+  manufacture_date?: string | null;
+  expiry_date?: string | null;
+  quantity: number;
+  free_quantity: number;
+  unit_price: number;
+}
+
+export interface ConfirmedGRNEditPayload {
+  notes?: string | null;
+  items: ConfirmedGRNEditItem[];
+}
+
 export interface GRNItemResponse {
   id: string;
   grn_id: string;
@@ -258,6 +274,11 @@ class PurchaseApiClient {
   // MCN-BUG-004: reverse a confirmed GRN with a mandatory reason
   async reverseGRN(id: string, reason: string) {
     return apiClient.post<GoodsReceiptNote>(`/api/v2/grn/${id}/reverse`, { reason });
+  }
+
+  // MCN-BUG-004-ii: edit detail fields of a confirmed GRN (stock + ledger reconciled server-side)
+  async updateConfirmedGRN(id: string, payload: ConfirmedGRNEditPayload) {
+    return apiClient.put<GoodsReceiptNote>(`/api/v2/grn/${id}/confirmed-details`, payload);
   }
 
   async archiveGRN(id: string) {

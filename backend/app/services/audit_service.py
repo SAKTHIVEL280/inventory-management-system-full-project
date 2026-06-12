@@ -95,11 +95,61 @@ def _ensure_audit_logs_table(db: Session) -> None:
     db.execute(text("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS record_reference VARCHAR(255)"))
     db.execute(text("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS description TEXT"))
     db.execute(text("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"))
+    # company_id is required by multi-tenant scoping (INSERT in log_audit_event and the
+    # action-logs report SELECT both reference it). Self-heal it here so deployments that
+    # predate the multi-tenant migration don't 500 when reading/writing audit logs.
+    db.execute(text("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS company_id UUID"))
+    db.execute(text("CREATE INDEX IF NOT EXISTS ix_audit_logs_company_id ON audit_logs (company_id)"))
+    # version: chronological edit version for Sales Invoice ("Sales Order") edits (MCN-BUG-006).
+    # NULL on creation/non-edit entries; populated (1, 2, 3...) from the first edit onwards.
+    db.execute(text("ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS version INTEGER"))
     db.execute(text("CREATE INDEX IF NOT EXISTS ix_audit_logs_created_at ON audit_logs (created_at)"))
     db.execute(text("CREATE INDEX IF NOT EXISTS ix_audit_logs_user_id ON audit_logs (user_id)"))
     db.execute(text("CREATE INDEX IF NOT EXISTS ix_audit_logs_module_name ON audit_logs (module_name)"))
     db.execute(text("CREATE INDEX IF NOT EXISTS ix_audit_logs_action_type ON audit_logs (action_type)"))
     db.execute(text("CREATE INDEX IF NOT EXISTS ix_audit_logs_record_reference ON audit_logs (record_reference)"))
+
+
+# Modules whose edits are version-tracked in the audit log (MCN-BUG-006).
+# The Sales Order module was retired and replaced by Sales Invoices (the "/sales-orders"
+# route redirects to "/sales/invoices"), so the business "Sales Order" maps to "invoices".
+_VERSIONED_EDIT_MODULES = {"invoices"}
+
+
+def int_to_roman(value: int) -> str:
+    """Convert a positive integer to a Roman numeral (1 -> 'I', 4 -> 'IV', ...)."""
+    if not value or value < 1:
+        return ""
+    numerals = [
+        (1000, "M"), (900, "CM"), (500, "D"), (400, "CD"),
+        (100, "C"), (90, "XC"), (50, "L"), (40, "XL"),
+        (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I"),
+    ]
+    result = []
+    remaining = int(value)
+    for amount, symbol in numerals:
+        while remaining >= amount:
+            result.append(symbol)
+            remaining -= amount
+    return "".join(result)
+
+
+def _is_versionable_edit(module_name: str, action_type: str, details: dict[str, Any]) -> bool:
+    """True when an audit entry is a content edit of a version-tracked record.
+
+    Only a full-resource update counts (PUT /api/vN/invoices/<id>); status changes,
+    archive/restore and other sub-actions (which end in a word segment) are excluded.
+    """
+    if (module_name or "").strip().lower() not in _VERSIONED_EDIT_MODULES:
+        return False
+    if (action_type or "").strip().upper() != "PUT":
+        return False
+    path = (details.get("path") or "").strip("/")
+    segments = [segment for segment in path.split("/") if segment]
+    # .../<module>/<id> -> the module name is the second-to-last segment for a full update.
+    if len(segments) >= 4 and segments[-2].strip().lower() in _VERSIONED_EDIT_MODULES:
+        return True
+    return False
 
 
 def _is_sensitive_key(key: str) -> bool:
@@ -698,16 +748,40 @@ def log_audit_event(
                 or ""
             ).strip()
 
+        # Assign a chronological, immutable edit version for version-tracked records
+        # (MCN-BUG-006). Only successful edits are counted; the first edit is version 1.
+        version: int | None = None
+        if (
+            status == "success"
+            and record_reference
+            and _is_versionable_edit(module_name, action_type, safe_detail_dict)
+        ):
+            try:
+                prior = db.execute(
+                    text(
+                        """
+                        SELECT COUNT(*) FROM audit_logs
+                        WHERE module_name = :module_name
+                          AND record_reference = :record_reference
+                          AND version IS NOT NULL
+                        """
+                    ),
+                    {"module_name": module_name, "record_reference": record_reference},
+                ).scalar()
+                version = int(prior or 0) + 1
+            except Exception:
+                version = None
+
         with db.begin_nested():
             db.execute(
                 text(
                     """
                     INSERT INTO audit_logs (
                         user_id, username, action, action_type, module_name, resource_type, resource_id,
-                        record_reference, description, status, details, ip_address, company_id
+                        record_reference, description, status, details, ip_address, company_id, version
                     ) VALUES (
                         :user_id, :username, :action, :action_type, :module_name, :resource_type, :resource_id,
-                        :record_reference, :description, :status, CAST(:details AS JSONB), :ip_address, :company_id
+                        :record_reference, :description, :status, CAST(:details AS JSONB), :ip_address, :company_id, :version
                     )
                     """
                 ),
@@ -725,6 +799,7 @@ def log_audit_event(
                     "details": json.dumps(safe_details),
                     "ip_address": ip_address,
                     "company_id": str(resolved_company_id) if resolved_company_id else None,
+                    "version": version,
                 },
             )
             _maybe_cleanup_old_audit_logs(db)

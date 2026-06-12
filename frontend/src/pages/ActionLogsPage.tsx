@@ -123,6 +123,7 @@ const ActionLogsPage = () => {
   const [actionLogReference, setActionLogReference] = useState('');
   const [actionLogPage, setActionLogPage] = useState(1);
   const [actionLogPageSize, setActionLogPageSize] = useState(20);
+  const [versionSortDir, setVersionSortDir] = useState<'asc' | 'desc' | null>(null);
 
   const fromDate = dateRange.from;
   const toDate = dateRange.to;
@@ -149,6 +150,25 @@ const ActionLogsPage = () => {
     setActionLogPageSize(value);
     setActionLogPage(1);
   };
+
+  const toggleVersionSort = () => {
+    setVersionSortDir((prev) => (prev === 'asc' ? 'desc' : prev === 'desc' ? null : 'asc'));
+  };
+
+  // Version sort (MCN-BUG-006). Sorts the currently loaded page of rows; entries without a
+  // version (creation/non-edit) are kept after versioned entries.
+  const displayedItems = (() => {
+    const items = actionLogsData?.items ?? [];
+    if (!versionSortDir) return items;
+    return [...items].sort((a, b) => {
+      const av = a.version;
+      const bv = b.version;
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      return versionSortDir === 'asc' ? av - bv : bv - av;
+    });
+  })();
 
   // Fetch Action Logs
   useEffect(() => {
@@ -339,25 +359,32 @@ const ActionLogsPage = () => {
                     <th className="px-3 py-2 text-left">Module</th>
                     <th className="px-3 py-2 text-left">Action Type</th>
                     <th className="px-3 py-2 text-left">Reference</th>
+                    <th className="px-3 py-2 text-left">
+                      <button type="button" onClick={toggleVersionSort} className="inline-flex items-center gap-1 font-semibold uppercase tracking-wide hover:text-primary">
+                        Version
+                        <span className="text-[10px]">{versionSortDir === 'asc' ? '▲' : versionSortDir === 'desc' ? '▼' : '⇅'}</span>
+                      </button>
+                    </th>
                     <th className="px-3 py-2 text-left">Description</th>
                     <th className="px-3 py-2 text-left">Status</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {actionLogsData.items.length === 0 ? (
+                  {displayedItems.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-6 text-center text-neutral-500">
+                      <td colSpan={8} className="px-4 py-6 text-center text-neutral-500">
                         No action logs found for selected filters.
                       </td>
                     </tr>
                   ) : (
-                    actionLogsData.items.map((item) => (
+                    displayedItems.map((item) => (
                       <tr key={item.id} className="border-b border-neutral-100 align-top">
                         <td className="px-3 py-2 text-left">{formatAuditTimestamp(item.timestamp)}</td>
                         <td className="px-3 py-2 text-left">{item.user_name || item.user_id || 'System'}</td>
                         <td className="px-3 py-2 text-left">{item.module_name || '-'}</td>
                         <td className="px-3 py-2 text-left">{item.action_type || '-'}</td>
                         <td className="px-3 py-2 text-left">{(item.reference && item.reference.trim()) || (item.record_reference && item.record_reference.trim()) || '-'}</td>
+                        <td className="px-3 py-2 text-left">{item.version_label ? <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-700">{item.version_label}</span> : '-'}</td>
                         <td className="px-3 py-2 text-left">{item.description || item.action || '-'}</td>
                         <td className="px-3 py-2 text-left">{item.status || '-'}</td>
                       </tr>

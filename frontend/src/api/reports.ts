@@ -365,6 +365,8 @@ export interface ActionLogItem {
   status: string;
   timestamp: string | null;
   details: Record<string, unknown>;
+  version: number | null;
+  version_label: string | null;
 }
 
 export interface ActionLogsResponse {

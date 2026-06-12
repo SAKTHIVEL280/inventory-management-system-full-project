@@ -37,6 +37,7 @@ from app.schemas.purchase import (
     PurchaseOrderStatusRequest,
     GRNCreateRequest,
     GRNReverseRequest,
+    GRNConfirmedEditRequest,
     PurchaseReturnCreateRequest,
 )
 from app.services.order_number_service import (
@@ -967,6 +968,309 @@ async def update_grn(
 
     db.commit()
     db.refresh(grn)
+    return grn
+
+
+def _audit_value(value) -> str:
+    """Render a GRN field value for the audit trail (old/new)."""
+    if value is None:
+        return ""
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return str(value)
+
+
+@router.put("/api/v1/grn/{grn_id}/confirmed-details")
+async def update_confirmed_grn(
+    request: Request,
+    grn_id: UUID,
+    payload: GRNConfirmedEditRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("grn_write")),
+):
+    """MCN-BUG-004-ii: Edit detail fields of a CONFIRMED GRN.
+
+    Unlocks Batch, Quantity, Rate, Expiry/MFG date and Remarks after confirmation for
+    authorised users. Stock and purchase ledger postings are reconciled by reversing the
+    GRN's original stock entries and re-posting the corrected values (the same mechanics as
+    confirm/reverse), totals are recalculated (payables derive from GRN totals), and every
+    field change is written to the audit trail. GRN number, supplier, created date/by are
+    never modified here. Draft GRNs continue to use the standard edit form (PUT /api/v1/grn).
+    """
+    grn = db.query(GoodsReceiptNote).filter(GoodsReceiptNote.id == grn_id, GoodsReceiptNote.is_deleted == False).first()
+    if not grn:
+        raise HTTPException(status_code=404, detail="GRN not found")
+    _enforce_owner(grn, current_user)
+    if grn.status != "confirmed":
+        raise HTTPException(
+            status_code=400,
+            detail="Only confirmed GRNs can be edited here. Draft GRNs use the standard edit form.",
+        )
+
+    if not payload.items:
+        raise HTTPException(status_code=400, detail="At least one line item is required")
+
+    # Financial-integrity guards (mirror reverse): editing quantity/rate would desync any
+    # allocated payment or confirmed purchase return tied to this GRN.
+    has_payment = (
+        db.query(PaymentAllocation)
+        .join(Payment, PaymentAllocation.payment_id == Payment.id)
+        .filter(
+            PaymentAllocation.purchase_grn_id == grn_id,
+            PaymentAllocation.is_deleted == False,
+            Payment.is_deleted == False,
+            Payment.status != "cancelled",
+        )
+        .first()
+    )
+    if has_payment:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot edit: a payment is allocated to this GRN. Cancel/bounce the payment first.",
+        )
+
+    has_return = (
+        db.query(PurchaseReturn)
+        .filter(
+            PurchaseReturn.grn_id == grn_id,
+            PurchaseReturn.is_deleted == False,
+            PurchaseReturn.status == "confirmed",
+        )
+        .first()
+    )
+    if has_return:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot edit: a confirmed purchase return exists for this GRN.",
+        )
+
+    db_items = db.query(GRNItem).filter(GRNItem.grn_id == grn_id, GRNItem.is_deleted == False).all()
+    items_by_id = {str(i.id): i for i in db_items}
+
+    tax_mode = determine_tax_mode(db, "supplier", grn.supplier_id)
+    is_igst = tax_mode["is_igst"]
+    gst_applicable = tax_mode["gst_applicable"]
+
+    today = date.today()
+
+    # Pass 1: validate every edit and compute net on-hand delta per product.
+    net_delta_by_product: dict[UUID, float] = {}
+    for edit in payload.items:
+        item = items_by_id.get(str(edit.id))
+        if not item:
+            raise HTTPException(status_code=400, detail=f"GRN line item not found: {edit.id}")
+        if edit.quantity is None or float(edit.quantity) <= 0:
+            raise HTTPException(status_code=400, detail="Quantity must be greater than zero")
+        if float(edit.free_quantity or 0) < 0:
+            raise HTTPException(status_code=400, detail="Free quantity cannot be negative")
+        if edit.manufacture_date and edit.manufacture_date >= today:
+            raise HTTPException(status_code=400, detail="MFG Date must be a past date")
+        if edit.expiry_date and edit.expiry_date <= today:
+            raise HTTPException(status_code=400, detail="Expiry date must be a future date")
+        if edit.manufacture_date and edit.expiry_date and edit.expiry_date < edit.manufacture_date:
+            raise HTTPException(status_code=400, detail="Expiry date cannot be earlier than manufacture date")
+        old_total = float(item.quantity or 0) + float(item.free_quantity or 0)
+        new_total = float(edit.quantity or 0) + float(edit.free_quantity or 0)
+        net_delta_by_product[item.product_id] = net_delta_by_product.get(item.product_id, 0.0) + (new_total - old_total)
+
+    # Guard: a reduction must not drive on-hand stock negative (already-issued goods).
+    for product_id, delta in net_delta_by_product.items():
+        if delta < -1e-9 and get_current_stock(db, product_id) + delta + 1e-6 < 0:
+            product = db.query(Product).filter(Product.id == product_id).first()
+            label = product.name if product else str(product_id)
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot reduce received quantity for '{label}': the stock has already been issued.",
+            )
+
+    changes: list[dict] = []
+    po_received_delta: dict[UUID, float] = {}
+
+    for edit in payload.items:
+        item = items_by_id[str(edit.id)]
+        product = db.query(Product).filter(Product.id == item.product_id).first()
+        product_label = product.name if product else str(item.product_id)
+        old_qty = float(item.quantity or 0)
+        old_free = float(item.free_quantity or 0)
+
+        # Record field-level changes (BRD: field name, old value, new value).
+        for field_name, old_value, new_value in (
+            ("batch_no", item.batch_no, edit.batch_no),
+            ("manufacture_date", item.manufacture_date, edit.manufacture_date),
+            ("expiry_date", item.expiry_date, edit.expiry_date),
+            ("quantity", item.quantity, edit.quantity),
+            ("free_quantity", item.free_quantity, edit.free_quantity),
+            ("unit_price", item.unit_price, edit.unit_price),
+        ):
+            if _audit_value(old_value) != _audit_value(new_value):
+                changes.append({
+                    "item_id": str(item.id),
+                    "product": product_label,
+                    "field": field_name,
+                    "old_value": _audit_value(old_value),
+                    "new_value": _audit_value(new_value),
+                })
+
+        # Reverse the original stock postings for this line (qty + free) at the old rate.
+        add_stock_entry(
+            db=db,
+            product_id=item.product_id,
+            transaction_type="adjustment",
+            reference_type="grn_edit_reversal",
+            reference_id=grn.id,
+            reference_number=f"{grn.grn_number}-EDIT-REV",
+            quantity=-old_qty,
+            rate=item.unit_price,
+            transaction_date=today,
+            created_by=current_user.id,
+            notes="GRN post-confirmation edit: reverse original receipt",
+        )
+        if old_free > 0:
+            add_stock_entry(
+                db=db,
+                product_id=item.product_id,
+                transaction_type="adjustment",
+                reference_type="grn_edit_reversal",
+                reference_id=grn.id,
+                reference_number=f"{grn.grn_number}-FREE-EDIT-REV",
+                quantity=-old_free,
+                rate=0,
+                transaction_date=today,
+                created_by=current_user.id,
+                notes="GRN post-confirmation edit: reverse original free receipt",
+            )
+
+        # Recalculate line amounts (discount % and GST rate are unchanged by this edit).
+        calc = calc_line_item(
+            edit.quantity,
+            edit.unit_price,
+            float(item.discount_percent or 0),
+            int(item.gst_rate or 0),
+            is_igst,
+            gst_applicable,
+        )
+        item.batch_no = edit.batch_no
+        item.manufacture_date = edit.manufacture_date
+        item.expiry_date = edit.expiry_date
+        item.quantity = edit.quantity
+        item.free_quantity = edit.free_quantity
+        item.unit_price = edit.unit_price
+        item.discount_amount = calc["discount"]
+        item.taxable_amount = calc["taxable"]
+        item.cgst_amount = calc["cgst"]
+        item.sgst_amount = calc["sgst"]
+        item.igst_amount = calc["igst"]
+        item.total_amount = calc["total"]
+
+        # Re-post the corrected receipt at the new quantity/rate.
+        add_stock_entry(
+            db=db,
+            product_id=item.product_id,
+            transaction_type="purchase",
+            reference_type="grn",
+            reference_id=grn.id,
+            reference_number=grn.grn_number,
+            quantity=float(edit.quantity),
+            rate=edit.unit_price,
+            transaction_date=grn.receipt_date,
+            created_by=current_user.id,
+            notes="GRN post-confirmation edit: corrected receipt",
+        )
+        if float(edit.free_quantity or 0) > 0:
+            add_stock_entry(
+                db=db,
+                product_id=item.product_id,
+                transaction_type="purchase",
+                reference_type="grn",
+                reference_id=grn.id,
+                reference_number=f"{grn.grn_number}-FREE",
+                quantity=float(edit.free_quantity),
+                rate=0,
+                transaction_date=grn.receipt_date,
+                created_by=current_user.id,
+                notes="GRN post-confirmation edit: corrected free receipt",
+            )
+
+        if item.purchase_order_item_id:
+            po_received_delta[item.purchase_order_item_id] = (
+                po_received_delta.get(item.purchase_order_item_id, 0.0) + (float(edit.quantity) - old_qty)
+            )
+
+    # GRN-level remarks (notes).
+    new_notes = payload.notes
+    if _audit_value(grn.notes) != _audit_value(new_notes):
+        changes.append({
+            "item_id": None,
+            "product": None,
+            "field": "notes",
+            "old_value": _audit_value(grn.notes),
+            "new_value": _audit_value(new_notes),
+        })
+        grn.notes = new_notes
+
+    if not changes:
+        raise HTTPException(status_code=400, detail="No changes detected")
+
+    # Adjust PO received quantities by the per-line delta and recompute PO status.
+    for po_item_id, delta in po_received_delta.items():
+        if abs(delta) < 1e-9:
+            continue
+        po_item = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.id == po_item_id).first()
+        if po_item:
+            po_item.received_quantity = max(0.0, float(po_item.received_quantity or 0) + delta)
+
+    db.flush()
+
+    # Recompute GRN totals from the corrected line items.
+    refreshed_items = db.query(GRNItem).filter(GRNItem.grn_id == grn_id, GRNItem.is_deleted == False).all()
+    grn.total_discount = sum(int(i.discount_amount or 0) for i in refreshed_items)
+    grn.total_taxable_amount = sum(int(i.taxable_amount or 0) for i in refreshed_items)
+    grn.total_cgst = sum(int(i.cgst_amount or 0) for i in refreshed_items)
+    grn.total_sgst = sum(int(i.sgst_amount or 0) for i in refreshed_items)
+    grn.total_igst = sum(int(i.igst_amount or 0) for i in refreshed_items)
+    grn.subtotal = grn.total_taxable_amount + grn.total_discount
+    grn.total_gst = grn.total_cgst + grn.total_sgst + grn.total_igst
+    grn.total_amount = grn.total_taxable_amount + grn.total_gst
+
+    if grn.purchase_order_id:
+        po = db.query(PurchaseOrder).filter(PurchaseOrder.id == grn.purchase_order_id).first()
+        if po:
+            _enforce_owner(po, current_user)
+            if po.status not in {"cancelled"}:
+                po_items = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.purchase_order_id == po.id).all()
+                if po_items:
+                    has_any_receipt = any(float(i.received_quantity or 0) > 0 for i in po_items)
+                    if not has_any_receipt:
+                        po.status = "sent"
+                    elif all(float(i.received_quantity or 0) >= float(i.quantity or 0) for i in po_items):
+                        po.status = "received"
+                    else:
+                        po.status = "partial"
+
+    refresh_materialized_view(db)
+    db.commit()
+    db.refresh(grn)
+
+    log_audit_event(
+        db,
+        action=f"PUT:/api/v1/grn/{grn.id}/confirmed-details",
+        resource_type="grn",
+        status="success",
+        user_id=current_user.id,
+        resource_id=grn.id,
+        details={
+            "grn_number": grn.grn_number,
+            "action": "edit_confirmed",
+            "changes": changes,
+            "edited_by": getattr(current_user, "email", None) or str(current_user.id),
+            "edited_at": datetime.utcnow().isoformat(),
+            "total_amount": grn.total_amount,
+            "method": "PUT",
+            "path": f"/api/v1/grn/{grn.id}/confirmed-details",
+        },
+        ip_address=request.client.host if request.client else None,
+    )
+
     return grn
 
 

@@ -305,6 +305,18 @@ const CompanyPage = () => {
     removeAmbassadorLogoMutation.mutate();
   };
 
+  // Render logos through the backend-served API endpoints (proxied via /api) rather than the
+  // raw /static path. The stored /static/* URL is not served on the deployed origin (nginx only
+  // proxies /api), which is why the profile page showed a placeholder while the sidebar — which
+  // uses the branding/API endpoint — worked. The stored filename is used as a cache-buster so a
+  // re-upload refreshes the image immediately.
+  const logoDisplayUrl = data?.logo_url
+    ? `${getStaticUrl('/api/v1/company/logo-file')}?v=${encodeURIComponent(data.logo_url)}`
+    : null;
+  const ambassadorLogoDisplayUrl = data?.ambassador_logo_url
+    ? `${getStaticUrl('/api/v1/company/ambassador-logo-file')}?v=${encodeURIComponent(data.ambassador_logo_url)}`
+    : null;
+
   const onSubmit = (values: CompanyForm): void => {
     const parsed = schema.safeParse(values);
     if (!parsed.success) {
@@ -360,8 +372,8 @@ const CompanyPage = () => {
             {/* Logo Section */}
             <div className="hms-card p-6 flex items-center gap-6">
               <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-xl bg-neutral-100 border-2 border-dashed border-neutral-300 overflow-hidden">
-                {data?.logo_url ? (
-                  <img src={getStaticUrl(data.logo_url) ?? ''} alt="Logo" className="h-full w-full object-contain" />
+                {logoDisplayUrl ? (
+                  <img src={logoDisplayUrl} alt="Logo" className="h-full w-full object-contain" />
                 ) : (
                   <span className="material-icons text-neutral-400 text-3xl">image</span>
                 )}
@@ -378,8 +390,8 @@ const CompanyPage = () => {
 
             <div className="hms-card p-6 flex items-center gap-6">
               <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-xl bg-neutral-100 border-2 border-dashed border-neutral-300 overflow-hidden">
-                {data?.ambassador_logo_url ? (
-                  <img src={getStaticUrl(data.ambassador_logo_url) ?? ''} alt="Ambassador Logo" className="h-full w-full object-contain" />
+                {ambassadorLogoDisplayUrl ? (
+                  <img src={ambassadorLogoDisplayUrl} alt="Ambassador Logo" className="h-full w-full object-contain" />
                 ) : (
                   <span className="material-icons text-neutral-400 text-3xl">image</span>
                 )}

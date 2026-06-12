@@ -75,6 +75,30 @@ class GRNReverseRequest(BaseModel):
         return self
 
 
+class GRNConfirmedEditItem(BaseModel):
+    """MCN-BUG-004-ii: a single editable GRN line for a confirmed GRN.
+
+    Identified by the existing grn_items.id. Only the detail fields permitted by
+    the BRD are accepted; product mapping and PO linkage are not changed here.
+    """
+    id: UUID
+    batch_no: Optional[str] = None
+    manufacture_date: Optional[date] = None
+    expiry_date: Optional[date] = None
+    quantity: float
+    free_quantity: float = 0
+    unit_price: int
+
+
+class GRNConfirmedEditRequest(BaseModel):
+    """MCN-BUG-004-ii: edit detail fields of an already-confirmed GRN.
+
+    Stock and totals are reconciled by the delta between old and new values.
+    """
+    notes: Optional[str] = None
+    items: List[GRNConfirmedEditItem]
+
+
 class PurchaseReturnLineItemRequest(BaseModel):
     product_id: UUID
     grn_item_id: Optional[UUID] = None

@@ -24,7 +24,7 @@ from app.models.customer import Customer
 from app.models.supplier import Supplier
 from app.models.company import Company
 from app.models.payment import Payment, PaymentAllocation
-from app.services.audit_service import ensure_audit_logs_storage, log_audit_event, _extract_document_reference
+from app.services.audit_service import ensure_audit_logs_storage, log_audit_event, _extract_document_reference, int_to_roman
 from app.services.auth_service import normalize_role
 from app.services.gst_service import (
     INVOICE_TYPE_EXPORT,
@@ -1341,23 +1341,35 @@ async def sales_report(
     current_user: User = Depends(require_permissions("reports_read")),
 ):
     _ensure_valid_date_range(from_date, to_date)
-    rows = db.query(SalesInvoice).filter(
-        SalesInvoice.invoice_date >= from_date,
-        SalesInvoice.invoice_date <= to_date,
-        SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
-        SalesInvoice.is_deleted == False,
-    ).all()
+    # Join the customer so the Sales Report can display the full customer name per invoice
+    # (MCN-BUG-005). bill_to_customer_id is the invoice's billed party; fall back to
+    # customer_id for legacy rows where only customer_id is populated.
+    rows = (
+        db.query(SalesInvoice, Customer.company_name.label("customer_name"))
+        .outerjoin(
+            Customer,
+            Customer.id == func.coalesce(SalesInvoice.bill_to_customer_id, SalesInvoice.customer_id),
+        )
+        .filter(
+            SalesInvoice.invoice_date >= from_date,
+            SalesInvoice.invoice_date <= to_date,
+            SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
+            SalesInvoice.is_deleted == False,
+        )
+        .all()
+    )
     return {
         "count": len(rows),
-        "total_amount": int(sum(row.total_amount for row in rows)),
+        "total_amount": int(sum(row.SalesInvoice.total_amount for row in rows)),
         "items": [
             {
-                "invoice_number": row.invoice_number,
-                "invoice_date": row.invoice_date.isoformat() if row.invoice_date else None,
-                "total_amount": row.total_amount,
-                "amount_paid": row.amount_paid,
-                "amount_due": row.amount_due,
-                "status": row.status,
+                "invoice_number": row.SalesInvoice.invoice_number,
+                "invoice_date": row.SalesInvoice.invoice_date.isoformat() if row.SalesInvoice.invoice_date else None,
+                "customer_name": row.customer_name or "-",
+                "total_amount": row.SalesInvoice.total_amount,
+                "amount_paid": row.SalesInvoice.amount_paid,
+                "amount_due": row.SalesInvoice.amount_due,
+                "status": row.SalesInvoice.status,
             }
             for row in rows
         ],
@@ -4387,7 +4399,8 @@ async def action_logs_report(
                 a.description,
                 a.status,
                 a.created_at,
-                a.details
+                a.details,
+                a.version
             FROM audit_logs a
             LEFT JOIN users u ON u.id = a.user_id
             WHERE a.created_at::date >= :from_date
@@ -4447,9 +4460,14 @@ async def action_logs_report(
         # Extract reference from audit details or DB record_reference
         extracted_ref = _extract_document_reference(row.get("record_reference"), details, db, module_name)
 
+        version_value = row.get("version")
+        version_int = int(version_value) if version_value is not None else None
+
         items.append(
             {
                 "id": str(row.get("id")),
+                "version": version_int,
+                "version_label": f"Version {int_to_roman(version_int)}" if version_int else None,
                 "user_id": str(row.get("user_id")) if row.get("user_id") else None,
                 "user_name": row.get("user_name") or "System",
                 "action": row.get("action") or "",
