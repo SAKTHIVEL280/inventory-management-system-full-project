@@ -385,7 +385,7 @@ const ActionLogsPage = () => {
                         <td className="px-3 py-2 text-left">{item.action_type || '-'}</td>
                         <td className="px-3 py-2 text-left">{(item.reference && item.reference.trim()) || (item.record_reference && item.record_reference.trim()) || '-'}</td>
                         <td className="px-3 py-2 text-left">{item.version_label ? <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-semibold text-indigo-700">{item.version_label}</span> : '-'}</td>
-                        <td className="px-3 py-2 text-left">{item.description || item.action || '-'}</td>
+                        <td className="px-3 py-2 text-left whitespace-pre-line">{item.description || item.action || '-'}</td>
                         <td className="px-3 py-2 text-left">{item.status || '-'}</td>
                       </tr>
                     ))

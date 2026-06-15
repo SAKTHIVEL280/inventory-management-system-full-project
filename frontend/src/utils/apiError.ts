@@ -13,7 +13,7 @@ export interface ApiObjectDetail {
   [key: string]: unknown;
 }
 
-export type ApiDetail = string | ApiFieldError[] | ApiObjectDetail | undefined;
+export type ApiDetail = string | Array<string | ApiFieldError> | ApiObjectDetail | undefined;
 
 interface ApiLikeError {
   response?: {
@@ -34,7 +34,7 @@ export const getApiDetailMessage = (detail: ApiDetail, fallback: string): string
 
   if (Array.isArray(detail)) {
     const messages = detail
-      .map((d) => d.msg || d.message)
+      .map((d) => (typeof d === 'string' ? d : d.msg || d.message))
       .filter((m): m is string => Boolean(m && m.trim()));
     if (messages.length > 0) {
       return messages.join(', ');

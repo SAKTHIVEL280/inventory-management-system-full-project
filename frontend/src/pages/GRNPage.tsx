@@ -404,6 +404,9 @@ const GRNPage = () => {
     if (invalidItems.length > 0) { setError('Please select a product for all line items'); return; }
     const zeroQtyItems = items.filter(i => !i.quantity || i.quantity <= 0);
     if (zeroQtyItems.length > 0) { setError('All items must have a quantity greater than 0'); return; }
+    // GRN-Batch-Mandatory: every line must carry a batch number.
+    const missingBatchIndex = items.findIndex(i => !i.batch_no || !i.batch_no.trim());
+    if (missingBatchIndex >= 0) { setError(`Line item ${missingBatchIndex + 1}: Batch number is required.`); return; }
 
     if (selectedPO) {
       const qtyOutOfRangeIndex = items.findIndex((i) => {
@@ -494,10 +497,15 @@ const GRNPage = () => {
       toast.success('GRN created successfully');
       setShowForm(false); resetForm(); fetchGRNs(); fetchPOs();
     } catch (err: unknown) {
-      const axErr = err as { response?: { data?: { detail?: string | Array<{ msg: string; loc?: string[] }> } } };
+      const axErr = err as { response?: { data?: { detail?: string | Array<string | { msg?: string; message?: string }> } } };
       const detail = axErr?.response?.data?.detail;
       if (typeof detail === 'string') { setError(detail); }
-      else if (Array.isArray(detail)) { setError(detail.map(d => d.msg).join(', ')); }
+      else if (Array.isArray(detail)) {
+        const messages = detail
+          .map((d) => (typeof d === 'string' ? d : d?.msg || d?.message || ''))
+          .filter((m) => Boolean(m && m.trim()));
+        setError(messages.length > 0 ? messages.join(', ') : 'Failed to create GRN. Please check all fields and try again.');
+      }
       else { setError('Failed to create GRN. Please check all fields and try again.'); }
     } finally { setSubmitting(false); }
   };
@@ -553,6 +561,10 @@ const GRNPage = () => {
     // Client-side validation mirroring the server rules for fast feedback.
     const today = todayLocalDateInputValue();
     for (const row of editRows) {
+      if (!row.batch_no || !row.batch_no.trim()) {
+        toast.error('Batch number is required for every line item.');
+        return;
+      }
       if (!(row.quantity > 0)) {
         toast.error('Quantity must be greater than zero');
         return;
@@ -1299,7 +1311,7 @@ const GRNPage = () => {
                       <th className="px-3 py-2 text-left w-[32%] min-w-[320px]">Product</th>
                       <th className="px-3 py-2 text-right w-40">Received Qty</th>
                       <th className="px-3 py-2 text-right w-24">Free</th>
-                      <th className="px-3 py-2 text-left w-32">Batch No</th>
+                      <th className="px-3 py-2 text-left w-32">Batch No <span className="text-red-500">*</span></th>
                       <th className="px-3 py-2 text-left w-36">MFG Date</th>
                       <th className="px-3 py-2 text-left w-36">EXP Date</th>
                       <th className="px-3 py-2 text-right w-28">Price (₹)</th>

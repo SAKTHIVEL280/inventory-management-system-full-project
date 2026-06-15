@@ -18,7 +18,7 @@ import ssl
 from typing import Any
 from types import SimpleNamespace
 from uuid import UUID
-from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
@@ -27,6 +27,7 @@ from app.database import get_db
 from app.dependencies import enforce_resource_ownership, require_permissions, require_role, scope_query_to_company
 from app.models.user import User
 from app.models.product import Product, StockLedger
+from app.services.audit_service import build_audit_changes
 from app.models.customer import Customer
 from app.models.inventory_count import InventoryCountDifferenceAudit, InventoryCountItem
 from app.models.purchase import GoodsReceiptNote, GRNItem, PurchaseReturn, PurchaseReturnItem
@@ -1730,6 +1731,7 @@ async def get_invoice(
 async def update_invoice(
     invoice_id: UUID,
     payload: SalesInvoiceCreateRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("sales_invoices_write")),
 ):
@@ -1739,6 +1741,33 @@ async def update_invoice(
     _enforce_owner(invoice, current_user)
     if invoice.status != "draft":
         raise HTTPException(status_code=400, detail="Only draft invoice can be edited")
+
+    # Snapshot pre-edit values so the audit trail can show exact field-level changes.
+    old_total_amount = invoice.total_amount
+    old_total_discount = invoice.total_discount
+    old_total_gst = invoice.total_gst
+    old_invoice_date = invoice.invoice_date
+    old_due_date = invoice.due_date
+    old_invoice_type = invoice.invoice_type
+    old_notes = invoice.notes
+    old_terms = invoice.terms_conditions
+    old_customer_id = invoice.customer_id
+    old_customer = (
+        db.query(Customer).filter(Customer.id == old_customer_id).first()
+        if old_customer_id else None
+    )
+    old_items_by_product: dict[str, dict[str, Any]] = {}
+    old_product_counts: dict[str, int] = {}
+    for it in db.query(SalesInvoiceItem).filter(SalesInvoiceItem.invoice_id == invoice_id).all():
+        pid = str(it.product_id)
+        old_product_counts[pid] = old_product_counts.get(pid, 0) + 1
+        old_items_by_product[pid] = {
+            "quantity": it.quantity,
+            "free_quantity": it.free_quantity,
+            "unit_price": it.unit_price,
+            "discount_percent": it.discount_percent,
+            "batch_no": it.batch_no,
+        }
 
     customer = db.query(Customer).filter(Customer.id == payload.customer_id, Customer.is_deleted == False).first()
     if not customer:
@@ -1839,6 +1868,410 @@ async def update_invoice(
     exact_total = total_taxable + invoice.total_gst
     invoice.total_amount = round_paise_to_nearest_5(exact_total)
     invoice.amount_due = max(0, invoice.total_amount - invoice.amount_paid)
+
+    # Record exact field-level changes for the audit trail (rendered as
+    # "<Field> changed from <old> to <new>"). The baseline audit middleware merges
+    # these in, keeping a single readable audit entry per edit. Reference the
+    # invoice number, not the UUID.
+    old_customer_name = (old_customer.company_name or "").strip() if old_customer else ""
+    new_customer_name = (customer.company_name or "").strip()
+    audit_changes = build_audit_changes([
+        ("customer", old_customer_name, new_customer_name),
+        ("invoice_date", old_invoice_date, invoice.invoice_date),
+        ("due_date", old_due_date, invoice.due_date),
+        ("invoice_type", old_invoice_type, invoice.invoice_type),
+        ("notes", old_notes, invoice.notes),
+        ("terms_conditions", old_terms, invoice.terms_conditions),
+        ("total_discount", old_total_discount, invoice.total_discount),
+        ("total_amount", old_total_amount, invoice.total_amount),
+    ])
+
+    # Per-line changes, attributed to the product. Only diff products that appear
+    # exactly once on each side (so "old -> new" is unambiguous); otherwise just
+    # note the line as added/removed. Header totals above still capture the rest.
+    new_product_counts: dict[str, int] = {}
+    new_items_by_product: dict[str, Any] = {}
+    for line in payload.items:
+        pid = str(line.product_id)
+        new_product_counts[pid] = new_product_counts.get(pid, 0) + 1
+        new_items_by_product[pid] = line
+
+    def _product_name(pid: str) -> str:
+        cached = product_cache.get(pid)
+        if cached is not None:
+            return cached.name
+        prod = db.query(Product).filter(Product.id == pid).first()
+        return prod.name if prod else "Item"
+
+    for pid in list(old_items_by_product.keys()) + [p for p in new_items_by_product if p not in old_items_by_product]:
+        in_old = pid in old_items_by_product
+        in_new = pid in new_items_by_product
+        name = _product_name(pid)
+        if in_old and not in_new:
+            audit_changes.append({"field": "line_item", "product": name,
+                                  "old_value": "present", "new_value": "removed"})
+            continue
+        if in_new and not in_old:
+            audit_changes.append({"field": "line_item", "product": name,
+                                  "old_value": "absent", "new_value": "added"})
+            continue
+        # Present on both sides: only emit precise diffs when unambiguous.
+        if old_product_counts.get(pid, 0) != 1 or new_product_counts.get(pid, 0) != 1:
+            continue
+        old_line = old_items_by_product[pid]
+        new_line = new_items_by_product[pid]
+        audit_changes.extend(build_audit_changes([
+            ("quantity", old_line["quantity"], new_line.quantity, name),
+            ("free_quantity", old_line["free_quantity"], new_line.free_quantity, name),
+            ("unit_price", old_line["unit_price"], new_line.unit_price, name),
+            ("discount_percent", old_line["discount_percent"], new_line.discount_percent, name),
+            ("batch_no", old_line["batch_no"], new_line.batch_no, name),
+        ]))
+
+    request.state.audit_reference = invoice.invoice_number
+    if audit_changes:
+        request.state.audit_changes = audit_changes
+
+    db.commit()
+    db.refresh(invoice)
+    return invoice
+
+
+@router.put("/api/v1/invoices/{invoice_id}/issued-details")
+async def update_issued_invoice(
+    invoice_id: UUID,
+    payload: SalesInvoiceCreateRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """Edit an already-ISSUED Sales Invoice (authorized users only).
+
+    Issued invoices have posted stock and an established receivable. This endpoint
+    reverses the invoice's original stock 'sale' postings, rebuilds the line items,
+    recomputes tax/totals, re-posts the corrected 'sale' entries, and recomputes
+    amount_due/status — so stock, tax, totals and the derived accounting stay correct.
+    Every field change (old -> new) is written to the audit trail with the acting user
+    and timestamp (via the audit middleware, which references the invoice number).
+
+    Editing is blocked when a (non-cancelled) receipt is allocated or a confirmed sales
+    return exists for the invoice, because changing quantities/totals would desync those
+    postings — clear them first. Draft invoices continue to use PUT /api/v1/invoices/{id}.
+    """
+    from app.models.payment import Payment, PaymentAllocation
+
+    invoice = (
+        db.query(SalesInvoice)
+        .filter(SalesInvoice.id == invoice_id, SalesInvoice.is_deleted == False)
+        .with_for_update()
+        .first()
+    )
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    _enforce_owner(invoice, current_user)
+    if invoice.status not in {"issued", "partial_paid", "paid"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Only issued invoices can be edited here. Draft invoices use the standard edit form.",
+        )
+
+    # Financial-integrity guards (mirror GRN confirmed-edit).
+    has_payment = (
+        db.query(PaymentAllocation)
+        .join(Payment, PaymentAllocation.payment_id == Payment.id)
+        .filter(
+            PaymentAllocation.invoice_id == invoice_id,
+            PaymentAllocation.is_deleted == False,
+            Payment.is_deleted == False,
+            Payment.status != "cancelled",
+        )
+        .first()
+    )
+    if has_payment:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot edit: a payment is allocated to this invoice. Cancel/bounce the payment first.",
+        )
+
+    has_return = (
+        db.query(SalesReturn)
+        .filter(
+            SalesReturn.invoice_id == invoice_id,
+            SalesReturn.is_deleted == False,
+            SalesReturn.status == "confirmed",
+        )
+        .first()
+    )
+    if has_return:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot edit: a confirmed sales return exists for this invoice.",
+        )
+
+    # Snapshot pre-edit values for the audit trail (field-level old -> new).
+    old_total_amount = invoice.total_amount
+    old_total_discount = invoice.total_discount
+    old_invoice_date = invoice.invoice_date
+    old_due_date = invoice.due_date
+    old_invoice_type = invoice.invoice_type
+    old_notes = invoice.notes
+    old_terms = invoice.terms_conditions
+    old_customer_id = invoice.customer_id
+    old_customer = (
+        db.query(Customer).filter(Customer.id == old_customer_id).first()
+        if old_customer_id else None
+    )
+    old_item_rows = db.query(SalesInvoiceItem).filter(SalesInvoiceItem.invoice_id == invoice_id).all()
+    old_items_by_product: dict[str, dict[str, Any]] = {}
+    old_product_counts: dict[str, int] = {}
+    for it in old_item_rows:
+        pid = str(it.product_id)
+        old_product_counts[pid] = old_product_counts.get(pid, 0) + 1
+        old_items_by_product[pid] = {
+            "quantity": it.quantity,
+            "free_quantity": it.free_quantity,
+            "unit_price": it.unit_price,
+            "discount_percent": it.discount_percent,
+            "batch_no": it.batch_no,
+        }
+
+    customer = db.query(Customer).filter(Customer.id == payload.customer_id, Customer.is_deleted == False).first()
+    if not customer:
+        raise HTTPException(status_code=400, detail="Invalid customer")
+    _enforce_owner(customer, current_user)
+    _validate_shipping_address_for_invoice(customer)
+
+    product_cache = _validate_invoice_line_items_for_save(db, payload.items, current_user)
+
+    calculated_due_date = _calculate_invoice_due_date(payload.invoice_date, customer)
+    resolved_due_date = payload.due_date or calculated_due_date
+
+    tax_mode = determine_tax_mode(db, "customer", payload.customer_id)
+    expected_invoice_type = determine_default_invoice_type(db, payload.customer_id)
+    invoice_type = payload.invoice_type or expected_invoice_type
+    _validate_invoice_type_for_country(invoice_type, customer)
+    _validate_invoice_type_for_location(db, invoice_type, customer)
+    invoice_tax_mode = invoice_type_tax_mode(invoice_type, fallback_is_igst=tax_mode["is_igst"])
+    is_igst = invoice_tax_mode["is_igst"]
+    gst_applicable = invoice_tax_mode["gst_applicable"]
+    if not tax_mode["gst_applicable"]:
+        is_igst = False
+        gst_applicable = False
+
+    if payload.sales_order_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Sales Order module has been removed. Create invoice directly.",
+        )
+
+    today = date.today()
+
+    # Reverse the original stock 'sale' postings (qty + free) so on-hand returns to
+    # its pre-issue level before the corrected lines are re-posted.
+    for it in old_item_rows:
+        add_stock_entry(
+            db=db,
+            product_id=it.product_id,
+            transaction_type="adjustment",
+            reference_type="inv_edit_reversal",
+            reference_id=invoice.id,
+            reference_number=f"{invoice.invoice_number}-EDIT-REV",
+            quantity=float(it.quantity or 0),
+            rate=it.unit_price,
+            transaction_date=today,
+            created_by=current_user.id,
+            notes="Issued-invoice edit: reverse original sale",
+        )
+        if it.free_quantity and float(it.free_quantity) > 0:
+            add_stock_entry(
+                db=db,
+                product_id=it.product_id,
+                transaction_type="adjustment",
+                reference_type="inv_edit_reversal",
+                reference_id=invoice.id,
+                reference_number=f"{invoice.invoice_number}-FREE-EDIT-REV",
+                quantity=float(it.free_quantity),
+                rate=0,
+                transaction_date=today,
+                created_by=current_user.id,
+                notes="Issued-invoice edit: reverse original free sale",
+            )
+    db.flush()
+
+    # Validate stock availability for the corrected lines against on-hand (which now
+    # reflects the reversal), aggregated per product so a reduced/raised line is fair.
+    new_demand_by_product: dict[str, float] = {}
+    for line in payload.items:
+        pid = str(line.product_id)
+        new_demand_by_product[pid] = (
+            new_demand_by_product.get(pid, 0.0)
+            + float(line.quantity or 0) + float(line.free_quantity or 0)
+        )
+    for pid, demand in new_demand_by_product.items():
+        available = get_current_stock(db, UUID(pid))
+        if demand - available > 1e-6:
+            product = product_cache.get(pid)
+            label = product.name if product else pid
+            raise HTTPException(status_code=400, detail=f"Insufficient stock for product {label}")
+
+    invoice.customer_id = payload.customer_id
+    invoice.sales_order_id = None
+    invoice.quotation_id = payload.quotation_id
+    invoice.invoice_date = payload.invoice_date
+    invoice.due_date = resolved_due_date
+    invoice.sold_to_customer_id = payload.sold_to_customer_id or payload.customer_id
+    invoice.bill_to_customer_id = payload.bill_to_customer_id or payload.customer_id
+    invoice.ship_to_customer_id = payload.ship_to_customer_id or payload.customer_id
+    invoice.supply_state = payload.supply_state
+    invoice.supply_state_code = payload.supply_state_code
+    invoice.invoice_type = invoice_type
+    invoice.import_export_code = payload.import_export_code
+    invoice.is_igst = is_igst
+    invoice.notes = payload.notes
+    invoice.terms_conditions = payload.terms_conditions
+
+    db.query(SalesInvoiceItem).filter(SalesInvoiceItem.invoice_id == invoice_id).delete()
+    db.flush()
+
+    subtotal = total_discount = total_taxable = total_cgst = total_sgst = total_igst = 0
+    for item in payload.items:
+        product = product_cache[str(item.product_id)]
+        calc = calc_line_item(
+            item.quantity,
+            item.unit_price,
+            item.discount_percent,
+            item.gst_rate,
+            is_igst,
+            gst_applicable,
+        )
+        db.add(SalesInvoiceItem(
+            invoice_id=invoice.id,
+            product_id=item.product_id,
+            description=item.description,
+            order_unit=item.order_unit,
+            batch_no=item.batch_no,
+            manufacture_date=item.manufacture_date,
+            expiry_date=item.expiry_date,
+            quantity=item.quantity,
+            free_quantity=item.free_quantity,
+            unit_price=item.unit_price,
+            mrp=product.mrp,
+            discount_percent=item.discount_percent,
+            discount_amount=calc["discount"],
+            taxable_amount=calc["taxable"],
+            gst_rate=calc["gst_rate"],
+            cgst_amount=calc["cgst"],
+            sgst_amount=calc["sgst"],
+            igst_amount=calc["igst"],
+            total_amount=calc["total"],
+        ))
+        subtotal += calc["gross"]
+        total_discount += calc["discount"]
+        total_taxable += calc["taxable"]
+        total_cgst += calc["cgst"]
+        total_sgst += calc["sgst"]
+        total_igst += calc["igst"]
+
+        # Re-post the corrected sale (stock out) at the new quantity/rate.
+        add_stock_entry(
+            db=db,
+            product_id=item.product_id,
+            transaction_type="sale",
+            reference_type="invoice",
+            reference_id=invoice.id,
+            reference_number=invoice.invoice_number,
+            quantity=-float(item.quantity),
+            rate=item.unit_price,
+            transaction_date=invoice.invoice_date,
+            created_by=current_user.id,
+            notes="Issued-invoice edit: corrected sale",
+        )
+        if item.free_quantity and float(item.free_quantity) > 0:
+            add_stock_entry(
+                db=db,
+                product_id=item.product_id,
+                transaction_type="sale",
+                reference_type="invoice",
+                reference_id=invoice.id,
+                reference_number=f"{invoice.invoice_number}-FREE",
+                quantity=-float(item.free_quantity),
+                rate=0,
+                transaction_date=invoice.invoice_date,
+                created_by=current_user.id,
+                notes="Issued-invoice edit: corrected free sale",
+            )
+
+    invoice.subtotal = subtotal
+    invoice.total_discount = total_discount
+    invoice.total_taxable_amount = total_taxable
+    invoice.total_cgst = total_cgst
+    invoice.total_sgst = total_sgst
+    invoice.total_igst = total_igst
+    invoice.total_gst = total_cgst + total_sgst + total_igst
+    exact_total = total_taxable + invoice.total_gst
+    invoice.total_amount = round_paise_to_nearest_5(exact_total)
+    invoice.amount_due = max(0, invoice.total_amount - invoice.amount_paid)
+    # Recompute the payment status from the corrected total (amount_paid is unchanged).
+    invoice.status = _compute_invoice_status(invoice.amount_paid, invoice.total_amount)
+
+    refresh_materialized_view(db)
+
+    # Field-level audit (rendered "<Field> changed from <old> to <new>"). The audit
+    # middleware merges these into a single readable row with the acting user + timestamp.
+    old_customer_name = (old_customer.company_name or "").strip() if old_customer else ""
+    new_customer_name = (customer.company_name or "").strip()
+    audit_changes = build_audit_changes([
+        ("customer", old_customer_name, new_customer_name),
+        ("invoice_date", old_invoice_date, invoice.invoice_date),
+        ("due_date", old_due_date, invoice.due_date),
+        ("invoice_type", old_invoice_type, invoice.invoice_type),
+        ("notes", old_notes, invoice.notes),
+        ("terms_conditions", old_terms, invoice.terms_conditions),
+        ("total_discount", old_total_discount, invoice.total_discount),
+        ("total_amount", old_total_amount, invoice.total_amount),
+    ])
+
+    new_product_counts: dict[str, int] = {}
+    new_items_by_product: dict[str, Any] = {}
+    for line in payload.items:
+        pid = str(line.product_id)
+        new_product_counts[pid] = new_product_counts.get(pid, 0) + 1
+        new_items_by_product[pid] = line
+
+    def _product_name(pid: str) -> str:
+        cached = product_cache.get(pid)
+        if cached is not None:
+            return cached.name
+        prod = db.query(Product).filter(Product.id == pid).first()
+        return prod.name if prod else "Item"
+
+    for pid in list(old_items_by_product.keys()) + [p for p in new_items_by_product if p not in old_items_by_product]:
+        in_old = pid in old_items_by_product
+        in_new = pid in new_items_by_product
+        name = _product_name(pid)
+        if in_old and not in_new:
+            audit_changes.append({"field": "line_item", "product": name,
+                                  "old_value": "present", "new_value": "removed"})
+            continue
+        if in_new and not in_old:
+            audit_changes.append({"field": "line_item", "product": name,
+                                  "old_value": "absent", "new_value": "added"})
+            continue
+        if old_product_counts.get(pid, 0) != 1 or new_product_counts.get(pid, 0) != 1:
+            continue
+        old_line = old_items_by_product[pid]
+        new_line = new_items_by_product[pid]
+        audit_changes.extend(build_audit_changes([
+            ("quantity", old_line["quantity"], new_line.quantity, name),
+            ("free_quantity", old_line["free_quantity"], new_line.free_quantity, name),
+            ("unit_price", old_line["unit_price"], new_line.unit_price, name),
+            ("discount_percent", old_line["discount_percent"], new_line.discount_percent, name),
+            ("batch_no", old_line["batch_no"], new_line.batch_no, name),
+        ]))
+
+    request.state.audit_reference = invoice.invoice_number
+    if audit_changes:
+        request.state.audit_changes = audit_changes
 
     db.commit()
     db.refresh(invoice)

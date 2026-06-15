@@ -47,7 +47,7 @@ from app.services.order_number_service import (
 )
 from app.services.gst_service import determine_tax_mode, calc_line_item, split_tax
 from app.services.stock_service import add_stock_entry, refresh_materialized_view, get_product_batch_snapshot, get_current_stock
-from app.services.audit_service import log_audit_event
+from app.services.audit_service import log_audit_event, build_audit_changes
 from app.services.auth_service import normalize_role
 from app.utils.input_validation import validate_optional_token
 
@@ -87,9 +87,15 @@ def _enforce_supplier_gstin_for_gst_purchase(*, supplier: Supplier, gst_applicab
 
     errors: list[str] = []
     if not _has_text(supplier.state):
-        errors.append("State is required for Non-Registered GST suppliers")
+        errors.append(
+            f"Supplier '{supplier.company_name}' has no State set. "
+            "Edit the supplier and add its State before creating a GST GRN."
+        )
     if not _has_text(supplier.state_code):
-        errors.append("State Code is required for GST calculation")
+        errors.append(
+            f"Supplier '{supplier.company_name}' has no State Code set (required for GST calculation). "
+            "Edit the supplier to add it."
+        )
     if errors:
         raise HTTPException(status_code=400, detail=errors)
 
@@ -315,6 +321,7 @@ async def get_purchase_order(
 async def update_purchase_order(
     po_id: UUID,
     payload: PurchaseOrderCreateRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("purchase_orders_write")),
 ):
@@ -324,6 +331,18 @@ async def update_purchase_order(
     _enforce_owner(po, current_user)
     if po.status != "draft":
         raise HTTPException(status_code=400, detail="Only draft purchase orders can be edited")
+
+    # Snapshot pre-edit values for the audit trail (exact "old -> new" changes).
+    old_po_supplier_id = po.supplier_id
+    old_po_supplier = (
+        db.query(Supplier).filter(Supplier.id == old_po_supplier_id).first()
+        if old_po_supplier_id else None
+    )
+    old_po_order_date = po.order_date
+    old_po_expected_delivery = po.expected_delivery_date
+    old_po_notes = po.notes
+    old_po_total_discount = po.total_discount
+    old_po_total_amount = po.total_amount
 
     supplier = db.query(Supplier).filter(Supplier.id == payload.supplier_id, Supplier.is_deleted == False).first()
     if not supplier:
@@ -396,6 +415,23 @@ async def update_purchase_order(
     po.total_igst = total_igst
     po.total_gst = total_cgst + total_sgst + total_igst
     po.total_amount = total_taxable + po.total_gst
+
+    # Record exact field-level changes; the audit middleware merges these into the
+    # single baseline log row and references the PO number instead of the UUID.
+    old_po_supplier_name = (old_po_supplier.company_name or "").strip() if old_po_supplier else ""
+    new_po_supplier_name = (supplier.company_name or "").strip()
+    po_audit_changes = build_audit_changes([
+        ("supplier", old_po_supplier_name, new_po_supplier_name),
+        ("order_date", old_po_order_date, po.order_date),
+        ("expected_delivery_date", old_po_expected_delivery, po.expected_delivery_date),
+        ("notes", old_po_notes, po.notes),
+        ("total_discount", old_po_total_discount, po.total_discount),
+        ("total_amount", old_po_total_amount, po.total_amount),
+    ])
+    request.state.audit_reference = po.po_number
+    if po_audit_changes:
+        request.state.audit_changes = po_audit_changes
+
     db.commit()
     db.refresh(po)
     return po
@@ -621,6 +657,13 @@ async def create_grn(
         if not product:
             raise HTTPException(status_code=400, detail=f"Invalid product: {item.product_id}")
         _enforce_owner(product, current_user)
+
+        # GRN-Batch-Mandatory: every received line must carry a batch number.
+        if not (item.batch_no or "").strip():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Line item {idx}: Batch number is required.",
+            )
 
         # GRN-007: MFG date must be a past date only
         from datetime import date
@@ -868,6 +911,13 @@ async def update_grn(
             raise HTTPException(status_code=400, detail=f"Invalid product: {item.product_id}")
         _enforce_owner(product, current_user)
 
+        # GRN-Batch-Mandatory: every received line must carry a batch number.
+        if not (item.batch_no or "").strip():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Line item {idx}: Batch number is required.",
+            )
+
         # GRN-007: MFG date must be a past date only
         from datetime import date
         if item.manufacture_date and item.manufacture_date >= date.today():
@@ -875,7 +925,7 @@ async def update_grn(
                 status_code=400,
                 detail="MFG Date must be a past date",
             )
-        
+
         # GRN-008: Expiry date must be a future date only
         if item.expiry_date and item.expiry_date <= date.today():
             raise HTTPException(
@@ -1059,6 +1109,9 @@ async def update_confirmed_grn(
         item = items_by_id.get(str(edit.id))
         if not item:
             raise HTTPException(status_code=400, detail=f"GRN line item not found: {edit.id}")
+        # GRN-Batch-Mandatory: batch number must remain present after a confirmed-GRN edit.
+        if not (edit.batch_no or "").strip():
+            raise HTTPException(status_code=400, detail="Batch number is required for every line item.")
         if edit.quantity is None or float(edit.quantity) <= 0:
             raise HTTPException(status_code=400, detail="Quantity must be greater than zero")
         if float(edit.free_quantity or 0) < 0:

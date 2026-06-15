@@ -293,6 +293,12 @@ class SalesApiClient {
     } as unknown as Record<string, unknown>);
   }
 
+  async updateIssuedInvoice(id: string, payload: UpdateInvoicePayload, options?: ApiCallOptions) {
+    return apiClient.put<SalesInvoice>(`/api/v2/invoices/${id}/issued-details`, payload, {
+      ...(options?.suppressGlobalErrorToast ? { skipErrorToast: true } : {}),
+    } as unknown as Record<string, unknown>);
+  }
+
   async issueInvoice(id: string, options?: ApiCallOptions) {
     return apiClient.post<SalesInvoice>(`/api/v2/invoices/${id}/issue`, {}, {
       ...(options?.suppressGlobalErrorToast ? { skipErrorToast: true } : {}),

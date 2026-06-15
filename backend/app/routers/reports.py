@@ -24,7 +24,7 @@ from app.models.customer import Customer
 from app.models.supplier import Supplier
 from app.models.company import Company
 from app.models.payment import Payment, PaymentAllocation
-from app.services.audit_service import ensure_audit_logs_storage, log_audit_event, _extract_document_reference, int_to_roman
+from app.services.audit_service import ensure_audit_logs_storage, log_audit_event, _extract_document_reference, int_to_roman, compose_audit_description
 from app.services.auth_service import normalize_role
 from app.services.gst_service import (
     INVOICE_TYPE_EXPORT,
@@ -4451,14 +4451,30 @@ async def action_logs_report(
 
         module_name = (row.get("module_name") or "").strip().lower()
         record_reference = (row.get("record_reference") or "").strip()
-        description = row.get("description") or ""
-        amount_value = _resolve_action_log_amount(db, module_name, record_reference)
-        amount_label = _format_inr_amount(amount_value)
-        if amount_label and amount_label not in description:
-            description = f"{description} | Amount: {amount_label}".strip(" |") if description else f"Amount: {amount_label}"
 
-        # Extract reference from audit details or DB record_reference
+        # Resolve a human-friendly document number (INV-00027, PO-001, GRN-001, ...).
         extracted_ref = _extract_document_reference(row.get("record_reference"), details, db, module_name)
+        document_ref = extracted_ref or ("" if _parse_uuid(record_reference) else record_reference)
+
+        # Re-compose the description in plain business language: document number
+        # (never a UUID), past-tense action, and field-level "old -> new" changes
+        # when captured. This also upgrades historical rows whose stored text was
+        # built before the resolved document number was available.
+        description = compose_audit_description(
+            action_type=(row.get("action_type") or ""),
+            module_name=module_name,
+            document_reference=document_ref,
+            details=details,
+            status=(row.get("status") or "success"),
+        )
+
+        # When no explicit field changes were captured, surface the document amount
+        # as context (e.g. created/issued documents) instead of an "old -> new" line.
+        if not (isinstance(details, dict) and details.get("changes")):
+            amount_value = _resolve_action_log_amount(db, module_name, record_reference)
+            amount_label = _format_inr_amount(amount_value)
+            if amount_label:
+                description = f"{description}\nAmount: {amount_label}"
 
         version_value = row.get("version")
         version_int = int(version_value) if version_value is not None else None

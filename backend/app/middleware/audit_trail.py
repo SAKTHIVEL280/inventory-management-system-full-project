@@ -75,6 +75,17 @@ class AuditTrailMiddleware(BaseHTTPMiddleware):
                 if error:
                     detail_payload["error"] = error
 
+                # Endpoints may enrich the baseline audit entry with business context
+                # (field-level changes and the document number) by setting these on
+                # request.state. This keeps a single audit row per request while still
+                # producing readable "<Field> changed from <old> to <new>" descriptions.
+                audit_changes = getattr(request.state, "audit_changes", None)
+                if isinstance(audit_changes, list) and audit_changes:
+                    detail_payload["changes"] = audit_changes
+                audit_reference = getattr(request.state, "audit_reference", None)
+                if audit_reference:
+                    detail_payload["record_reference"] = str(audit_reference)
+
                 log_audit_event(
                     db,
                     action=f"{request.method}:{request.url.path}",

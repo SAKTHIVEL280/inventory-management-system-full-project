@@ -2,6 +2,7 @@
 import logging
 from pathlib import Path
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -148,6 +149,61 @@ app.include_router(rdn.router)
 app.include_router(customization_options.router)
 app.include_router(archive.router)
 app.include_router(compliance.router)
+
+
+_VALIDATION_MSG_REWRITES = (
+    ("Input should be", "must be"),
+    ("Value error, ", ""),
+    ("value is not a valid", "is not a valid"),
+)
+
+
+def _humanize_validation_location(loc: tuple) -> str:
+    """Render a pydantic error location as a readable field reference.
+
+    e.g. ("body", "items", 0, "quantity") -> "Items #1 → Quantity".
+    """
+    segments: list[str] = []
+    for part in loc:
+        if part in ("body", "query", "path"):
+            continue
+        if isinstance(part, int):
+            # Attach the 1-based index to the previous segment ("Items #1").
+            if segments:
+                segments[-1] = f"{segments[-1]} #{part + 1}"
+            else:
+                segments.append(f"#{part + 1}")
+        else:
+            label = str(part).replace("_", " ").strip()
+            segments.append(label[:1].upper() + label[1:] if label else label)
+    return " → ".join(s for s in segments if s)
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Return request-validation (422) errors as one clear, field-named sentence.
+
+    FastAPI's default surfaces a raw list of terse messages with no field names, which
+    reaches the user as a generic "Invalid input". Here we name the offending field and
+    state the problem (e.g. "Items #1 → Quantity: must be a valid number") so the user
+    knows exactly what to correct.
+    """
+    parts: list[str] = []
+    seen: set[str] = set()
+    for err in exc.errors():
+        msg = str(err.get("msg") or "Invalid value")
+        for old, new in _VALIDATION_MSG_REWRITES:
+            msg = msg.replace(old, new)
+        msg = msg.strip()
+        field = _humanize_validation_location(tuple(err.get("loc", ())))
+        entry = f"{field}: {msg}" if field else msg
+        if entry not in seen:
+            seen.add(entry)
+            parts.append(entry)
+
+    detail = "; ".join(parts) if parts else "Some fields are invalid. Please correct and try again."
+    logger.info("Validation error on %s %s: %s", request.method, request.url.path, detail)
+    return JSONResponse(status_code=422, content={"detail": detail, "path": request.url.path})
 
 
 @app.exception_handler(IntegrityError)

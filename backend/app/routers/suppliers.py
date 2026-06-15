@@ -15,6 +15,7 @@ from app.models.user import User
 from app.services.auth_service import normalize_role
 from app.services.data_masking import DataMasker, should_mask_sensitive_fields
 from app.utils.input_validation import normalize_search_query
+from app.utils.countries import COUNTRY_MASTER
 from app.utils.state_mappings import (
     canonical_state_code,
     state_abbreviation_from_code,
@@ -84,14 +85,7 @@ STATE_ABBREVIATIONS = {
     "west bengal": "WB",
 }
 
-DEFAULT_SUPPLIER_COUNTRIES = [
-    "India",
-    "United States",
-    "United Arab Emirates",
-    "United Kingdom",
-    "Singapore",
-    "Australia",
-]
+DEFAULT_SUPPLIER_COUNTRIES = list(COUNTRY_MASTER)
 
 DEFAULT_SUPPLIER_CURRENCIES = ["INR", "USD", "EUR", "GBP"]
 DEFAULT_SUPPLIER_STATES = [
@@ -396,14 +390,22 @@ async def get_supplier_customization_options(
         .all()
     )
 
-    countries = sorted(
-        {
-            _normalize_country(row.option_value)
-            for row in rows
-            if row.field_name == "country" and _normalize_country(row.option_value)
-        },
-        key=lambda value: value.lower(),
-    )
+    # Always offer the complete country master, unioned with any company-specific
+    # custom values, deduplicated case-insensitively so the typeahead is complete.
+    country_values = list(COUNTRY_MASTER) + [
+        _normalize_country(row.option_value)
+        for row in rows
+        if row.field_name == "country" and _normalize_country(row.option_value)
+    ]
+    seen_countries: set[str] = set()
+    countries: list[str] = []
+    for value in country_values:
+        key = value.lower()
+        if key not in seen_countries:
+            seen_countries.add(key)
+            countries.append(value)
+    countries = sorted(countries, key=lambda value: value.lower())
+
     currencies = sorted(
         {
             (row.option_value or "").strip().upper()
@@ -420,8 +422,6 @@ async def get_supplier_customization_options(
         key=lambda value: value.lower(),
     )
 
-    if not countries:
-        countries = DEFAULT_SUPPLIER_COUNTRIES.copy()
     if not currencies:
         currencies = DEFAULT_SUPPLIER_CURRENCIES.copy()
     if not states:

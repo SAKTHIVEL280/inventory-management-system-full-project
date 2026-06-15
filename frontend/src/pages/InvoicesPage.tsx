@@ -161,6 +161,9 @@ const InvoicesPage = () => {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // SAL-Edit-After-Issue: when true, the open edit form targets an already-issued
+  // invoice and submits to the issued-details endpoint (stock/tax/totals reconciled).
+  const [editingIssued, setEditingIssued] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -321,7 +324,7 @@ const InvoicesPage = () => {
   // MCN-BUG-001: any filter/page-size change returns to the first page
   useEffect(() => { setPage(1); }, [statusFilter, debouncedSearch, dateFrom, dateTo, pageSize]);
 
-  const resetForm = () => { setCustomerId(''); setInvoiceType('within_state'); setImportExportCode(''); setInvoiceDate(todayLocalDateInputValue()); setDueDate(''); setIsDueDateManuallyEdited(false); setNotes(''); setItems([]); setBatchOptionsByRow({}); setEditingId(null); setError(''); };
+  const resetForm = () => { setCustomerId(''); setInvoiceType('within_state'); setImportExportCode(''); setInvoiceDate(todayLocalDateInputValue()); setDueDate(''); setIsDueDateManuallyEdited(false); setNotes(''); setItems([]); setBatchOptionsByRow({}); setEditingId(null); setEditingIssued(false); setError(''); };
   const addItem = () => {
     setItems([
       ...items,
@@ -667,7 +670,9 @@ const InvoicesPage = () => {
           gst_rate: Number(isExportInvoice ? 0 : i.gst_rate),
         })),
       };
-      if (editingId) {
+      if (editingId && editingIssued) {
+        await salesApi.updateIssuedInvoice(editingId, payload, { suppressGlobalErrorToast: true });
+      } else if (editingId) {
         await salesApi.updateInvoice(editingId, payload, { suppressGlobalErrorToast: true });
       } else {
         await salesApi.createInvoice(payload, { suppressGlobalErrorToast: true });
@@ -728,6 +733,35 @@ const InvoicesPage = () => {
       setSelectedInvoiceItems([]);
       setShowInvoiceDetail(true);
     }
+  };
+
+  // SAL-027 / SAL-Edit-After-Issue: load the selected invoice into the edit form.
+  // `issued` routes the save to the reconciling issued-details endpoint.
+  const loadInvoiceIntoEditForm = (issued: boolean) => {
+    if (!selectedInvoice) return;
+    setShowInvoiceDetail(false);
+    setEditingId(selectedInvoice.id);
+    setEditingIssued(issued);
+    setCustomerId(selectedInvoice.customer_id);
+    setInvoiceType((selectedInvoice.invoice_type as InvoiceTypeValue) || deriveDefaultInvoiceType(selectedInvoice.customer_id));
+    setImportExportCode(selectedInvoice.import_export_code || '');
+    setInvoiceDate(selectedInvoice.invoice_date);
+    setDueDate(selectedInvoice.due_date || '');
+    setIsDueDateManuallyEdited(true);
+    setNotes(selectedInvoice.notes || '');
+    setItems(selectedInvoiceItems.map(i => ({
+      product_id: i.product_id,
+      order_unit: i.order_unit || '',
+      batch_no: i.batch_no || '',
+      manufacture_date: i.manufacture_date || '',
+      expiry_date: i.expiry_date || '',
+      quantity: i.quantity,
+      free_quantity: i.free_quantity || 0,
+      unit_price: i.unit_price,
+      discount_percent: i.discount_percent || 0,
+      gst_rate: i.gst_rate,
+    })));
+    setShowForm(true);
   };
 
   const customerNameById = (customerId: string) => {
@@ -1107,35 +1141,23 @@ const InvoicesPage = () => {
                   {/* SAL-027: Edit button in Invoice View for draft invoices */}
                   {selectedInvoice.status === 'draft' && (
                     <button
-                      onClick={() => {
-                        setShowInvoiceDetail(false);
-                        // Load into edit form
-                        setEditingId(selectedInvoice.id);
-                        setCustomerId(selectedInvoice.customer_id);
-                        setInvoiceType((selectedInvoice.invoice_type as InvoiceTypeValue) || deriveDefaultInvoiceType(selectedInvoice.customer_id));
-                        setImportExportCode(selectedInvoice.import_export_code || '');
-                        setInvoiceDate(selectedInvoice.invoice_date);
-                        setDueDate(selectedInvoice.due_date || '');
-                        setIsDueDateManuallyEdited(true);
-                        setNotes(selectedInvoice.notes || '');
-                        setItems(selectedInvoiceItems.map(i => ({
-                          product_id: i.product_id,
-                          order_unit: i.order_unit || '',
-                          batch_no: i.batch_no || '',
-                          manufacture_date: i.manufacture_date || '',
-                          expiry_date: i.expiry_date || '',
-                          quantity: i.quantity,
-                          free_quantity: i.free_quantity || 0,
-                          unit_price: i.unit_price,
-                          discount_percent: i.discount_percent || 0,
-                          gst_rate: i.gst_rate,
-                        })));
-                        setShowForm(true);
-                      }}
+                      onClick={() => loadInvoiceIntoEditForm(false)}
                       className="inline-flex items-center gap-1 rounded-lg border border-primary bg-primary/5 px-3 py-2 text-xs font-semibold text-primary hover:bg-primary/10"
                     >
                       <span className="material-icons text-sm" aria-hidden="true">edit</span>
                       Edit Invoice
+                    </button>
+                  )}
+                  {/* SAL-Edit-After-Issue: authorized users may edit an issued invoice with
+                      no allocated receipts; stock/tax/totals are reconciled server-side. */}
+                  {isAdmin && selectedInvoice.status === 'issued' && selectedInvoice.amount_paid === 0 && (
+                    <button
+                      onClick={() => loadInvoiceIntoEditForm(true)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-amber-500 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 hover:bg-amber-100"
+                      title="Edit issued invoice (stock, tax and totals will be recalculated)"
+                    >
+                      <span className="material-icons text-sm" aria-hidden="true">edit</span>
+                      Edit Issued Invoice
                     </button>
                   )}
                   <button

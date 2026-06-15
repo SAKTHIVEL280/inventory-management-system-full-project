@@ -25,7 +25,7 @@ from app.models.sales import SalesInvoice
 from app.models.purchase import GoodsReceiptNote, PurchaseOrder
 from app.schemas.payment import PaymentCreateRequest, PaymentStatusRequest
 from app.services.order_number_service import generate_payment_number
-from app.services.audit_service import log_audit_event
+from app.services.audit_service import log_audit_event, build_audit_changes
 from app.services.auth_service import normalize_role
 from app.utils.input_validation import validate_optional_token
 
@@ -774,11 +774,13 @@ async def update_payment_status(
             if allocation.purchase_grn_id:
                 _reverse_grn_allocation(db, allocation.purchase_grn_id, allocation.allocated_amount)
 
+    old_payment_status = payment.status
     payment.status = requested_status
     db.commit()
     db.refresh(payment)
-    
-    # Log audit event with payment number
+
+    # Log audit event with payment number + field-level status change
+    status_changes = build_audit_changes([("status", old_payment_status, requested_status)])
     log_audit_event(
         db,
         action=f"PATCH:/api/v1/payments/{payment.id}/status",
@@ -795,6 +797,7 @@ async def update_payment_status(
             "amount": payment.amount,
             "method": "PATCH",
             "path": f"/api/v1/payments/{payment.id}/status",
+            "changes": status_changes,
         },
         ip_address=request.client.host if request.client else None,
     )

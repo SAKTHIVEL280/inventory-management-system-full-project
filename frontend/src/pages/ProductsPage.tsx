@@ -7,7 +7,7 @@ import { stockApi } from '../api/stock';
 import { Product } from '../types';
 import { AppLayout } from '../components/AppLayout';
 import { PageEmpty, PageError, PageLoading } from '../components/PageState';
-import { getApiDetail, getApiDetailMessage, type ApiFieldError } from '../utils/apiError';
+import { getApiDetail, getApiDetailMessage } from '../utils/apiError';
 import { showError, showSuccess } from '../utils/toastHelper';
 
 const productSchema = z.object({
@@ -192,11 +192,12 @@ const ProductsPage = () => {
         showError(detail);
       } else if (Array.isArray(detail)) {
         const msg = detail
-          .map((d) => d.msg || d.message)
+          .map((d) => (typeof d === 'string' ? d : d.msg || d.message))
           .filter((m): m is string => Boolean(m && m.trim()))
           .join(', ');
         let mappedFieldError = false;
-        detail.forEach((d: ApiFieldError) => {
+        detail.forEach((d) => {
+          if (typeof d === 'string') return;
           const rawField = Array.isArray(d.loc) ? d.loc[d.loc.length - 1] : null;
           const field = rawField === 'alt_uom_conversion' ? 'base_unit_qty' : rawField;
           if (typeof field === 'string' && field in defaultProductValues) {
@@ -231,11 +232,12 @@ const ProductsPage = () => {
         showError(detail);
       } else if (Array.isArray(detail)) {
         const msg = detail
-          .map((d) => d.msg || d.message)
+          .map((d) => (typeof d === 'string' ? d : d.msg || d.message))
           .filter((m): m is string => Boolean(m && m.trim()))
           .join(', ');
         let mappedFieldError = false;
-        detail.forEach((d: ApiFieldError) => {
+        detail.forEach((d) => {
+          if (typeof d === 'string') return;
           const rawField = Array.isArray(d.loc) ? d.loc[d.loc.length - 1] : null;
           const field = rawField === 'alt_uom_conversion' ? 'base_unit_qty' : rawField;
           if (typeof field === 'string' && field in defaultProductValues) {
@@ -272,7 +274,7 @@ const ProductsPage = () => {
       } else if (Array.isArray(detail)) {
         setFormError(
           detail
-            .map((d) => d.msg || d.message)
+            .map((d) => (typeof d === 'string' ? d : d.msg || d.message))
             .filter((m): m is string => Boolean(m && m.trim()))
             .join(', ')
         );
@@ -296,7 +298,7 @@ const ProductsPage = () => {
       } else if (Array.isArray(detail)) {
         setFormError(
           detail
-            .map((d) => d.msg || d.message)
+            .map((d) => (typeof d === 'string' ? d : d.msg || d.message))
             .filter((m): m is string => Boolean(m && m.trim()))
             .join(', ')
         );

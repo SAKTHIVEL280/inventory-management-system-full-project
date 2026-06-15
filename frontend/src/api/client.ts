@@ -55,10 +55,14 @@ type ApiErrorDetail =
       error?: string;
       code?: string;
     }
-  | Array<{
-      msg?: string;
-      message?: string;
-    }>;
+  | Array<
+      | string
+      | {
+          msg?: string;
+          message?: string;
+          loc?: Array<string | number>;
+        }
+    >;
 
 const errorToastHistory = new Map<string, number>();
 
@@ -109,10 +113,24 @@ const normalizeApiErrorMessage = (error: unknown): string => {
 
   if (Array.isArray(detail)) {
     const messages = detail
-      .map((d) => d?.msg || d?.message)
+      .map((d) => {
+        // Backend may return an array of plain strings (e.g. ["State is required ..."]).
+        if (typeof d === 'string') return d.trim();
+        const msg = (d?.msg || d?.message || '').toString().trim();
+        if (!msg) return '';
+        // Name the offending field (from `loc`) so the user knows what to fix.
+        const loc = Array.isArray(d?.loc) ? d.loc : [];
+        const fieldParts = loc
+          .filter((p: unknown) => p !== 'body' && p !== 'query' && p !== 'path')
+          .map((p: unknown) =>
+            typeof p === 'number' ? `#${p + 1}` : String(p).replace(/_/g, ' '),
+          );
+        const field = fieldParts.join(' ').trim();
+        return field ? `${field}: ${msg}` : msg;
+      })
       .filter((m): m is string => Boolean(m && m.trim()));
     if (messages.length > 0) {
-      return messages.join(', ');
+      return messages.join('; ');
     }
   }
 

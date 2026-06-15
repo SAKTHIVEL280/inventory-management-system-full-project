@@ -583,6 +583,286 @@ def _payment_status_label(status: str) -> str:
     return ""
 
 
+# ---------------------------------------------------------------------------
+# Business-friendly audit descriptions
+#
+# Audit descriptions must read like plain business statements: a document
+# number (never a UUID), a past-tense action, and any field-level changes as
+# "<Field> changed from <old> to <new>." No HTTP methods or internal paths.
+# ---------------------------------------------------------------------------
+
+# Friendly labels for field-level change rendering.
+_FIELD_LABELS = {
+    "batch_no": "Batch",
+    "batch": "Batch",
+    "manufacture_date": "Manufacture Date",
+    "expiry_date": "Expiry Date",
+    "quantity": "Quantity",
+    "free_quantity": "Free Quantity",
+    "unit_price": "Rate",
+    "rate": "Rate",
+    "notes": "Remarks",
+    "remarks": "Remarks",
+    "total_amount": "Amount",
+    "amount": "Amount",
+    "amount_due": "Amount Due",
+    "amount_paid": "Amount Paid",
+    "subtotal": "Subtotal",
+    "taxable_amount": "Taxable Amount",
+    "total_discount": "Discount",
+    "total_gst": "GST",
+    "discount_percent": "Discount %",
+    "gst_rate": "GST Rate",
+    "invoice_type": "Invoice Type",
+    "terms_conditions": "Terms & Conditions",
+    "status": "Status",
+    "customer": "Customer",
+    "customer_name": "Customer",
+    "supplier": "Supplier",
+    "supplier_name": "Supplier",
+    "invoice_date": "Invoice Date",
+    "due_date": "Due Date",
+    "order_date": "Order Date",
+    "expected_delivery_date": "Expected Delivery Date",
+    "warehouse": "Warehouse",
+    "bin": "Bin Location",
+    "items_count": "Line Items",
+    "item_count": "Line Items",
+}
+
+# Fields stored in paise that should display as INR currency in change lines.
+_MONEY_CHANGE_FIELDS = {
+    "unit_price",
+    "rate",
+    "total_amount",
+    "amount",
+    "amount_due",
+    "amount_paid",
+    "subtotal",
+    "taxable_amount",
+    "total_discount",
+    "total_gst",
+}
+
+# Past-tense verb -> base form, used to phrase failures ("Failed to <base> ...").
+_VERB_BASE = {
+    "created": "create",
+    "updated": "update",
+    "deleted": "delete",
+    "confirmed": "confirm",
+    "issued": "issue",
+    "reversed": "reverse",
+    "cancelled": "cancel",
+    "accepted": "accept",
+    "emailed": "email",
+    "generated": "generate",
+    "viewed": "view",
+}
+
+_MODULE_TOKENS = {
+    "invoices", "purchase-orders", "grn", "payments", "stock", "sales-returns",
+    "purchase-returns", "rdn", "customers", "suppliers", "products", "users", "quotations",
+}
+
+
+def _field_label(field: str) -> str:
+    key = (field or "").strip().lower()
+    if key in _FIELD_LABELS:
+        return _FIELD_LABELS[key]
+    return key.replace("_", " ").title() if key else "Field"
+
+
+def _format_money_paise(value: Any) -> str | None:
+    try:
+        return f"INR {float(value) / 100.0:,.2f}"
+    except (TypeError, ValueError):
+        return None
+
+
+def _format_change_value(field: str, value: Any) -> str:
+    if value is None:
+        return "(empty)"
+    text_value = str(value).strip()
+    if text_value == "":
+        return "(empty)"
+    if (field or "").strip().lower() in _MONEY_CHANGE_FIELDS:
+        money = _format_money_paise(text_value)
+        if money:
+            return money
+    # Status values read better title-cased ("pending" -> "Pending", "advance_cleared" -> "Advance Cleared").
+    if (field or "").strip().lower() == "status":
+        return text_value.replace("_", " ").title()
+    # Tidy integer-valued floats so quantities read "10" instead of "10.0".
+    try:
+        as_float = float(text_value)
+        if as_float.is_integer():
+            return str(int(as_float))
+    except (TypeError, ValueError):
+        pass
+    return text_value
+
+
+def _json_safe(value: Any) -> Any:
+    """Coerce a value to something json.dumps can serialise (dates -> ISO, Decimal -> float)."""
+    import datetime as _dt
+    from decimal import Decimal
+
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, (_dt.datetime, _dt.date)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return float(value)
+    return str(value)
+
+
+def build_audit_changes(entries: Any) -> list[dict[str, Any]]:
+    """Build a list of change records from ``(field, old, new[, product])`` tuples.
+
+    Only differing values are kept. Values are coerced to JSON-safe types so the
+    resulting list can be stored directly in the audit ``details`` JSONB column.
+    The audit description composer renders each record as
+    "<Field> changed from <old> to <new>." (with INR formatting for money fields).
+    """
+    changes: list[dict[str, Any]] = []
+    for entry in entries or []:
+        if not entry or len(entry) < 3:
+            continue
+        field, old_value, new_value = entry[0], entry[1], entry[2]
+        product = entry[3] if len(entry) > 3 else None
+        safe_old = _json_safe(old_value)
+        safe_new = _json_safe(new_value)
+        # Compare on the rendered form so 10 vs 10.0 (or equal money) are not noise.
+        if _format_change_value(str(field), safe_old) == _format_change_value(str(field), safe_new):
+            continue
+        record: dict[str, Any] = {
+            "field": field,
+            "old_value": safe_old,
+            "new_value": safe_new,
+        }
+        if product is not None and str(product).strip():
+            record["product"] = str(product).strip()
+        changes.append(record)
+    return changes
+
+
+def _render_change_lines(changes: Any) -> list[str]:
+    """Render a list of {field, old_value, new_value[, label, product]} dicts as readable lines."""
+    if not isinstance(changes, list):
+        return []
+    lines: list[str] = []
+    for change in changes:
+        if not isinstance(change, dict):
+            continue
+        field = change.get("field") or change.get("name") or ""
+        product = change.get("product")
+        # Line additions/removals read better as a statement than "from/to".
+        if str(field).strip().lower() == "line_item":
+            action = str(change.get("new_value") or "").strip().lower()
+            prefix = f"{str(product).strip()}: " if product and str(product).strip() else ""
+            if action in {"added", "removed"}:
+                lines.append(f"{prefix}line item {action}.")
+                continue
+        label = change.get("label") or _field_label(str(field))
+        old_value = change.get("old_value", change.get("old"))
+        new_value = change.get("new_value", change.get("new"))
+        old_disp = _format_change_value(str(field), old_value)
+        new_disp = _format_change_value(str(field), new_value)
+        if old_disp == new_disp:
+            continue
+        prefix = f"{str(product).strip()}: " if product and str(product).strip() else ""
+        lines.append(f"{prefix}{label} changed from {old_disp} to {new_disp}.")
+    return lines
+
+
+def _business_verb(action_type: str, module_name: str, details: dict[str, Any]) -> str:
+    """Past-tense business verb for an audit action ('created', 'updated', 'confirmed', ...)."""
+    token = (action_type or "").strip().upper()
+    path = (details.get("path") or "").strip().lower()
+    detail_action = str(details.get("action") or "").strip().lower()
+    # Inspect the trailing action segment (e.g. ".../grn/<id>/confirm") rather than a
+    # loose substring so "/confirmed-details" (a content edit) is not read as "confirm".
+    segments = [seg for seg in path.strip("/").split("/") if seg]
+    last_segment = segments[-1] if segments else ""
+
+    if last_segment == "confirm":
+        return "confirmed"
+    if last_segment == "issue":
+        return "issued"
+    if last_segment == "reverse" or detail_action in {"reverse", "reversal", "grn_reversal"}:
+        return "reversed"
+    if last_segment == "cancel" or detail_action == "cancel":
+        return "cancelled"
+    if last_segment == "accept":
+        return "accepted"
+    if last_segment in {"send-email", "email"}:
+        return "emailed"
+    if token == "POST":
+        return "created"
+    if token in {"PUT", "PATCH"}:
+        return "updated"
+    if token == "DELETE":
+        return "deleted"
+    if token in {"GET", "VIEW", "VIEW_ACTION_LOGS"} or token.startswith("VIEW"):
+        return "viewed"
+    if token in {"REPORT", "GENERATE_REPORT"} or "REPORT" in token:
+        return "generated"
+    if token == "LOGIN":
+        return "logged in"
+    if token == "LOGOUT":
+        return "logged out"
+    return "updated"
+
+
+def compose_audit_description(
+    *,
+    action_type: str,
+    module_name: str,
+    document_reference: str | None,
+    details: dict[str, Any] | None,
+    status: str = "success",
+) -> str:
+    """Build a concise, business-friendly audit description.
+
+    Example:
+        "Invoice INV-00027 updated.\\nAmount changed from INR 6,500.00 to INR 7,080.00."
+
+    Never exposes UUIDs, HTTP methods, or internal request paths. Field-level
+    "old -> new" lines are appended when the details carry a ``changes`` list.
+    """
+    detail_dict = details if isinstance(details, dict) else {}
+    token = (action_type or "").strip().upper()
+
+    # Session/auth events read naturally on their own.
+    if token == "LOGIN":
+        return "Logged in."
+    if token == "LOGOUT":
+        return "Logged out."
+    if token == "TOKEN_REFRESH":
+        return "Session refreshed."
+    if token == "CHANGE_PASSWORD":
+        return "Password changed."
+
+    entity = _entity_label(module_name, action_type, detail_dict)
+    verb = _business_verb(action_type, module_name, detail_dict)
+
+    doc = (document_reference or "").strip()
+    if _looks_like_uuid(doc) or doc.lower() in _MODULE_TOKENS:
+        doc = ""
+
+    subject = f"{entity} {doc}".strip()
+    normalized_status = str(status or "").strip().lower()
+    if normalized_status not in {"success", "ok", ""}:
+        base = _VERB_BASE.get(verb, verb)
+        headline = f"Failed to {base} {subject}.".replace("  ", " ").strip()
+    else:
+        headline = f"{subject} {verb}.".replace("  ", " ").strip()
+
+    lines = [headline]
+    lines.extend(_render_change_lines(detail_dict.get("changes")))
+    return "\n".join(lines)
+
+
 def _build_human_readable_description(
     *,
     action_type: str,
@@ -590,50 +870,19 @@ def _build_human_readable_description(
     record_reference: str | None,
     details: dict[str, Any],
 ) -> str:
-    phrase = _action_phrase(action_type)
-    entity = _entity_label(module_name, action_type, details)
-    reference = _reference_display(record_reference, details)
+    """Stored description at write time. Delegates to the shared composer.
 
-    token = (action_type or "").strip().upper()
-    if token == "LOGIN":
-        return "Logged in"
-    if token == "LOGOUT":
-        return "Logged out"
-    if token == "TOKEN_REFRESH":
-        return "Refreshed session"
-    if token == "CHANGE_PASSWORD":
-        return "Changed password"
-
-    # Check for specific actions in the path
-    path = (details.get("path") or "").strip().lower()
-    
-    # GRN confirm action
-    if "grn" in module_name.lower() and "/confirm" in path:
-        return f"Confirmed {entity}"
-    
-    # Invoice issue action
-    if "invoice" in module_name.lower() and "/issue" in path:
-        return f"Issued {entity}"
-    
-    # Payment status update
-    if "payment" in module_name.lower() and "/status" in path:
-        return f"Updated {entity} status"
-    
-    # Stock adjustment accept
-    if "stock" in module_name.lower() and "/accept" in path:
-        return f"Accepted stock adjustment"
-    
-    # Generic action descriptions
-    if token == "POST":
-        base = f"Created {entity}"
-    elif token in {"REPORT", "GENERATE_REPORT"} or "REPORT" in token:
-        base = f"Generated {entity}"
-    else:
-        base = f"{phrase} {entity}"
-
-    if reference:
-        return f"{base} {reference}".strip()
-    return base
+    At write time the reference is frequently a UUID (baseline middleware events),
+    which the composer omits; the action-logs report re-composes the description
+    with the resolved document number when the log is read.
+    """
+    return compose_audit_description(
+        action_type=action_type,
+        module_name=module_name,
+        document_reference=record_reference,
+        details=details,
+        status="success",
+    )
 
 
 def _derive_record_reference(resource_id: UUID | str | None, details: dict[str, Any], action: str) -> str | None:

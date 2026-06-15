@@ -8,6 +8,7 @@ import { AppLayout } from '../components/AppLayout';
 import { PageEmpty, PageError, PageLoading } from '../components/PageState';
 import { showError, showSuccess, confirmWithToast } from '../utils/toastHelper';
 import { getApiDetail, getApiDetailMessage } from '../utils/apiError';
+import { COUNTRY_MASTER } from '../constants/countries';
 
 const GSTIN_REGEX = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/i;
 
@@ -109,7 +110,7 @@ const STATE_NAME_BY_CODE = GST_STATE_CODE_ENTRIES.reduce<Record<string, string>>
 const toTitleCase = (value: string): string =>
   value.replace(/\b\w/g, (char) => char.toUpperCase());
 
-const DEFAULT_COUNTRIES = ['India', 'United States', 'United Arab Emirates', 'United Kingdom', 'Singapore', 'Australia'];
+const DEFAULT_COUNTRIES = COUNTRY_MASTER;
 const DEFAULT_CURRENCIES = ['INR', 'USD', 'EUR', 'GBP'];
 const DEFAULT_STATES = STATE_OPTIONS.map(({ state }) => toTitleCase(state));
 const DEFAULT_PHONE_COUNTRY_CODES = ['+91', '+66', '+65', '+44'];
@@ -516,7 +517,7 @@ const CustomersPage = () => {
         errorMessage = detail.message;
       } else if (Array.isArray(detail)) {
         errorMessage = detail
-          .map((d) => d.msg || d.message)
+          .map((d) => (typeof d === 'string' ? d : d.msg || d.message))
           .filter((m): m is string => Boolean(m && m.trim()))
           .join(', ');
       }
