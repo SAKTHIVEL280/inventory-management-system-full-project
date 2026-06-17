@@ -224,6 +224,24 @@ def _has_text(value: Any) -> bool:
     return bool(str(value).strip()) if value is not None else False
 
 
+def _validate_invoice_master_fields(payload: SalesInvoiceCreateRequest) -> tuple[str, str, str]:
+    """Enhancement 3 (FR-19): Stockist Name, Stockist City and Sales Manager Name
+    are mandatory on every invoice save. Returns the trimmed values."""
+    stockist_name = (payload.stockist_name or "").strip()
+    stockist_city = (payload.stockist_city or "").strip()
+    sales_manager_name = (payload.sales_manager_name or "").strip()
+    errors: list[str] = []
+    if not stockist_name:
+        errors.append("Stockist Name is required")
+    if not stockist_city:
+        errors.append("Stockist City is required")
+    if not sales_manager_name:
+        errors.append("Sales Manager Name is required")
+    if errors:
+        raise HTTPException(status_code=400, detail=errors)
+    return stockist_name, stockist_city, sales_manager_name
+
+
 def _validate_shipping_address_for_invoice(customer: Customer) -> None:
     """SAL-043: Ensure shipping address is complete before invoice save."""
     required_missing = (
@@ -1449,6 +1467,8 @@ async def list_invoices(
     search: str | None = Query(default=None),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
+    stockist: list[str] | None = Query(default=None),
+    sales_manager: list[str] | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=500),
     db: Session = Depends(get_db),
@@ -1462,6 +1482,16 @@ async def list_invoices(
 
     query = db.query(SalesInvoice).filter(SalesInvoice.is_deleted == False)
     query = _scope_to_owner(query, SalesInvoice, current_user)
+
+    # Enhancement 3 (FR-21/FR-22/FR-23): Stockist & Sales Manager multi-select
+    # filters. Both work standalone and combine with each other and the existing
+    # date-range / customer / status / search filters.
+    stockist_values = [s.strip() for s in (stockist or []) if s and s.strip()]
+    if stockist_values:
+        query = query.filter(SalesInvoice.stockist_name.in_(stockist_values))
+    sales_manager_values = [s.strip() for s in (sales_manager or []) if s and s.strip()]
+    if sales_manager_values:
+        query = query.filter(SalesInvoice.sales_manager_name.in_(sales_manager_values))
     if status:
         normalized_status = status.strip().lower()
         if normalized_status in {"issued", "partial_paid", "paid"}:
@@ -1551,6 +1581,8 @@ async def create_invoice(
 
     _validate_shipping_address_for_invoice(customer)
 
+    stockist_name, stockist_city, sales_manager_name = _validate_invoice_master_fields(payload)
+
     product_cache = _validate_invoice_line_items_for_save(db, payload.items, current_user)
 
     calculated_due_date = _calculate_invoice_due_date(payload.invoice_date, customer)
@@ -1599,6 +1631,9 @@ async def create_invoice(
         invoice_type=invoice_type,
         import_export_code=payload.import_export_code,
         is_igst=is_igst,
+        stockist_name=stockist_name,
+        stockist_city=stockist_city,
+        sales_manager_name=sales_manager_name,
         notes=payload.notes,
         terms_conditions=payload.terms_conditions,
         company_id=current_user.company_id,
@@ -1751,6 +1786,9 @@ async def update_invoice(
     old_invoice_type = invoice.invoice_type
     old_notes = invoice.notes
     old_terms = invoice.terms_conditions
+    old_stockist_name = invoice.stockist_name
+    old_stockist_city = invoice.stockist_city
+    old_sales_manager_name = invoice.sales_manager_name
     old_customer_id = invoice.customer_id
     old_customer = (
         db.query(Customer).filter(Customer.id == old_customer_id).first()
@@ -1775,6 +1813,8 @@ async def update_invoice(
     _enforce_owner(customer, current_user)
 
     _validate_shipping_address_for_invoice(customer)
+
+    stockist_name, stockist_city, sales_manager_name = _validate_invoice_master_fields(payload)
 
     product_cache = _validate_invoice_line_items_for_save(db, payload.items, current_user)
 
@@ -1813,6 +1853,9 @@ async def update_invoice(
     invoice.invoice_type = invoice_type
     invoice.import_export_code = payload.import_export_code
     invoice.is_igst = is_igst
+    invoice.stockist_name = stockist_name
+    invoice.stockist_city = stockist_city
+    invoice.sales_manager_name = sales_manager_name
     invoice.notes = payload.notes
     invoice.terms_conditions = payload.terms_conditions
 
@@ -1880,6 +1923,9 @@ async def update_invoice(
         ("invoice_date", old_invoice_date, invoice.invoice_date),
         ("due_date", old_due_date, invoice.due_date),
         ("invoice_type", old_invoice_type, invoice.invoice_type),
+        ("stockist_name", old_stockist_name, invoice.stockist_name),
+        ("stockist_city", old_stockist_city, invoice.stockist_city),
+        ("sales_manager_name", old_sales_manager_name, invoice.sales_manager_name),
         ("notes", old_notes, invoice.notes),
         ("terms_conditions", old_terms, invoice.terms_conditions),
         ("total_discount", old_total_discount, invoice.total_discount),
@@ -2016,6 +2062,9 @@ async def update_issued_invoice(
     old_invoice_type = invoice.invoice_type
     old_notes = invoice.notes
     old_terms = invoice.terms_conditions
+    old_stockist_name = invoice.stockist_name
+    old_stockist_city = invoice.stockist_city
+    old_sales_manager_name = invoice.sales_manager_name
     old_customer_id = invoice.customer_id
     old_customer = (
         db.query(Customer).filter(Customer.id == old_customer_id).first()
@@ -2040,6 +2089,8 @@ async def update_issued_invoice(
         raise HTTPException(status_code=400, detail="Invalid customer")
     _enforce_owner(customer, current_user)
     _validate_shipping_address_for_invoice(customer)
+
+    stockist_name, stockist_city, sales_manager_name = _validate_invoice_master_fields(payload)
 
     product_cache = _validate_invoice_line_items_for_save(db, payload.items, current_user)
 
@@ -2127,6 +2178,9 @@ async def update_issued_invoice(
     invoice.invoice_type = invoice_type
     invoice.import_export_code = payload.import_export_code
     invoice.is_igst = is_igst
+    invoice.stockist_name = stockist_name
+    invoice.stockist_city = stockist_city
+    invoice.sales_manager_name = sales_manager_name
     invoice.notes = payload.notes
     invoice.terms_conditions = payload.terms_conditions
 
@@ -2225,6 +2279,9 @@ async def update_issued_invoice(
         ("invoice_date", old_invoice_date, invoice.invoice_date),
         ("due_date", old_due_date, invoice.due_date),
         ("invoice_type", old_invoice_type, invoice.invoice_type),
+        ("stockist_name", old_stockist_name, invoice.stockist_name),
+        ("stockist_city", old_stockist_city, invoice.stockist_city),
+        ("sales_manager_name", old_sales_manager_name, invoice.sales_manager_name),
         ("notes", old_notes, invoice.notes),
         ("terms_conditions", old_terms, invoice.terms_conditions),
         ("total_discount", old_total_discount, invoice.total_discount),

@@ -206,6 +206,38 @@ VALUES
   ('rdn', 'return_reason', 'damaged', 'Damaged', 4, TRUE)
 ON CONFLICT (module, field_name, option_value) DO NOTHING;
 
+-- Enhancement 3: Stockist & Sales Manager master tables (managed in Customization)
+CREATE TABLE stockists (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(150) NOT NULL,
+  city VARCHAR(120),
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+  deleted_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  company_id UUID REFERENCES company(id),
+  created_by UUID REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS ix_stockists_name ON stockists (name);
+CREATE INDEX IF NOT EXISTS ix_stockists_company_id ON stockists (company_id);
+
+CREATE TABLE sales_managers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(150) NOT NULL,
+  employee_id VARCHAR(50),
+  region VARCHAR(120),
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+  deleted_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  company_id UUID REFERENCES company(id),
+  created_by UUID REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS ix_sales_managers_name ON sales_managers (name);
+CREATE INDEX IF NOT EXISTS ix_sales_managers_company_id ON sales_managers (company_id);
+
 -- 5.5 Product Categories
 CREATE TABLE product_categories (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -753,6 +785,10 @@ CREATE TABLE sales_invoices (
   total_amount INTEGER NOT NULL DEFAULT 0,
   amount_paid INTEGER NOT NULL DEFAULT 0,
   amount_due INTEGER NOT NULL DEFAULT 0,
+  -- Enhancement 3: internal operational fields (not printed on the PDF invoice)
+  stockist_name VARCHAR(150),
+  stockist_city VARCHAR(120),
+  sales_manager_name VARCHAR(150),
   notes TEXT,
   terms_conditions TEXT,
   pdf_url VARCHAR(500),
@@ -762,6 +798,10 @@ CREATE TABLE sales_invoices (
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   created_by UUID REFERENCES users(id)
 );
+
+-- Enhancement 3: filter support for Stockist / Sales Manager
+CREATE INDEX IF NOT EXISTS ix_sales_invoices_stockist_name ON sales_invoices (stockist_name);
+CREATE INDEX IF NOT EXISTS ix_sales_invoices_sales_manager_name ON sales_invoices (sales_manager_name);
 
 CREATE TABLE sales_invoice_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

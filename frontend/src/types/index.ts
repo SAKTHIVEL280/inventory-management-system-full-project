@@ -303,6 +303,60 @@ export interface CustomizationOptionPayload {
 }
 
 // ============================================================================
+// Sales Masters — Stockist & Sales Manager (Enhancement 3)
+// ============================================================================
+
+export interface Stockist {
+  id: string;
+  name: string;
+  city?: string | null;
+  is_active: boolean;
+  is_deleted?: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface StockistPayload {
+  name: string;
+  city?: string | null;
+  is_active?: boolean;
+}
+
+export interface StockistsListResponse {
+  items: Stockist[];
+  total: number;
+  page: number;
+  page_size: number;
+  has_more: boolean;
+}
+
+export interface SalesManager {
+  id: string;
+  name: string;
+  employee_id?: string | null;
+  region?: string | null;
+  is_active: boolean;
+  is_deleted?: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface SalesManagerPayload {
+  name: string;
+  employee_id?: string | null;
+  region?: string | null;
+  is_active?: boolean;
+}
+
+export interface SalesManagersListResponse {
+  items: SalesManager[];
+  total: number;
+  page: number;
+  page_size: number;
+  has_more: boolean;
+}
+
+// ============================================================================
 // Return Delivery Note (RDN)
 // ============================================================================
 

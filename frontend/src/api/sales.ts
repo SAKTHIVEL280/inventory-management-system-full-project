@@ -62,6 +62,9 @@ export interface CreateInvoicePayload {
   invoice_type?: InvoiceTypeValue;
   import_export_code?: string;
   is_igst?: boolean;
+  stockist_name?: string;
+  stockist_city?: string;
+  sales_manager_name?: string;
   notes?: string;
   terms_conditions?: string;
   items: SalesLineItem[];
@@ -126,6 +129,9 @@ export interface SalesInvoice {
   invoice_type: InvoiceTypeValue;
   import_export_code?: string;
   is_igst: boolean;
+  stockist_name?: string;
+  stockist_city?: string;
+  sales_manager_name?: string;
   subtotal: number;
   total_discount: number;
   total_taxable_amount: number;
@@ -258,16 +264,20 @@ class SalesApiClient {
     status?: string,
     page = 1,
     page_size = 50,
-    filters?: { search?: string; date_from?: string; date_to?: string },
+    filters?: { search?: string; date_from?: string; date_to?: string; stockist?: string[]; sales_manager?: string[] },
   ) {
-    const params: Record<string, string | number> = { page, page_size };
+    const params: Record<string, string | number | string[]> = { page, page_size };
     if (status) params.status = status;
     if (filters?.search) params.search = filters.search;
     if (filters?.date_from) params.date_from = filters.date_from;
     if (filters?.date_to) params.date_to = filters.date_to;
+    if (filters?.stockist && filters.stockist.length) params.stockist = filters.stockist;
+    if (filters?.sales_manager && filters.sales_manager.length) params.sales_manager = filters.sales_manager;
     return apiClient.get<{ items: SalesInvoice[]; total: number; page: number; page_size: number; has_more: boolean }>(
       '/api/v2/invoices',
-      { params },
+      // Serialize array filters as repeated keys (stockist=a&stockist=b) so the
+      // FastAPI `list[str]` query params bind correctly (default axios uses `[]`).
+      { params, paramsSerializer: { indexes: null } },
     );
   }
 

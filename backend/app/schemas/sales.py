@@ -130,6 +130,11 @@ class SalesInvoiceCreateRequest(BaseModel):
     invoice_type: Optional[InvoiceTypeLiteral] = None
     import_export_code: Optional[str] = None
     is_igst: bool = False
+    # Enhancement 3: mandatory internal fields (validated in the router so the
+    # message is field-specific and consistent with the frontend).
+    stockist_name: Optional[str] = None
+    stockist_city: Optional[str] = None
+    sales_manager_name: Optional[str] = None
     notes: Optional[str] = None
     terms_conditions: Optional[str] = None
     items: List[SalesLineItemRequest]
@@ -146,6 +151,9 @@ class SalesInvoiceResponse(BaseModel):
     invoice_type: InvoiceTypeLiteral
     import_export_code: Optional[str] = None
     status: str
+    stockist_name: Optional[str] = None
+    stockist_city: Optional[str] = None
+    sales_manager_name: Optional[str] = None
     total_amount: int
     amount_paid: int
     amount_due: int

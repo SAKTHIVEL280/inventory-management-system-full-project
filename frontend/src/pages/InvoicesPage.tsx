@@ -6,12 +6,14 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { AppLayout } from '../components/AppLayout';
 import { salesApi, type SalesInvoice, type CreateInvoicePayload, type SalesLineItem, type SalesInvoiceItem, type InvoiceTypeValue, type InvoiceBatchOption } from '../api/sales';
+import { stockistsApi, salesManagersApi } from '../api/masterData';
 import { apiClient } from '../api/client';
 import { toast } from 'sonner';
 import { confirmWithToast } from '../utils/toastHelper';
 import { addDaysToDateInputValue, todayLocalDateInputValue } from '../utils/date';
 import { emptyWhenZero } from '../utils/numberInput';
 import { usePermissions } from '../hooks/usePermissions';
+import type { Stockist, SalesManager } from '../types';
 
 interface ProductOption { id: string; name: string; product_code: string; sku?: string | null; selling_price: number; mrp: number; gst_rate: number; hsn_code: string; description?: string; uom_id?: string | null; alt_uom_id?: string | null; }
 interface CustomerOption {
@@ -155,6 +157,122 @@ const extractApiMessages = (detail: unknown): string[] => {
   return [];
 };
 
+// Searchable single-select (type-ahead) constrained to the provided options.
+// Used for the mandatory Stockist Name / Sales Manager Name lookups (FR-17).
+type SearchableSelectProps = {
+  value: string;
+  options: string[];
+  placeholder: string;
+  onChange: (next: string) => void;
+  disabled?: boolean;
+  className?: string;
+};
+
+const SearchableSelect = ({ value, options, placeholder, onChange, disabled, className }: SearchableSelectProps) => {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const base = options.map((o) => o.trim()).filter(Boolean);
+    if (!needle) return [...new Set(base)].slice(0, 50);
+    const starts = base.filter((o) => o.toLowerCase().startsWith(needle));
+    const includes = base.filter((o) => !o.toLowerCase().startsWith(needle) && o.toLowerCase().includes(needle));
+    return [...new Set([...starts, ...includes])].slice(0, 50);
+  }, [options, query]);
+
+  return (
+    <div className="relative">
+      <input
+        className={className || 'w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm'}
+        value={open ? query : value}
+        placeholder={placeholder}
+        disabled={disabled}
+        autoComplete="off"
+        onFocus={() => { setQuery(''); setOpen(true); }}
+        onBlur={() => { window.setTimeout(() => setOpen(false), 150); }}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+      />
+      {open && !disabled && (
+        <div className="absolute z-30 mt-1 max-h-52 w-full overflow-auto rounded-lg border border-neutral-200 bg-white shadow-lg">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-2 text-sm text-neutral-400">No matches</div>
+          ) : (
+            filtered.map((option) => (
+              <button
+                key={option}
+                type="button"
+                className="block w-full px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
+                onMouseDown={(e) => { e.preventDefault(); onChange(option); setOpen(false); }}
+              >
+                {option}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Multi-select dropdown filter (checkbox list) for Stockist / Sales Manager.
+type MultiSelectFilterProps = {
+  label: string;
+  options: string[];
+  selected: string[];
+  onChange: (next: string[]) => void;
+};
+
+const MultiSelectFilter = ({ label, options, selected, onChange }: MultiSelectFilterProps) => {
+  const [open, setOpen] = useState(false);
+  const toggle = (value: string) => {
+    if (selected.includes(value)) onChange(selected.filter((v) => v !== value));
+    else onChange([...selected, value]);
+  };
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        onBlur={() => window.setTimeout(() => setOpen(false), 150)}
+        className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
+      >
+        {label}{selected.length > 0 ? ` (${selected.length})` : ''}
+        <span className="material-icons text-base" aria-hidden="true">arrow_drop_down</span>
+      </button>
+      {open && (
+        <div className="absolute z-30 mt-1 max-h-64 w-56 overflow-auto rounded-lg border border-neutral-200 bg-white p-2 shadow-lg">
+          {selected.length > 0 && (
+            <button
+              type="button"
+              className="mb-1 w-full rounded px-2 py-1 text-left text-xs font-semibold text-primary hover:bg-primary/10"
+              onMouseDown={(e) => { e.preventDefault(); onChange([]); }}
+            >
+              Clear selection
+            </button>
+          )}
+          {options.length === 0 ? (
+            <div className="px-2 py-1 text-xs text-neutral-400">No options</div>
+          ) : (
+            options.map((option) => (
+              <label key={option} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-neutral-50">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={selected.includes(option)}
+                  onMouseDown={(e) => { e.preventDefault(); toggle(option); }}
+                  readOnly
+                />
+                <span className="truncate">{option}</span>
+              </label>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const InvoicesPage = () => {
   const { isAdmin } = usePermissions();
   const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
@@ -169,6 +287,9 @@ const InvoicesPage = () => {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  // Enhancement 3 (FR-21/FR-22): multi-select Stockist & Sales Manager filters
+  const [stockistFilter, setStockistFilter] = useState<string[]>([]);
+  const [salesManagerFilter, setSalesManagerFilter] = useState<string[]>([]);
   // MCN-BUG-001: server-side pagination state
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number | 'all'>(50);
@@ -192,6 +313,12 @@ const InvoicesPage = () => {
   const [isDueDateManuallyEdited, setIsDueDateManuallyEdited] = useState(false);
   const [notes, setNotes] = useState('');
   const [items, setItems] = useState<SalesLineItem[]>([]);
+  // Enhancement 3: master lists + mandatory internal invoice fields
+  const [stockists, setStockists] = useState<Stockist[]>([]);
+  const [salesManagers, setSalesManagers] = useState<SalesManager[]>([]);
+  const [stockistName, setStockistName] = useState('');
+  const [stockistCity, setStockistCity] = useState('');
+  const [salesManagerName, setSalesManagerName] = useState('');
 
   const isExportInvoice = invoiceType === 'export_invoice';
   const lineItemColumnCount = isExportInvoice ? 15 : 16;
@@ -266,6 +393,8 @@ const InvoicesPage = () => {
       search: debouncedSearch || undefined,
       date_from: dateFrom || undefined,
       date_to: dateTo || undefined,
+      stockist: stockistFilter.length ? stockistFilter : undefined,
+      sales_manager: salesManagerFilter.length ? salesManagerFilter : undefined,
     };
     try {
       setLoading(true);
@@ -294,7 +423,7 @@ const InvoicesPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, page, pageSize, debouncedSearch, dateFrom, dateTo]);
+  }, [statusFilter, page, pageSize, debouncedSearch, dateFrom, dateTo, stockistFilter, salesManagerFilter]);
   const fetchMasterData = async () => {
     try {
       const [c, p, comp, uom] = await Promise.all([
@@ -311,9 +440,22 @@ const InvoicesPage = () => {
       /* */
     }
   };
+  // Enhancement 3: load active Stockist & Sales Manager masters for dropdowns/filters
+  const fetchSalesMasters = async () => {
+    try {
+      const [st, sm] = await Promise.all([
+        stockistsApi.list({ page_size: 1000 }),
+        salesManagersApi.list({ page_size: 1000 }),
+      ]);
+      setStockists(st.items || []);
+      setSalesManagers(sm.items || []);
+    } catch {
+      /* */
+    }
+  };
 
   useEffect(() => { fetchInvoices(); }, [fetchInvoices]);
-  useEffect(() => { fetchMasterData(); }, []);
+  useEffect(() => { fetchMasterData(); fetchSalesMasters(); }, []);
 
   // MCN-BUG-001: debounce search box to avoid a request per keystroke
   useEffect(() => {
@@ -322,9 +464,18 @@ const InvoicesPage = () => {
   }, [searchQuery]);
 
   // MCN-BUG-001: any filter/page-size change returns to the first page
-  useEffect(() => { setPage(1); }, [statusFilter, debouncedSearch, dateFrom, dateTo, pageSize]);
+  useEffect(() => { setPage(1); }, [statusFilter, debouncedSearch, dateFrom, dateTo, pageSize, stockistFilter, salesManagerFilter]);
 
-  const resetForm = () => { setCustomerId(''); setInvoiceType('within_state'); setImportExportCode(''); setInvoiceDate(todayLocalDateInputValue()); setDueDate(''); setIsDueDateManuallyEdited(false); setNotes(''); setItems([]); setBatchOptionsByRow({}); setEditingId(null); setEditingIssued(false); setError(''); };
+  const resetForm = () => { setCustomerId(''); setInvoiceType('within_state'); setImportExportCode(''); setInvoiceDate(todayLocalDateInputValue()); setDueDate(''); setIsDueDateManuallyEdited(false); setNotes(''); setItems([]); setBatchOptionsByRow({}); setStockistName(''); setStockistCity(''); setSalesManagerName(''); setEditingId(null); setEditingIssued(false); setError(''); };
+
+  // FR-18: Stockist City auto-fills from the selected Stockist (user may override).
+  const handleStockistChange = (name: string) => {
+    setStockistName(name);
+    const match = stockists.find((s) => s.name === name);
+    if (match && (match.city || '').trim()) {
+      setStockistCity(match.city || '');
+    }
+  };
   const addItem = () => {
     setItems([
       ...items,
@@ -618,6 +769,11 @@ const InvoicesPage = () => {
   const handleSubmit = async () => {
     if (!customerId || items.length === 0) { setError('Select customer & add items'); return; }
 
+    // FR-19: Stockist Name, Stockist City and Sales Manager Name are mandatory.
+    if (!stockistName.trim()) { setError('Stockist Name is required'); return; }
+    if (!stockistCity.trim()) { setError('Stockist City is required'); return; }
+    if (!salesManagerName.trim()) { setError('Sales Manager Name is required'); return; }
+
     const todayIso = todayLocalDateInputValue();
     const invalidMfgDateIndex = items.findIndex(
       (i) => i.manufacture_date && i.manufacture_date >= todayIso,
@@ -656,6 +812,9 @@ const InvoicesPage = () => {
         bill_to_customer_id: customerId,
         invoice_type: invoiceType,
         import_export_code: importExportCode.trim() || undefined,
+        stockist_name: stockistName.trim(),
+        stockist_city: stockistCity.trim(),
+        sales_manager_name: salesManagerName.trim(),
         notes: notes || undefined,
         items: items.map(i => ({
           product_id: i.product_id,
@@ -722,6 +881,70 @@ const InvoicesPage = () => {
     }
   };
 
+  // FR-24: Export the Sales Invoice list reflecting the ACTIVE filters
+  // (status, search, date range, Stockist, Sales Manager). BOM-prefixed for Excel.
+  const handleExportCsv = async () => {
+    try {
+      toast.info('Preparing export...');
+      const filters = {
+        search: debouncedSearch || undefined,
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined,
+        stockist: stockistFilter.length ? stockistFilter : undefined,
+        sales_manager: salesManagerFilter.length ? salesManagerFilter : undefined,
+      };
+      const collected: SalesInvoice[] = [];
+      const chunk = 500;
+      let current = 1;
+      let fetchedTotal = 0;
+      for (;;) {
+        const res = await salesApi.listInvoices(statusFilter || undefined, current, chunk, filters);
+        const batch = res.data.items || [];
+        collected.push(...batch);
+        fetchedTotal = res.data.total ?? collected.length;
+        if (batch.length === 0 || collected.length >= fetchedTotal) break;
+        current += 1;
+      }
+
+      const headers = [
+        'Invoice Number', 'Customer', 'Invoice Type', 'Invoice Date', 'Due Date',
+        'Stockist', 'Stockist City', 'Sales Manager', 'Status', 'Total (Rs.)', 'Amount Due (Rs.)',
+      ];
+      const escape = (value: unknown) => {
+        const text = value === null || value === undefined ? '' : String(value);
+        return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+      };
+      const rupees = (paise: number) => (Number(paise || 0) / 100).toFixed(2);
+      const rows = collected.map((inv) => [
+        inv.invoice_number,
+        customerNameById(inv.customer_id),
+        invoiceTypeLabel(inv.invoice_type),
+        inv.invoice_date,
+        inv.due_date || '',
+        inv.stockist_name || '',
+        inv.stockist_city || '',
+        inv.sales_manager_name || '',
+        deriveInvoicePaymentStatusLabel(inv),
+        rupees(inv.total_amount),
+        rupees(inv.amount_due),
+      ].map(escape).join(','));
+
+      const csv = `﻿${[headers.join(','), ...rows].join('\n')}`;
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `sales-invoices-${todayLocalDateInputValue()}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      window.URL.revokeObjectURL(url);
+      link.remove();
+      toast.success(`Exported ${collected.length} invoice(s)`);
+    } catch {
+      toast.error('Failed to export invoices');
+    }
+  };
+
   const handleViewInvoice = async (inv: SalesInvoice) => {
     try {
       const { data } = await salesApi.getInvoice(inv.id);
@@ -749,6 +972,9 @@ const InvoicesPage = () => {
     setDueDate(selectedInvoice.due_date || '');
     setIsDueDateManuallyEdited(true);
     setNotes(selectedInvoice.notes || '');
+    setStockistName(selectedInvoice.stockist_name || '');
+    setStockistCity(selectedInvoice.stockist_city || '');
+    setSalesManagerName(selectedInvoice.sales_manager_name || '');
     setItems(selectedInvoiceItems.map(i => ({
       product_id: i.product_id,
       order_unit: i.order_unit || '',
@@ -813,8 +1039,31 @@ const InvoicesPage = () => {
                 title="Invoice date to"
               />
             </div>
+            {/* Enhancement 3 (FR-21/FR-22): Stockist & Sales Manager multi-select filters */}
+            <MultiSelectFilter
+              label="Stockist"
+              options={stockists.map((s) => s.name)}
+              selected={stockistFilter}
+              onChange={setStockistFilter}
+            />
+            <MultiSelectFilter
+              label="Sales Manager"
+              options={salesManagers.map((s) => s.name)}
+              selected={salesManagerFilter}
+              onChange={setSalesManagerFilter}
+            />
           </div>
-          <button onClick={() => { resetForm(); setShowForm(true); }} className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/20 hover:bg-primary/90">+ New Invoice</button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleExportCsv}
+              className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50"
+              title="Export the filtered Sales Invoice list to CSV"
+            >
+              <span className="material-icons text-sm" aria-hidden="true">download</span>
+              Export CSV
+            </button>
+            <button onClick={() => { resetForm(); setShowForm(true); }} className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/20 hover:bg-primary/90">+ New Invoice</button>
+          </div>
         </div>
 
         <div className="hms-card overflow-hidden">
@@ -958,6 +1207,38 @@ const InvoicesPage = () => {
                     }}
                   />
                 </div>
+              </div>
+              {/* Enhancement 3: mandatory internal fields (not printed on the PDF) */}
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div>
+                  <label className="mb-1 block text-sm font-semibold text-neutral-700">Stockist Name *</label>
+                  <SearchableSelect
+                    value={stockistName}
+                    options={stockists.map((s) => s.name)}
+                    placeholder="Search stockist..."
+                    onChange={handleStockistChange}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-semibold text-neutral-700">Stockist City *</label>
+                  <input
+                    type="text"
+                    className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm"
+                    value={stockistCity}
+                    onChange={(e) => setStockistCity(e.target.value)}
+                    placeholder="Auto-fills from stockist (editable)"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-semibold text-neutral-700">Sales Manager Name *</label>
+                  <SearchableSelect
+                    value={salesManagerName}
+                    options={salesManagers.map((s) => s.name)}
+                    placeholder="Search sales manager..."
+                    onChange={setSalesManagerName}
+                  />
+                </div>
+                <p className="text-xs text-neutral-400 md:col-span-3">These are internal operational fields and are not shown on the printed/PDF invoice.</p>
               </div>
               <div>
                 <div className="mb-2 flex items-center justify-between">
@@ -1202,6 +1483,23 @@ const InvoicesPage = () => {
                   <p className="font-medium text-neutral-800">{selectedInvoice.import_export_code}</p>
                 </div>
               )}
+
+              {/* Enhancement 3: internal operational fields (not on the PDF invoice) */}
+              <div className="grid grid-cols-1 gap-4 rounded-lg border border-neutral-200 p-4 md:grid-cols-3">
+                <div>
+                  <p className="text-xs text-neutral-600">Stockist Name</p>
+                  <p className="font-medium text-neutral-800">{selectedInvoice.stockist_name || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-neutral-600">Stockist City</p>
+                  <p className="font-medium text-neutral-800">{selectedInvoice.stockist_city || '-'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-neutral-600">Sales Manager</p>
+                  <p className="font-medium text-neutral-800">{selectedInvoice.sales_manager_name || '-'}</p>
+                </div>
+                <p className="text-xs text-neutral-400 md:col-span-3">Internal fields — not shown on the printed/PDF invoice.</p>
+              </div>
 
               <div className="grid grid-cols-1 gap-4 rounded-lg border border-neutral-200 p-4 md:grid-cols-3">
                 <div>

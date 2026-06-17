@@ -115,6 +115,13 @@ def _ensure_audit_logs_table(db: Session) -> None:
 # route redirects to "/sales/invoices"), so the business "Sales Order" maps to "invoices".
 _VERSIONED_EDIT_MODULES = {"invoices"}
 
+# Sub-actions on a version-tracked record that still count as a content edit and so
+# share the same version sequence. The post-issue editor
+# (PUT /api/vN/invoices/<id>/issued-details) rewrites line items / totals just like a
+# full-resource update, so it must be versioned. Plain status changes, issue,
+# archive/restore, send-email, etc. are intentionally excluded.
+_VERSIONED_EDIT_SUBACTIONS = {"issued-details"}
+
 
 def int_to_roman(value: int) -> str:
     """Convert a positive integer to a Roman numeral (1 -> 'I', 4 -> 'IV', ...)."""
@@ -137,8 +144,10 @@ def int_to_roman(value: int) -> str:
 def _is_versionable_edit(module_name: str, action_type: str, details: dict[str, Any]) -> bool:
     """True when an audit entry is a content edit of a version-tracked record.
 
-    Only a full-resource update counts (PUT /api/vN/invoices/<id>); status changes,
-    archive/restore and other sub-actions (which end in a word segment) are excluded.
+    Counts both the full-resource update (PUT /api/vN/invoices/<id>) and the
+    post-issue content edit (PUT /api/vN/invoices/<id>/issued-details), so draft and
+    issued edits share one chronological version sequence per invoice. Other
+    sub-actions (status, issue, archive/restore, send-email, ...) are excluded.
     """
     if (module_name or "").strip().lower() not in _VERSIONED_EDIT_MODULES:
         return False
@@ -146,8 +155,15 @@ def _is_versionable_edit(module_name: str, action_type: str, details: dict[str, 
         return False
     path = (details.get("path") or "").strip("/")
     segments = [segment for segment in path.split("/") if segment]
-    # .../<module>/<id> -> the module name is the second-to-last segment for a full update.
+    # .../<module>/<id> -> full-resource update (module is the second-to-last segment).
     if len(segments) >= 4 and segments[-2].strip().lower() in _VERSIONED_EDIT_MODULES:
+        return True
+    # .../<module>/<id>/<sub-action> -> versionable only for whitelisted content edits.
+    if (
+        len(segments) >= 5
+        and segments[-3].strip().lower() in _VERSIONED_EDIT_MODULES
+        and segments[-1].strip().lower() in _VERSIONED_EDIT_SUBACTIONS
+    ):
         return True
     return False
 

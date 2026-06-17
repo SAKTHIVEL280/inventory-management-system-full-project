@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -43,7 +44,7 @@ app = FastAPI(
 limiter = Limiter(key_func=get_remote_address, default_limits=[settings.rate_limit_api])
 rate_limit_module.limiter = limiter
 
-from app.routers import auth, company, users, customers, suppliers, products, purchase, sales, payments, reports, stock, archive, compliance, rdn, customization_options, proforma
+from app.routers import auth, company, users, customers, suppliers, products, purchase, sales, payments, reports, stock, archive, compliance, rdn, customization_options, proforma, master_data
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -147,6 +148,7 @@ app.include_router(reports.router)
 app.include_router(stock.router)
 app.include_router(rdn.router)
 app.include_router(customization_options.router)
+app.include_router(master_data.router)
 app.include_router(archive.router)
 app.include_router(compliance.router)
 
@@ -204,6 +206,36 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     detail = "; ".join(parts) if parts else "Some fields are invalid. Please correct and try again."
     logger.info("Validation error on %s %s: %s", request.method, request.url.path, detail)
     return JSONResponse(status_code=422, content={"detail": detail, "path": request.url.path})
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Return HTTPExceptions as JSON, upgrading the framework's bare 404 on API routes.
+
+    An unmatched route makes Starlette raise `HTTPException(404, "Not Found")`. Surfaced
+    verbatim, the UI shows a useless generic "Not Found" — which is exactly what happens
+    when an endpoint exists in code but is missing from the deployed build (e.g. a feature
+    branch not yet released to production). For API paths we replace only that default
+    message with a clear, actionable one; explicit business 404s raised by endpoints
+    (e.g. "GRN not found.") carry their own detail and are passed through unchanged, as
+    are all non-404 HTTPExceptions (401/403/etc.) with their headers preserved.
+    """
+    detail = exc.detail
+    is_unmatched_route = (
+        exc.status_code == 404
+        and request.url.path.startswith("/api/")
+        and (detail is None or detail == "Not Found")
+    )
+    if is_unmatched_route:
+        detail = (
+            "This endpoint is unavailable on the server. It may require a pending "
+            "deployment/update. Please contact your administrator if the problem persists."
+        )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": detail, "path": request.url.path},
+        headers=getattr(exc, "headers", None),
+    )
 
 
 @app.exception_handler(IntegrityError)

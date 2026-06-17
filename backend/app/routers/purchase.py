@@ -1030,6 +1030,30 @@ def _audit_value(value) -> str:
     return str(value)
 
 
+def _grn_not_reversible_message(status: str) -> str:
+    """Business-friendly reason a GRN in `status` cannot be reversed."""
+    status = (status or "").strip().lower()
+    if status == "reversed":
+        return "GRN cannot be reversed because it is already reversed."
+    if status == "cancelled":
+        return "GRN cannot be reversed because it has been cancelled."
+    if status == "draft":
+        return "GRN cannot be reversed because it has not been confirmed yet (still a draft)."
+    return "Only confirmed GRNs can be reversed."
+
+
+def _grn_not_editable_message(status: str) -> str:
+    """Business-friendly reason a confirmed-GRN edit is not allowed for `status`."""
+    status = (status or "").strip().lower()
+    if status == "reversed":
+        return "This GRN has been reversed and can no longer be edited."
+    if status == "cancelled":
+        return "This GRN has been cancelled and can no longer be edited."
+    if status == "draft":
+        return "Draft GRNs are edited from the standard edit form, not here."
+    return "Only confirmed GRNs can be edited here. Draft GRNs use the standard edit form."
+
+
 @router.put("/api/v1/grn/{grn_id}/confirmed-details")
 async def update_confirmed_grn(
     request: Request,
@@ -1049,13 +1073,10 @@ async def update_confirmed_grn(
     """
     grn = db.query(GoodsReceiptNote).filter(GoodsReceiptNote.id == grn_id, GoodsReceiptNote.is_deleted == False).first()
     if not grn:
-        raise HTTPException(status_code=404, detail="GRN not found")
+        raise HTTPException(status_code=404, detail="GRN not found.")
     _enforce_owner(grn, current_user)
     if grn.status != "confirmed":
-        raise HTTPException(
-            status_code=400,
-            detail="Only confirmed GRNs can be edited here. Draft GRNs use the standard edit form.",
-        )
+        raise HTTPException(status_code=400, detail=_grn_not_editable_message(grn.status))
 
     if not payload.items:
         raise HTTPException(status_code=400, detail="At least one line item is required")
@@ -1443,10 +1464,10 @@ async def reverse_grn(
     """MCN-BUG-004: Reverse a confirmed GRN — undo stock & ledger impact with reason + audit."""
     grn = db.query(GoodsReceiptNote).filter(GoodsReceiptNote.id == grn_id, GoodsReceiptNote.is_deleted == False).first()
     if not grn:
-        raise HTTPException(status_code=404, detail="GRN not found")
+        raise HTTPException(status_code=404, detail="GRN not found.")
     _enforce_owner(grn, current_user)
     if grn.status != "confirmed":
-        raise HTTPException(status_code=400, detail="Only confirmed GRNs can be reversed")
+        raise HTTPException(status_code=400, detail=_grn_not_reversible_message(grn.status))
 
     reason = (payload.reason or "").strip()
     if not reason:

@@ -213,6 +213,46 @@ def main() -> int:
         "ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS import_export_code VARCHAR(50)",
         "ALTER TABLE sales_invoices DROP CONSTRAINT IF EXISTS sales_invoices_status_check",
         "ALTER TABLE sales_invoices ADD CONSTRAINT sales_invoices_status_check CHECK (status IN ('draft','issued','partial_paid','paid','returned','cancelled'))",
+        # Enhancement 3: Sales Invoice internal fields (Stockist / Sales Manager)
+        "ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS stockist_name VARCHAR(150)",
+        "ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS stockist_city VARCHAR(120)",
+        "ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS sales_manager_name VARCHAR(150)",
+        "CREATE INDEX IF NOT EXISTS ix_sales_invoices_stockist_name ON sales_invoices (stockist_name)",
+        "CREATE INDEX IF NOT EXISTS ix_sales_invoices_sales_manager_name ON sales_invoices (sales_manager_name)",
+        # Enhancement 3: Stockist & Sales Manager master tables (Customization)
+        """
+        CREATE TABLE IF NOT EXISTS stockists (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            name VARCHAR(150) NOT NULL,
+            city VARCHAR(120),
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+            deleted_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            company_id UUID REFERENCES company(id),
+            created_by UUID REFERENCES users(id)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_stockists_name ON stockists (name)",
+        "CREATE INDEX IF NOT EXISTS ix_stockists_company_id ON stockists (company_id)",
+        """
+        CREATE TABLE IF NOT EXISTS sales_managers (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            name VARCHAR(150) NOT NULL,
+            employee_id VARCHAR(50),
+            region VARCHAR(120),
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+            deleted_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            company_id UUID REFERENCES company(id),
+            created_by UUID REFERENCES users(id)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_sales_managers_name ON sales_managers (name)",
+        "CREATE INDEX IF NOT EXISTS ix_sales_managers_company_id ON sales_managers (company_id)",
         "ALTER TABLE company ADD COLUMN IF NOT EXISTS import_export_number VARCHAR(50)",
         "ALTER TABLE company ADD COLUMN IF NOT EXISTS rdn_prefix VARCHAR(10) NOT NULL DEFAULT 'RDN'",
         "ALTER TABLE company ADD COLUMN IF NOT EXISTS rdn_counter INTEGER NOT NULL DEFAULT 1",
