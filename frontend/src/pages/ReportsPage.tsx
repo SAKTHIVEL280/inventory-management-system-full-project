@@ -10,6 +10,7 @@ import { apiClient, type ApiRequestConfig } from '../api/client';
 import { downloadGSTR1Export, downloadGSTR2Export, downloadGSTReconciliationExport, getGstAuditTrail, getGSTR1Report, getGSTR2Report, getGSTReconciliationReport, type GSTAuditTrailResponse, type GSTR1ReportDetailRow, type GSTR1ReportResponse, type GSTR2ReportDetailRow, type GSTR2ReportResponse, type GSTReconciliationResponse } from '../api/reports';
 import { toLocalDateInputValue } from '../utils/date';
 import { useAuthStore } from '../store/auth';
+import { useSubscription } from '../hooks/useSubscription';
 
 interface PLData { net_sales: number; purchases: number; gross_profit: number; gross_profit_margin_percent: number; net_profit: number; }
 interface StockItem {
@@ -23,7 +24,7 @@ interface StockItem {
   min_stock: number;
   status: string;
 }
-interface SalesReportItem { invoice_number: string; invoice_date: string; customer_name?: string; total_amount: number; amount_paid: number; amount_due: number; status: string; }
+interface SalesReportItem { invoice_number: string; invoice_date: string; customer_name?: string; total_amount: number; amount_paid: number; amount_due: number; status: string; source?: string; }
 interface GSTR3BData { output_tax: number; itc: number; net_tax_payable: number; }
 type ReportFrequency = 'monthly' | 'quarterly' | 'annually';
 interface ApiErrorShape {
@@ -151,6 +152,10 @@ const withTimeout = <T,>(promise: Promise<T>, timeoutMs = 15000, label = 'Reques
 
 const ReportsPage = () => {
   const user = useAuthStore((state) => state.user);
+  // Generic data export (CSV of list data) is the PLATINUM-only Export module
+  // (BRD §5.5). GST report exports remain part of the GOLD+ Reports module.
+  const { canAccessModule } = useSubscription();
+  const canExport = canAccessModule('export');
   const today = new Date();
   const defaultWindow = getFrequencyDateWindow('monthly', today);
   const [dateRange, setDateRange] = useState<{ from: string; to: string }>({
@@ -182,7 +187,8 @@ const ReportsPage = () => {
   const [expandedGstr1Invoices, setExpandedGstr1Invoices] = useState<Record<string, boolean>>({});
   const [expandedGstr2Grns, setExpandedGstr2Grns] = useState<Record<string, boolean>>({});
   const roleToken = (user?.role || '').toLowerCase();
-  const isFinanceTaxUser = roleToken === 'admin' || roleToken === 'general manager';
+  // GST reports are part of the Reports module → Tenant Admin or Management role.
+  const isFinanceTaxUser = roleToken === 'admin' || roleToken === 'management';
   const fromDate = dateRange.from;
   const toDate = dateRange.to;
 
@@ -236,7 +242,7 @@ const ReportsPage = () => {
   };
 
   const handleSalesExportCsv = () => {
-    const headers = ['Invoice #', 'Date', 'Customer Name', 'Amount', 'Paid', 'Due', 'Status'];
+    const headers = ['Invoice #', 'Date', 'Type', 'Customer Name', 'Amount', 'Paid', 'Due', 'Status'];
     const escapeCsv = (value: string | number): string => {
       const text = String(value ?? '');
       return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
@@ -246,6 +252,7 @@ const ReportsPage = () => {
       lines.push([
         escapeCsv(item.invoice_number),
         escapeCsv(item.invoice_date || ''),
+        escapeCsv(item.source === 'service' ? 'Service' : 'Sales'),
         escapeCsv(item.customer_name || '-'),
         escapeCsv(formatAmount(item.total_amount)),
         escapeCsv(formatAmount(item.amount_paid)),
@@ -720,28 +727,30 @@ const ReportsPage = () => {
                     placeholder="Filter by Customer Name"
                     className="rounded border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-700 placeholder-neutral-400 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                   />
-                  <button
-                    type="button"
-                    onClick={handleSalesExportCsv}
-                    disabled={displayedSalesItems.length === 0}
-                    className="rounded border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-100 disabled:opacity-50"
-                  >
-                    Export CSV
-                  </button>
+                  {canExport && (
+                    <button
+                      type="button"
+                      onClick={handleSalesExportCsv}
+                      disabled={displayedSalesItems.length === 0}
+                      className="rounded border border-neutral-300 bg-white px-3 py-1.5 text-xs font-semibold text-neutral-700 hover:bg-neutral-100 disabled:opacity-50"
+                    >
+                      Export CSV
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
             {salesItems.length === 0 && (
               <div className="hms-card px-5 py-4 text-sm text-neutral-600">
-                No sales invoices found for selected date range. Expand the range to include older invoices.
+                No sales or service invoices found for selected date range. Expand the range to include older invoices.
               </div>
             )}
             <div className="hms-card overflow-hidden">
-              <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-neutral-50"><th className="px-4 py-3 text-left font-semibold">Invoice #</th><th className="px-4 py-3 text-left font-semibold">Date</th><th className="px-4 py-3 text-left font-semibold"><button type="button" onClick={toggleSalesCustomerSort} className="inline-flex items-center gap-1 font-semibold hover:text-primary">Customer Name<span className="text-xs">{salesSortDir === 'asc' ? '▲' : salesSortDir === 'desc' ? '▼' : '⇅'}</span></button></th><th className="px-4 py-3 text-right font-semibold">Amount</th><th className="px-4 py-3 text-right font-semibold">Paid</th><th className="px-4 py-3 text-right font-semibold">Due</th><th className="px-4 py-3 text-center font-semibold">Status</th></tr></thead>
+              <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b bg-neutral-50"><th className="px-4 py-3 text-left font-semibold">Invoice #</th><th className="px-4 py-3 text-left font-semibold">Date</th><th className="px-4 py-3 text-center font-semibold">Type</th><th className="px-4 py-3 text-left font-semibold"><button type="button" onClick={toggleSalesCustomerSort} className="inline-flex items-center gap-1 font-semibold hover:text-primary">Customer Name<span className="text-xs">{salesSortDir === 'asc' ? '▲' : salesSortDir === 'desc' ? '▼' : '⇅'}</span></button></th><th className="px-4 py-3 text-right font-semibold">Amount</th><th className="px-4 py-3 text-right font-semibold">Paid</th><th className="px-4 py-3 text-right font-semibold">Due</th><th className="px-4 py-3 text-center font-semibold">Status</th></tr></thead>
                 <tbody>
                   {displayedSalesItems.length === 0 ? (
-                    <tr><td colSpan={7} className="px-4 py-6 text-center text-neutral-500">No rows to display for selected range.</td></tr>
-                  ) : displayedSalesItems.map((i, idx) => (<tr key={idx} className="border-b border-neutral-100"><td className="px-4 py-3">{i.invoice_number}</td><td className="px-4 py-3">{i.invoice_date}</td><td className="px-4 py-3">{i.customer_name || '-'}</td><td className="px-4 py-3 text-right">{formatAmount(i.total_amount)}</td><td className="px-4 py-3 text-right text-green-600">{formatAmount(i.amount_paid)}</td><td className="px-4 py-3 text-right text-red-600">{i.amount_due > 0 ? formatAmount(i.amount_due) : '-'}</td><td className="px-4 py-3 text-center"><span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">{i.status}</span></td></tr>))}
+                    <tr><td colSpan={8} className="px-4 py-6 text-center text-neutral-500">No rows to display for selected range.</td></tr>
+                  ) : displayedSalesItems.map((i, idx) => (<tr key={idx} className="border-b border-neutral-100"><td className="px-4 py-3">{i.invoice_number}</td><td className="px-4 py-3">{i.invoice_date}</td><td className="px-4 py-3 text-center"><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${i.source === 'service' ? 'bg-violet-100 text-violet-700' : 'bg-neutral-100 text-neutral-600'}`}>{i.source === 'service' ? 'Service' : 'Sales'}</span></td><td className="px-4 py-3">{i.customer_name || '-'}</td><td className="px-4 py-3 text-right">{formatAmount(i.total_amount)}</td><td className="px-4 py-3 text-right text-green-600">{formatAmount(i.amount_paid)}</td><td className="px-4 py-3 text-right text-red-600">{i.amount_due > 0 ? formatAmount(i.amount_due) : '-'}</td><td className="px-4 py-3 text-center"><span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-semibold text-blue-700">{i.status}</span></td></tr>))}
                 </tbody>
               </table></div>
             </div>
@@ -771,7 +780,7 @@ const ReportsPage = () => {
           <div className="space-y-6">
             {!isFinanceTaxUser && (
               <div className="hms-card px-5 py-4 text-sm text-neutral-600">
-                GST reports are restricted to Admin or General Manager users.
+                GST reports are restricted to Admin or Management users.
               </div>
             )}
             {isFinanceTaxUser && !gstData && !gstr2Data && !gstReconciliationData && !gstr3bData && (

@@ -20,6 +20,7 @@ class UserResponse(BaseModel):
     permission_overrides: Optional[Dict[str, Any]] = None
     effective_access: List[str]
     force_password_change: bool
+    is_super_admin: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

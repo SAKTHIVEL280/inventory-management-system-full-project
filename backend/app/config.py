@@ -61,7 +61,17 @@ class Settings(BaseSettings):
     mail_server: str = "smtp.gmail.com"
     mail_starttls: bool = True
     mail_ssl_tls: bool = False
-    
+
+    # Mecandria platform seller identity (used as the seller on Super Admin → tenant
+    # subscription service invoices, BRD §4.3/§8). Override via env in production.
+    mecandria_seller_name: str = "Mecandria IT Services & Solutions LLP"
+    mecandria_seller_gstin: str = ""
+    mecandria_seller_state: str = ""
+    mecandria_seller_state_code: str = ""
+    mecandria_seller_address: str = ""
+    mecandria_seller_email: str = ""
+    mecandria_seller_contact: str = ""
+
     # Frontend
     frontend_url: str = "http://localhost:3001"
 

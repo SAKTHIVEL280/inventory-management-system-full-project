@@ -98,7 +98,13 @@ async def login(
 
     access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
     access_token = create_access_token(
-        data={"sub": str(user.id)},
+        # company_id claim (M0): lets tenant scoping be derived from the token in
+        # later modules. Additive — request-time resolution still reads the user
+        # row, so already-issued tokens without the claim keep working unchanged.
+        data={
+            "sub": str(user.id),
+            "company_id": str(user.company_id) if user.company_id else None,
+        },
         expires_delta=access_token_expires,
     )
     refresh_token = create_refresh_token(data={"sub": str(user.id)})
@@ -218,7 +224,13 @@ async def refresh(
 
     access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
     access_token = create_access_token(
-        data={"sub": str(user.id)},
+        # company_id claim (M0): lets tenant scoping be derived from the token in
+        # later modules. Additive — request-time resolution still reads the user
+        # row, so already-issued tokens without the claim keep working unchanged.
+        data={
+            "sub": str(user.id),
+            "company_id": str(user.company_id) if user.company_id else None,
+        },
         expires_delta=access_token_expires,
     )
 

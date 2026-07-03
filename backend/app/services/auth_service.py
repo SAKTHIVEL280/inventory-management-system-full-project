@@ -29,10 +29,21 @@ ROLE_DEFAULTS = {
         "rdn_read", "rdn_write",
         "receipts_read", "receipts_write",
         "payments_read", "payments_write",
+        "service_invoice_read", "service_invoice_write",
         "action_logs_read",
         "reports_read", "dashboard_read",
     ],
-    "inventory manager": [
+    # ── BRD role model (§6.2 module-access matrix). These map module
+    #    access to the existing permission scopes. None of them get the
+    #    admin-only scopes (company_*/users_*) — only the Tenant Admin ('admin')
+    #    manages company settings and users. service_invoice_*/hr_* are
+    #    placeholders for modules delivered in later modules (M5 / HR BRD).
+    # Basic (Red): Service Invoice only.
+    "basic": [
+        "service_invoice_read", "service_invoice_write",
+    ],
+    # Accounts (Blue): Masters, Purchase, Sales, Accounts, Dashboard.
+    "accounts": [
         "customers_read", "customers_write",
         "suppliers_read", "suppliers_write",
         "products_read", "products_write",
@@ -40,30 +51,94 @@ ROLE_DEFAULTS = {
         "uom_read",
         "purchase_orders_read", "purchase_orders_write",
         "grn_read", "grn_write",
-        "stock_ledger_read", "stock_ledger_write",
-        "dashboard_read",
-    ],
-    "general manager": [
+        "purchase_returns_read", "purchase_returns_write",
         "quotations_read", "quotations_write",
         "proforma_read", "proforma_write",
+        "sales_orders_read", "sales_orders_write",
         "sales_invoices_read", "sales_invoices_write",
+        "sales_returns_read", "sales_returns_write",
         "rdn_read", "rdn_write",
         "receipts_read", "receipts_write",
         "payments_read", "payments_write",
+        "dashboard_read",
+    ],
+    # Inventory (Green): Masters, Purchase, Sales, Inventory.
+    "inventory": [
+        "customers_read", "customers_write",
+        "suppliers_read", "suppliers_write",
+        "products_read", "products_write",
+        "categories_read", "categories_write",
+        "uom_read", "uom_write",
+        "purchase_orders_read", "purchase_orders_write",
+        "grn_read", "grn_write",
+        "purchase_returns_read", "purchase_returns_write",
+        "quotations_read", "quotations_write",
+        "proforma_read", "proforma_write",
+        "sales_orders_read", "sales_orders_write",
+        "sales_invoices_read", "sales_invoices_write",
+        "sales_returns_read", "sales_returns_write",
+        "rdn_read", "rdn_write",
+        "stock_ledger_read", "stock_ledger_write",
+        "stock_adjustment_read", "stock_adjustment_write",
+    ],
+    # Management (Violet): all operational modules + Reports + Audit Logs
+    #    (+ Export/POS capabilities in PLATINUM). Excludes company/user admin.
+    "management": [
+        "customers_read", "customers_write",
+        "suppliers_read", "suppliers_write",
+        "products_read", "products_write",
+        "categories_read", "categories_write",
+        "uom_read", "uom_write",
+        "purchase_orders_read", "purchase_orders_write",
+        "grn_read", "grn_write",
+        "purchase_returns_read", "purchase_returns_write",
+        "quotations_read", "quotations_write",
+        "proforma_read", "proforma_write",
+        "sales_orders_read", "sales_orders_write",
+        "sales_invoices_read", "sales_invoices_write",
+        "sales_returns_read", "sales_returns_write",
+        "rdn_read", "rdn_write",
+        "receipts_read", "receipts_write",
+        "payments_read", "payments_write",
+        "stock_ledger_read", "stock_ledger_write",
+        "stock_adjustment_read", "stock_adjustment_write",
         "reports_read", "dashboard_read",
+        "action_logs_read",
+    ],
+    # HR (Brown): HR Module only (placeholder scopes; HR BRD pending).
+    "hr": [
+        "hr_read", "hr_write",
     ],
 }
 
 
+# Colour-coded role metadata for the UI (BRD §6.1). 'admin' is the Tenant Admin;
+# the five end-user roles below are the only assignable roles (plan-gated).
+ROLE_METADATA = {
+    "admin": {"color": "admin", "label": "Administrator"},
+    "basic": {"color": "red", "label": "Basic User"},
+    "accounts": {"color": "blue", "label": "Accounts User"},
+    "inventory": {"color": "green", "label": "Inventory User"},
+    "management": {"color": "violet", "label": "Management User"},
+    "hr": {"color": "brown", "label": "HR User"},
+}
+
+# The five BRD end-user roles plus the Tenant Admin (the complete valid role set).
+VALID_ROLES = {"admin", "basic", "accounts", "inventory", "management", "hr"}
+
+# Roles that may view ALL of their tenant's records (not just ones they created).
+# Record-ownership scoping is dormant for every known role today — kept so isolation
+# is enforced at the company_id level (the legacy roles behaved the same way).
+PRIVILEGED_ROLES = {"admin", "basic", "accounts", "inventory", "management", "hr"}
+
+# Normalisation only: legacy stored role values are mapped to their BRD replacement
+# (General Manager → Accounts, Inventory Manager → Inventory) so any not-yet-migrated
+# row or cached JWT still resolves correctly. These are NOT assignable roles.
 ROLE_ALIASES = {
-    "doctor": "admin",
-    "accounts": "general manager",
-    "billing": "general manager",
-    "accounting": "general manager",
-    "sales": "general manager",
-    "inventory": "inventory manager",
-    "inventory_manager": "inventory manager",
-    "general_manager": "general manager",
+    "general manager": "accounts",
+    "general_manager": "accounts",
+    "inventory manager": "inventory",
+    "inventory_manager": "inventory",
 }
 
 
@@ -133,6 +208,7 @@ def get_user_response(user: User) -> UserResponse:
         permission_overrides=user.permission_overrides,
         effective_access=effective_access,
         force_password_change=user.force_password_change,
+        is_super_admin=bool(getattr(user, "is_super_admin", False)),
     )
 
 

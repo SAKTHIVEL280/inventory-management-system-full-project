@@ -12,7 +12,7 @@ from app.database import get_db
 from app.dependencies import enforce_resource_ownership, require_permissions
 from app.models.product import Product, ProductCategory, StockLedger, UnitOfMeasure
 from app.models.user import User
-from app.services.auth_service import normalize_role
+from app.services.auth_service import normalize_role, PRIVILEGED_ROLES
 from app.services.audit_service import log_audit_event
 from app.utils.input_validation import normalize_search_query
 from app.schemas.product import (
@@ -37,7 +37,7 @@ def _scope_to_owner(query, model_cls, current_user: User):
             raise HTTPException(status_code=403, detail="User is not assigned to a company")
         query = query.filter(company_col == current_user.company_id)
 
-    if normalize_role(current_user.role) in {"admin", "inventory manager", "general manager"}:
+    if normalize_role(current_user.role) in PRIVILEGED_ROLES:
         return query
     owner_col = getattr(model_cls, "created_by", None)
     if owner_col is None:
@@ -52,8 +52,9 @@ def _to_integrity_http_error(exc: IntegrityError) -> HTTPException:
     return HTTPException(status_code=400, detail="Unable to save product due to duplicate values.")
 
 
-def _generate_product_code(db: Session) -> str:
-    count = db.query(Product).count()
+def _generate_product_code(db: Session, company_id) -> str:
+    # Per-tenant sequence (product_code is unique per company_id).
+    count = db.query(Product).filter(Product.company_id == company_id).count()
     return f"PRD-{str(count + 1).zfill(5)}"
 
 
@@ -213,7 +214,7 @@ async def create_product(
     product = Product(
         **payload.model_dump(exclude={"product_code", "uom_id"}),
         uom_id=primary_uom.id,
-        product_code=payload.product_code or _generate_product_code(db),
+        product_code=payload.product_code or _generate_product_code(db, current_user.company_id),
         company_id=current_user.company_id,
         created_by=current_user.id,
     )
@@ -235,6 +236,7 @@ async def create_product(
             transaction_date=date.today(),
             notes="Opening stock",
             created_by=current_user.id,
+            company_id=current_user.company_id,
         )
         db.add(ledger_entry)
 
@@ -292,13 +294,16 @@ async def create_category(
 ):
     existing = (
         db.query(ProductCategory)
-        .filter(func.lower(ProductCategory.name) == payload.name.lower())
+        .filter(
+            func.lower(ProductCategory.name) == payload.name.lower(),
+            ProductCategory.company_id == current_user.company_id,
+        )
         .first()
     )
     if existing:
         enforce_resource_ownership(existing.created_by, current_user)
     if existing and not existing.is_deleted:
-        raise HTTPException(status_code=400, detail="Category already exists")
+        raise HTTPException(status_code=400, detail="Category Name already exists.")
 
     # A soft-deleted row with the same name still exists in DB with a unique key.
     # Revive that row instead of inserting a duplicate and causing IntegrityError.
@@ -315,13 +320,14 @@ async def create_category(
         name=payload.name,
         description=payload.description,
         created_by=current_user.id,
+        company_id=current_user.company_id,
     )
     db.add(category)
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=400, detail="Category already exists")
+        raise HTTPException(status_code=400, detail="Category Name already exists.")
     db.refresh(category)
     return ProductCategoryResponse.model_validate(category)
 
@@ -341,7 +347,11 @@ async def apply_category_action(
     """Universal endpoint for category update and delete operations."""
     category = (
         db.query(ProductCategory)
-        .filter(ProductCategory.id == category_id, ProductCategory.is_deleted == False)
+        .filter(
+            ProductCategory.id == category_id,
+            ProductCategory.is_deleted == False,
+            ProductCategory.company_id == current_user.company_id,
+        )
         .first()
     )
     if not category:
@@ -351,19 +361,20 @@ async def apply_category_action(
     if action.lower() == "update":
         if not name:
             raise HTTPException(status_code=400, detail="Name is required for update")
-        
-        # Check if another category with the same name already exists
+
+        # Check if another category with the same name already exists IN THIS TENANT
         existing = (
             db.query(ProductCategory)
             .filter(
                 func.lower(ProductCategory.name) == name.lower(),
                 ProductCategory.id != category_id,
                 ProductCategory.is_deleted == False,
+                ProductCategory.company_id == current_user.company_id,
             )
             .first()
         )
         if existing:
-            raise HTTPException(status_code=400, detail="Category name already exists")
+            raise HTTPException(status_code=400, detail="Category Name already exists.")
 
         category.name = name
         category.description = description or category.description

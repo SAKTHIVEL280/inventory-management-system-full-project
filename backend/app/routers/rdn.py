@@ -25,7 +25,7 @@ from app.schemas.rdn import (
     RDNCreditNoteResponse,
 )
 from app.services.audit_service import log_audit_event
-from app.services.auth_service import normalize_role
+from app.services.auth_service import normalize_role, PRIVILEGED_ROLES
 from app.services.gst_service import calc_line_item, invoice_type_tax_mode
 from app.services.order_number_service import generate_rdn_number
 from app.services.stock_service import add_stock_entry, refresh_materialized_view
@@ -39,7 +39,7 @@ def _scope_to_owner(query, model_cls, current_user: User):
     if current_user.company_id is None:
         raise HTTPException(status_code=403, detail="User is not assigned to a company")
     query = scope_query_to_company(query, model_cls, current_user.company_id)
-    if normalize_role(current_user.role) in {"admin", "inventory manager", "general manager"}:
+    if normalize_role(current_user.role) in PRIVILEGED_ROLES:
         return query
     owner_col = getattr(model_cls, "created_by", None)
     if owner_col is None:
@@ -54,10 +54,11 @@ def _enforce_owner(row, current_user: User) -> None:
         raise HTTPException(status_code=403, detail="Forbidden")
 
 
-def _load_return_reason_map(db: Session) -> dict[str, str]:
+def _load_return_reason_map(db: Session, company_id) -> dict[str, str]:
     rows = (
         db.query(CustomizationOption)
         .filter(
+            CustomizationOption.company_id == company_id,
             CustomizationOption.module == "rdn",
             CustomizationOption.field_name == "return_reason",
             CustomizationOption.is_active == True,
@@ -388,6 +389,7 @@ async def rdn_customization_options(
     rows = (
         db.query(CustomizationOption)
         .filter(
+            CustomizationOption.company_id == current_user.company_id,
             CustomizationOption.module == "rdn",
             CustomizationOption.field_name == "return_reason",
             CustomizationOption.is_active == True,
@@ -583,7 +585,7 @@ async def create_rdn(
     if invoice.customer_id != payload.customer_id:
         raise HTTPException(status_code=400, detail="Invoice does not belong to customer")
 
-    reason_map = _load_return_reason_map(db)
+    reason_map = _load_return_reason_map(db, current_user.company_id)
     if not reason_map:
         raise HTTPException(status_code=400, detail="Return reasons are not configured")
 
@@ -604,7 +606,7 @@ async def create_rdn(
     )
 
     rdn = ReturnDeliveryNote(
-        rdn_number=generate_rdn_number(db),
+        rdn_number=generate_rdn_number(db, current_user.company_id),
         customer_id=payload.customer_id,
         sales_invoice_id=payload.sales_invoice_id,
         customer_delivery_number=payload.customer_delivery_number,
@@ -739,7 +741,7 @@ async def update_rdn(
     if payload.customer_id != rdn.customer_id:
         raise HTTPException(status_code=400, detail="Customer change not allowed")
 
-    reason_map = _load_return_reason_map(db)
+    reason_map = _load_return_reason_map(db, current_user.company_id)
     if not reason_map:
         raise HTTPException(status_code=400, detail="Return reasons are not configured")
 

@@ -88,12 +88,16 @@ def _build_logo_data_url(file_path: Path) -> str | None:
         return None
 
 
-def _assign_company_to_user(db: Session, current_user: User, company: Company) -> bool:
+def _get_tenant_company(db: Session, current_user: User) -> Company | None:
+    """Load the logged-in user's OWN company (tenant), never an arbitrary one.
+
+    Multi-tenant isolation: previously these endpoints used db.query(Company).first()
+    which returned the oldest/legacy tenant for everyone — a cross-tenant leak (a
+    tenant saw/edited Tenant #1's company). Always scope by current_user.company_id.
+    """
     if current_user.company_id is None:
-        current_user.company_id = company.id
-        db.add(current_user)
-        return True
-    return False
+        return None
+    return db.query(Company).filter(Company.id == current_user.company_id).first()
 
 
 @router.get("/branding", response_model=CompanyBrandingResponse)
@@ -101,7 +105,7 @@ async def get_company_branding(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    company = db.query(Company).first()
+    company = _get_tenant_company(db, current_user)
     if not company:
         return CompanyBrandingResponse(name="Inventory Management", logo_url=None, logo_data_url=None)
 
@@ -122,8 +126,9 @@ async def get_company_branding(
 @router.get("/logo-file")
 async def get_company_logo_file(
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    company = db.query(Company).first()
+    company = _get_tenant_company(db, current_user)
     if not company or not company.logo_url:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company logo not found")
 
@@ -146,18 +151,12 @@ async def get_company(
         "reports_read",
     )),
 ):
-    company = db.query(Company).first()
+    company = _get_tenant_company(db, current_user)
     if not company:
-        company = Company(name="My Company")
-        db.add(company)
-        db.flush()
-        _assign_company_to_user(db, current_user, company)
-        db.commit()
-        db.refresh(company)
-        return company
-
-    if _assign_company_to_user(db, current_user, company):
-        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Company profile not found for your account.",
+        )
     return company
 
 
@@ -167,13 +166,12 @@ async def update_company(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("company_write")),
 ):
-    company = db.query(Company).first()
+    company = _get_tenant_company(db, current_user)
     if not company:
-        company = Company(name=payload.name)
-        db.add(company)
-
-    db.flush()
-    _assign_company_to_user(db, current_user, company)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Company profile not found for your account.",
+        )
 
     for field, value in payload.model_dump().items():
         setattr(company, field, value)
@@ -193,10 +191,9 @@ async def upload_company_logo(
     file_bytes = await logo.read()
     _validate_upload_image(content_type, file_bytes, label="Logo")
 
-    company = db.query(Company).first()
+    company = _get_tenant_company(db, current_user)
     if not company:
-        company = Company(name="My Company")
-        db.add(company)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company profile not found for your account.")
 
     previous_logo_url = company.logo_url
     logo_url = _save_company_static_image(base_name="logo", content_type=content_type, file_bytes=file_bytes)
@@ -211,8 +208,9 @@ async def upload_company_logo(
 @router.get("/ambassador-logo-file")
 async def get_company_ambassador_logo_file(
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    company = db.query(Company).first()
+    company = _get_tenant_company(db, current_user)
     if not company or not company.ambassador_logo_url:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company ambassador logo not found")
 
@@ -234,10 +232,9 @@ async def upload_company_ambassador_logo(
     file_bytes = await logo.read()
     _validate_upload_image(content_type, file_bytes, label="Ambassador logo")
 
-    company = db.query(Company).first()
+    company = _get_tenant_company(db, current_user)
     if not company:
-        company = Company(name="My Company")
-        db.add(company)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company profile not found for your account.")
 
     previous_ambassador_logo_url = company.ambassador_logo_url
     ambassador_logo_url = _save_company_static_image(
@@ -258,10 +255,9 @@ async def remove_company_ambassador_logo(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("company_write")),
 ):
-    company = db.query(Company).first()
+    company = _get_tenant_company(db, current_user)
     if not company:
-        company = Company(name="My Company")
-        db.add(company)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company profile not found for your account.")
 
     if company.ambassador_logo_url:
         file_path = _resolve_logo_file_path(company.ambassador_logo_url)

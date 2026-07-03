@@ -1,7 +1,7 @@
 """Product-related models."""
 from uuid import uuid4
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, UUID, ForeignKey, Numeric, Date, Text
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, UUID, ForeignKey, Numeric, Date, Text, UniqueConstraint
 from app.database import Base
 
 
@@ -11,7 +11,9 @@ class ProductCategory(Base):
     __tablename__ = "product_categories"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    name = Column(String(150), nullable=False, unique=True)
+    # Category name is unique PER TENANT (composite unique on company_id+name at
+    # the DB level, DB-213), so different tenants may reuse the same name.
+    name = Column(String(150), nullable=False)
     description = Column(Text, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
     is_deleted = Column(Boolean, nullable=False, default=False)
@@ -19,6 +21,7 @@ class ProductCategory(Base):
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("company.id"), nullable=True, index=True)
 
 
 class UnitOfMeasure(Base):
@@ -39,9 +42,11 @@ class Product(Base):
     """Product master."""
 
     __tablename__ = "products"
+    # product_code is unique PER TENANT (multi-tenant); see ux_products_company_code.
+    __table_args__ = (UniqueConstraint("company_id", "product_code", name="ux_products_company_code"),)
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    product_code = Column(String(30), unique=True, nullable=False, index=True)
+    product_code = Column(String(30), nullable=False, index=True)
     sku = Column(String(50), nullable=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, nullable=True)

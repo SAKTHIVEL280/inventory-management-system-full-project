@@ -1,0 +1,11 @@
+to=sakthivel@daeq.com
+subject=Service Invoice MEC/INV/001/2026-27 from Mecandria IT Services & Solutions
+body=
+Dear Daeq,
+
+Please find attached service invoice MEC/INV/001/2026-27 for the amount of INR 1,180.00.
+
+Regards,
+Mecandria IT Services & Solutions
+
+attachment=20260703103100767016_MEC-INV-001-2026-27.pdf

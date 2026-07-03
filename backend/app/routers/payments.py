@@ -26,7 +26,7 @@ from app.models.purchase import GoodsReceiptNote, PurchaseOrder
 from app.schemas.payment import PaymentCreateRequest, PaymentStatusRequest
 from app.services.order_number_service import generate_payment_number
 from app.services.audit_service import log_audit_event, build_audit_changes
-from app.services.auth_service import normalize_role
+from app.services.auth_service import normalize_role, PRIVILEGED_ROLES
 from app.utils.input_validation import validate_optional_token
 
 router = APIRouter(prefix="/api/v1/payments", tags=["payments"])
@@ -38,7 +38,7 @@ def _scope_to_owner(query, model, current_user: User):
     """Scope by company_id first, then by ownership for non-privileged users."""
     if current_user.company_id is not None:
         query = scope_query_to_company(query, model, current_user.company_id)
-    if normalize_role(current_user.role) in {"admin", "inventory manager", "general manager"}:
+    if normalize_role(current_user.role) in PRIVILEGED_ROLES:
         return query
     owner_col = getattr(model, "created_by", None)
     if owner_col is None:
@@ -609,7 +609,7 @@ async def create_payment(
             new_alloc_sum_by_grn[grn_id] += proposed
 
     # BUG-03: Thread-safe number generation
-    payment_number = generate_payment_number(db)
+    payment_number = generate_payment_number(db, current_user.company_id)
 
     payment = Payment(
         payment_number=payment_number,

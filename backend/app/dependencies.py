@@ -53,8 +53,65 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found or inactive",
         )
-    
+
+    # Multi-tenant (M4): block access when the user's tenant is not active
+    # (deactivated/suspended by a Super Admin). Super Admins (no tenant) skip this.
+    if not getattr(user, "is_super_admin", False) and user.company_id is not None:
+        from app.models.company import Company
+
+        company = db.query(Company.account_status).filter(
+            Company.id == user.company_id
+        ).first()
+        if company is not None and (company[0] or "active") not in ("active", "trial"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Your organisation's account is currently inactive or suspended. "
+                    "Please contact your administrator."
+                ),
+            )
+
     return user
+
+
+def require_super_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Dependency: allow only platform Super Admins (Mecandria internal team)."""
+    if not getattr(current_user, "is_super_admin", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Super Admin privileges are required for this action.",
+        )
+    return current_user
+
+
+def require_tenant(current_user: User = Depends(get_current_user)) -> User:
+    """Dependency: require an active tenant context for tenant-scoped endpoints.
+
+    Hard tenant-isolation boundary (BRD §10 Data Isolation, §4): a platform Super
+    Admin has NO tenant of their own and must NOT read or write any single tenant's
+    data through the tenant APIs — they operate only via the Super Admin portal, or
+    by explicitly impersonating a tenant admin (which issues a token whose subject
+    IS that tenant's admin, so this guard then passes naturally).
+
+    Blocking here also closes the latent cross-tenant leak in endpoints that filter
+    with a soft `if company_id:` guard: without a tenant those filters were skipped,
+    returning every tenant's rows merged. Requiring a tenant guarantees the filter
+    always applies.
+    """
+    if getattr(current_user, "is_super_admin", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Super Admins cannot access tenant data directly. Use 'Login As' "
+                "to impersonate a tenant for support."
+            ),
+        )
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User is not associated with any company",
+        )
+    return current_user
 
 
 def require_role(*roles: str):
@@ -94,14 +151,21 @@ def enforce_resource_ownership(
     record_owner_id: UUID | None,
     current_user: User,
     *,
-    privileged_roles: tuple[str, ...] = ("admin", "inventory manager", "general manager"),
+    privileged_roles: tuple[str, ...] | None = None,
 ) -> None:
     """Block access to user-owned resources when requester is not privileged.
 
     Records created before ownership tracking may have a null owner and remain
     accessible to avoid breaking legacy data workflows.
     """
-    if normalize_role(current_user.role) in {normalize_role(role) for role in privileged_roles}:
+    from app.services.auth_service import PRIVILEGED_ROLES
+
+    privileged = (
+        {normalize_role(r) for r in privileged_roles}
+        if privileged_roles is not None
+        else PRIVILEGED_ROLES
+    )
+    if normalize_role(current_user.role) in privileged:
         return
     if record_owner_id is None:
         return
@@ -165,4 +229,48 @@ def scope_query_to_company(query, model_cls, company_id: UUID):
     if company_col is None:
         return query
     return query.filter(company_col == company_id)
+
+
+def get_current_company(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Load the current user's tenant (company) row, or 403 if unassigned."""
+    from app.models.company import Company
+
+    if current_user.company_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User is not associated with any company",
+        )
+    company = db.query(Company).filter(Company.id == current_user.company_id).first()
+    if company is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User is not associated with any company",
+        )
+    return company
+
+
+def require_module(*modules: str):
+    """Dependency: allow the request only if the tenant's plan includes a module.
+
+    Tenant-level capability gate (distinct from the user-level `require_permissions`
+    role gate). Passing several modules treats them as OR (any one grants access);
+    used where a router serves a module group. Returns the company so endpoints can
+    reuse it. The legacy/existing tenant is PLATINUM, so every gate passes — no
+    behaviour change until non-PLATINUM tenants exist.
+    """
+    from app.services.plan_service import plan_allows_any_module, upgrade_message
+
+    async def check_module(company=Depends(get_current_company)):
+        plan = getattr(company, "subscription_plan", None)
+        if not plan_allows_any_module(plan, modules):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=upgrade_message(modules[0], plan),
+            )
+        return company
+
+    return check_module
 

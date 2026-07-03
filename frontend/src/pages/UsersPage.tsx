@@ -3,25 +3,22 @@ import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import { usersApi, deleteUser } from '../api/users';
-import { UserCreateRequest, UserUpdateRequest, UserManagement } from '../types';
+import { UserCreateRequest, UserUpdateRequest, UserManagement, ROLE_LABELS, ROLE_BADGE_CLASS } from '../types';
 import { AppLayout } from '../components/AppLayout';
 import { PageEmpty, PageError, PageLoading } from '../components/PageState';
 import { getApiDetail, getApiDetailMessage } from '../utils/apiError';
+import { useSubscription } from '../hooks/useSubscription';
 
 const schema = z.object({
   full_name: z.string().min(1, 'Name is required'),
   email: z.string().email('Valid email required'),
   password: z.string().optional(),
-  role: z.enum(['admin', 'inventory manager', 'general manager']),
+  // Assignable BRD roles (the actual options are further restricted to the
+  // tenant's plan in the picker below).
+  role: z.enum(['admin', 'basic', 'accounts', 'inventory', 'management', 'hr']),
 });
 
 type UserForm = z.infer<typeof schema>;
-
-const roleClassMap: Record<string, string> = {
-  admin: 'bg-role-admin',
-  'inventory manager': 'bg-role-inventory-manager',
-  'general manager': 'bg-role-general-manager',
-};
 
 const UsersPage = () => {
   const queryClient = useQueryClient();
@@ -29,6 +26,12 @@ const UsersPage = () => {
   const [editingUser, setEditingUser] = useState<UserManagement | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+
+  // Plan-gated role availability (BRD §5.5/§6). Only roles included in the tenant's
+  // current plan are offered; the backend enforces the same rule authoritatively.
+  const { rolesCatalog, atUserLimit, userLimit, activeUserCount, plan } = useSubscription();
+  const availableRoles = rolesCatalog.filter((r) => r.available).map((r) => r.role);
+  const defaultRole = (availableRoles[0] ?? 'basic') as UserForm['role'];
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['users'],
@@ -40,9 +43,18 @@ const UsersPage = () => {
       full_name: '',
       email: '',
       password: '',
-      role: 'admin',
+      role: defaultRole,
     },
   });
+
+  // Roles shown in the picker: the plan-available roles, plus 'admin' only when
+  // editing the existing Tenant Admin (so its role is never silently changed).
+  const roleOptions = (() => {
+    const opts = [...availableRoles];
+    if (editingUser?.role === 'admin' && !opts.includes('admin')) opts.unshift('admin');
+    if (opts.length === 0) opts.push(defaultRole);
+    return opts;
+  })();
 
   const createMutation = useMutation({
     mutationFn: (payload: UserCreateRequest) => usersApi.create(payload),
@@ -94,7 +106,7 @@ const UsersPage = () => {
     setEditingUser(null);
     setFormError('');
     setShowPassword(false);
-    reset({ full_name: '', email: '', password: '', role: 'admin' });
+    reset({ full_name: '', email: '', password: '', role: defaultRole });
   };
 
   const startEdit = (user: UserManagement) => {
@@ -196,15 +208,25 @@ const UsersPage = () => {
             <div>
               <label htmlFor="role" className="hms-label">Role</label>
               <select id="role" className="hms-input" {...register('role')}>
-                <option value="admin">Admin</option>
-                <option value="inventory manager">Inventory Manager</option>
-                <option value="general manager">General Manager</option>
+                {roleOptions.map((r) => (
+                  <option key={r} value={r}>{ROLE_LABELS[r] ?? r}</option>
+                ))}
               </select>
+              {plan && (
+                <p className="mt-1 text-xs text-neutral-500">
+                  Roles available on your {plan} plan. Upgrade to unlock more.
+                </p>
+              )}
             </div>
+            {!editingUser && atUserLimit && (
+              <p className="text-sm text-amber-600" role="alert">
+                User limit reached ({activeUserCount}/{userLimit} on {plan}). Deactivate a user or upgrade your plan to add more.
+              </p>
+            )}
             {formError && <p className="text-sm text-danger" role="alert" aria-live="assertive">{formError}</p>}
             <button
               type="submit"
-              disabled={isSaving}
+              disabled={isSaving || (!editingUser && atUserLimit)}
               className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-primary/20 transition hover:bg-primary/90 disabled:opacity-50"
             >
               {isSaving ? 'Saving...' : editingUser ? 'Modify/Change User' : 'Create User'}
@@ -239,8 +261,8 @@ const UsersPage = () => {
                     <td className="px-4 py-3 font-medium">{user.full_name}</td>
                     <td className="px-4 py-3">{user.email}</td>
                     <td className="px-4 py-3">
-                      <span className={`rounded-full px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-white ${roleClassMap[user.role] ?? 'bg-primary'}`}>
-                        {user.role}
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-white ${ROLE_BADGE_CLASS[user.role] ?? 'bg-primary'}`}>
+                        {ROLE_LABELS[user.role] ?? user.role}
                       </span>
                     </td>
                     <td className="px-4 py-3">

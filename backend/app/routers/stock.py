@@ -34,7 +34,7 @@ from app.schemas.stock import (
     InventoryCountNumberSearchResponse,
     InventoryCountResponse,
 )
-from app.services.auth_service import normalize_role
+from app.services.auth_service import normalize_role, PRIVILEGED_ROLES
 from app.services.stock_service import get_product_batch_snapshot, refresh_materialized_view
 
 router = APIRouter(prefix="/api/v1/stock", tags=["stock"])
@@ -44,7 +44,7 @@ def _scope_to_owner(query, model, current_user: User):
     """Scope by company_id first, then by ownership for non-privileged users."""
     if current_user.company_id is not None:
         query = scope_query_to_company(query, model, current_user.company_id)
-    if normalize_role(current_user.role) in {"admin", "inventory manager", "general manager"}:
+    if normalize_role(current_user.role) in PRIVILEGED_ROLES:
         return query
     owner_col = getattr(model, "created_by", None)
     if owner_col is None:
@@ -462,8 +462,9 @@ async def adjust_stock(
         transaction_date=date.today(),
         notes=payload.notes or "Manual stock adjustment",
         created_by=current_user.id,
+        company_id=current_user.company_id,
     )
-    
+
     db.add(ledger_entry)
 
     # BUG-01: Refresh materialized view after stock change
@@ -978,6 +979,7 @@ async def accept_inventory_count_difference(
             transaction_date=date.today(),
             notes=notes,
             created_by=current_user.id,
+            company_id=current_user.company_id,
         )
         db.add(ledger_entry)
 

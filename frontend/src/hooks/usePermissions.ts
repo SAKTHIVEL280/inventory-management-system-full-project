@@ -30,7 +30,7 @@ export const usePermissions = () => {
     canRead,
     canWrite,
     isAdmin: user?.role === 'admin',
-    isInventoryManager: user?.role === 'inventory manager',
-    isGeneralManager: user?.role === 'general manager',
+    isInventoryUser: user?.role === 'inventory',
+    isManagementUser: user?.role === 'management',
   }), [can, canRead, canWrite, user]);
 };

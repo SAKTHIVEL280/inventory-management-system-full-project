@@ -28,11 +28,15 @@ from app.models.rdn import ReturnDeliveryNote, ReturnDeliveryNoteItem, RdnCredit
 from app.models.payment import Payment, PaymentAllocation
 from app.models.customization_option import CustomizationOption
 from app.models.inventory_count import InventoryCount, InventoryCountDifferenceAudit, InventoryCountItem
+from app.models.platform_company import PlatformCompany
+from app.models.subscription_plan import SubscriptionPlan
 
 __all__ = [
 	"Base",
 	"User",
 	"Company",
+	"PlatformCompany",
+	"SubscriptionPlan",
 	"Customer",
 	"Supplier",
 	"ProductCategory",

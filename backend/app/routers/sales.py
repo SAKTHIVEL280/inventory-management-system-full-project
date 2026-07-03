@@ -64,7 +64,7 @@ from app.services.order_number_service import (
 )
 from app.services.gst_service import determine_tax_mode, determine_default_invoice_type, invoice_type_tax_mode, is_india_country, calc_line_item, split_tax
 from app.utils.rounding import round_paise_to_nearest_5
-from app.services.auth_service import normalize_role
+from app.services.auth_service import normalize_role, PRIVILEGED_ROLES
 from app.services.stock_service import get_current_stock, get_product_batch_snapshot, add_stock_entry, refresh_materialized_view
 from app.config import settings
 from app.utils.input_validation import validate_optional_token
@@ -77,7 +77,7 @@ def _scope_to_owner(query, model, current_user: User):
     """Scope by company_id first, then by ownership for non-privileged users."""
     if current_user.company_id is not None:
         query = scope_query_to_company(query, model, current_user.company_id)
-    if normalize_role(current_user.role) in {"admin", "inventory manager", "general manager"}:
+    if normalize_role(current_user.role) in PRIVILEGED_ROLES:
         return query
     owner_col = getattr(model, "created_by", None)
     if owner_col is None:
@@ -532,6 +532,10 @@ def _validate_invoice_line_items_for_save(
                 validation_errors.append(err)
 
         batch_token = (getattr(item, "batch_no", None) or "").strip()
+        if not batch_token:
+            msg = f"Line item {index + 1}: Batch is required. Please select a batch."
+            if msg not in validation_errors:
+                validation_errors.append(msg)
         if batch_token and batch_token in batch_cache[product_key]:
             available_qty = float(batch_cache[product_key][batch_token].get("available_qty", 0.0))
             requested_qty = float(getattr(item, "quantity", 0) or 0) + float(getattr(item, "free_quantity", 0) or 0)
@@ -727,7 +731,7 @@ async def create_quotation(
     gst_applicable = tax_mode["gst_applicable"]
 
     q = Quotation(
-        quotation_number=generate_quotation_number(db),
+        quotation_number=generate_quotation_number(db, current_user.company_id),
         customer_id=payload.customer_id,
         quotation_date=payload.quotation_date,
         valid_until=payload.valid_until,
@@ -978,7 +982,7 @@ async def convert_quotation_to_so(
         raise HTTPException(status_code=400, detail="Quotation cannot be converted in current status")
 
     so = SalesOrder(
-        so_number=generate_so_number(db),
+        so_number=generate_so_number(db, current_user.company_id),
         quotation_id=q.id,
         customer_id=q.customer_id,
         order_date=date.today(),
@@ -1082,7 +1086,7 @@ async def create_sales_order(
     gst_applicable = tax_mode["gst_applicable"]
 
     so = SalesOrder(
-        so_number=generate_so_number(db),
+        so_number=generate_so_number(db, current_user.company_id),
         quotation_id=payload.quotation_id,
         customer_id=payload.customer_id,
         order_date=payload.order_date,
@@ -1386,7 +1390,7 @@ async def convert_so_to_invoice(
     )
 
     invoice = SalesInvoice(
-        invoice_number=generate_invoice_number(db),
+        invoice_number=generate_invoice_number(db, current_user.company_id),
         sales_order_id=so.id,
         quotation_id=so.quotation_id,
         customer_id=so.customer_id,
@@ -1616,7 +1620,7 @@ async def create_invoice(
     )
 
     invoice = SalesInvoice(
-        invoice_number=generate_invoice_number(db),
+        invoice_number=generate_invoice_number(db, current_user.company_id),
         sales_order_id=None,
         quotation_id=payload.quotation_id,
         customer_id=payload.customer_id,
@@ -2534,7 +2538,7 @@ async def create_sales_return(
     is_igst = invoice.is_igst if gst_applicable else False
 
     ret = SalesReturn(
-        return_number=generate_sales_return_number(db),
+        return_number=generate_sales_return_number(db, current_user.company_id),
         invoice_id=payload.invoice_id,
         customer_id=payload.customer_id,
         return_date=payload.return_date,

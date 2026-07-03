@@ -14,7 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.models.inventory_count import InventoryCountDifferenceAudit, InventoryCountItem
 from app.models.purchase import GoodsReceiptNote, GRNItem, PurchaseReturn, PurchaseReturnItem
 from app.models.rdn import ReturnDeliveryNote, ReturnDeliveryNoteItem
-from app.models.product import StockLedger
+from app.models.product import StockLedger, Product
 from app.models.sales import SalesInvoice, SalesInvoiceItem, SalesReturn, SalesReturnItem
 
 
@@ -286,6 +286,11 @@ def add_stock_entry(
     Returns:
         Created StockLedger entry
     """
+    # Multi-tenant (M7): a ledger entry belongs to the same tenant as its product.
+    # Derive company_id centrally so every caller writes a tenant-attributed row
+    # (closes the stock_ledger isolation gap without changing call signatures).
+    company_id = db.query(Product.company_id).filter(Product.id == product_id).scalar()
+
     entry = StockLedger(
         product_id=product_id,
         transaction_type=transaction_type,
@@ -297,6 +302,7 @@ def add_stock_entry(
         transaction_date=transaction_date,
         notes=notes,
         created_by=created_by,
+        company_id=company_id,
     )
     db.add(entry)
     return entry

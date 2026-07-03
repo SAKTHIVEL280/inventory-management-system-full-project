@@ -13,14 +13,15 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE TABLE users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   full_name VARCHAR(150) NOT NULL,
-  email VARCHAR(255) UNIQUE NOT NULL,
+  email VARCHAR(255) NOT NULL,  -- unique among active users only (partial index below)
   hashed_password VARCHAR(255) NOT NULL,
-  role VARCHAR(20) NOT NULL CHECK (role IN ('admin','inventory manager','general manager')),
+  role VARCHAR(20) NOT NULL CHECK (role IN ('admin','basic','accounts','inventory','management','hr')),
   permission_overrides JSON,
   force_password_change BOOLEAN DEFAULT FALSE,
   failed_login_attempts INTEGER NOT NULL DEFAULT 0,
   locked_until TIMESTAMPTZ,
   is_active BOOLEAN DEFAULT TRUE,
+  is_super_admin BOOLEAN NOT NULL DEFAULT FALSE,
   is_deleted BOOLEAN DEFAULT FALSE,
   deleted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -28,6 +29,10 @@ CREATE TABLE users (
   company_id UUID,
   created_by UUID REFERENCES users(id)
 );
+
+CREATE INDEX IF NOT EXISTS ix_users_is_super_admin ON users (is_super_admin) WHERE is_super_admin = TRUE;
+-- Email unique among active users only, so a deleted user's email can be reused.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_users_email_active ON users (email) WHERE is_deleted = false;
 
 CREATE INDEX IF NOT EXISTS ix_users_email ON users (email);
 
@@ -118,13 +123,38 @@ CREATE TABLE company (
   grn_counter INTEGER NOT NULL DEFAULT 1,
   rdn_prefix VARCHAR(10) NOT NULL DEFAULT 'RDN',
   rdn_counter INTEGER NOT NULL DEFAULT 1,
+  svc_prefix VARCHAR(10) NOT NULL DEFAULT 'SINV',
+  svc_counter INTEGER NOT NULL DEFAULT 1,
+  -- Multi-tenant registry fields (M0 / DB-206). Each company row is one tenant.
+  subscription_plan VARCHAR(20) NOT NULL DEFAULT 'PLATINUM'
+    CHECK (subscription_plan IN ('FREE','SILVER','GOLD','PLATINUM')),
+  account_status VARCHAR(20) NOT NULL DEFAULT 'active'
+    CHECK (account_status IN ('active','inactive','suspended','trial')),
+  payment_status VARCHAR(20) NOT NULL DEFAULT 'paid'
+    CHECK (payment_status IN ('paid','pending','overdue')),
+  onboarding_date DATE DEFAULT CURRENT_DATE,
+  subscription_start_date DATE,
+  subscription_expiry_date DATE,
+  business_category VARCHAR(100),
+  contact_person_name VARCHAR(255),
+  contact_number VARCHAR(20),
+  tenant_code VARCHAR(50),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS ux_company_tenant_code
+  ON company (tenant_code) WHERE tenant_code IS NOT NULL;
+
 ALTER TABLE users
   ADD CONSTRAINT fk_users_company
   FOREIGN KEY (company_id) REFERENCES company(id);
+
+-- Tenant membership (M7/DB-214): every user belongs to a tenant OR is a platform
+-- Super Admin (super admins are tenant-less, so company_id stays NULLable).
+ALTER TABLE users
+  ADD CONSTRAINT chk_users_company_or_super
+  CHECK (company_id IS NOT NULL OR is_super_admin = TRUE);
 
 CREATE INDEX IF NOT EXISTS ix_users_company_id ON users (company_id);
 
@@ -142,6 +172,8 @@ CREATE TABLE units_of_measure (
 -- Customization options (centralized configurable values)
 CREATE TABLE customization_options (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- Multi-tenant (DB-215): each tenant owns its own dropdown option set.
+  company_id UUID REFERENCES company(id),
   module VARCHAR(50) NOT NULL,
   field_name VARCHAR(50) NOT NULL,
   option_value VARCHAR(120) NOT NULL,
@@ -152,10 +184,13 @@ CREATE TABLE customization_options (
   deleted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW(),
-  created_by UUID REFERENCES users(id),
-  CONSTRAINT uq_customization_option_scope UNIQUE (module, field_name, option_value)
+  created_by UUID REFERENCES users(id)
 );
 
+-- Per-tenant uniqueness: the same option value may exist for different tenants.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_customization_options_company_scope
+  ON customization_options (company_id, module, field_name, option_value);
+CREATE INDEX IF NOT EXISTS ix_customization_options_company_id ON customization_options (company_id);
 CREATE INDEX IF NOT EXISTS ix_customization_options_module ON customization_options (module);
 CREATE INDEX IF NOT EXISTS ix_customization_options_field_name ON customization_options (field_name);
 
@@ -204,7 +239,7 @@ VALUES
   ('rdn', 'return_reason', 'expiry_date_passed', 'Expiry Date Passed', 2, TRUE),
   ('rdn', 'return_reason', 'non_sold', 'Non Sold', 3, TRUE),
   ('rdn', 'return_reason', 'damaged', 'Damaged', 4, TRUE)
-ON CONFLICT (module, field_name, option_value) DO NOTHING;
+ON CONFLICT (company_id, module, field_name, option_value) DO NOTHING;
 
 -- Enhancement 3: Stockist & Sales Manager master tables (managed in Customization)
 CREATE TABLE stockists (
@@ -241,7 +276,7 @@ CREATE INDEX IF NOT EXISTS ix_sales_managers_company_id ON sales_managers (compa
 -- 5.5 Product Categories
 CREATE TABLE product_categories (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name VARCHAR(150) UNIQUE NOT NULL,
+  name VARCHAR(150) NOT NULL,
   description TEXT,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
   is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
@@ -252,10 +287,14 @@ CREATE TABLE product_categories (
   created_by UUID REFERENCES users(id)
 );
 
+-- Category name is unique per tenant (DB-213).
+CREATE UNIQUE INDEX IF NOT EXISTS ux_product_categories_company_name
+  ON product_categories (company_id, name);
+
 -- 5.7 Products
 CREATE TABLE products (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  product_code VARCHAR(30) UNIQUE NOT NULL,
+  product_code VARCHAR(30) NOT NULL,
   sku VARCHAR(50),
   name VARCHAR(255) NOT NULL,
   description TEXT,
@@ -282,11 +321,12 @@ CREATE TABLE products (
 );
 
 CREATE INDEX IF NOT EXISTS ix_products_company_id ON products (company_id);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_products_company_code ON products (company_id, product_code);
 
 -- 5.3 Customers
 CREATE TABLE customers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  customer_code VARCHAR(20) UNIQUE NOT NULL,
+  customer_code VARCHAR(20) NOT NULL,
   company_name VARCHAR(255) NOT NULL,
   contact_person VARCHAR(150),
   email VARCHAR(255),
@@ -328,11 +368,12 @@ CREATE TABLE customers (
 );
 
 CREATE INDEX IF NOT EXISTS ix_customers_company_id ON customers (company_id);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_customers_company_code ON customers (company_id, customer_code);
 
 -- 5.4 Suppliers
 CREATE TABLE suppliers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  supplier_code VARCHAR(20) UNIQUE NOT NULL,
+  supplier_code VARCHAR(20) NOT NULL,
   company_name VARCHAR(255) NOT NULL,
   contact_person VARCHAR(150),
   email VARCHAR(255),
@@ -367,6 +408,8 @@ CREATE TABLE suppliers (
   company_id UUID REFERENCES company(id),
   created_by UUID REFERENCES users(id)
 );
+CREATE INDEX IF NOT EXISTS ix_suppliers_company_id ON suppliers (company_id);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_suppliers_company_code ON suppliers (company_id, supplier_code);
 
 -- Stock ledger and materialized view (needed by inventory pages)
 CREATE TABLE stock_ledger (
@@ -998,6 +1041,145 @@ CREATE TABLE payment_allocations (
   deleted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Service Invoice module (M5 / DB-211). Available to all plans (FREE capped at 10/mo).
+CREATE TABLE service_invoices (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  invoice_number VARCHAR(40) NOT NULL,
+  invoice_date DATE NOT NULL,
+  due_date DATE,
+  customer_name VARCHAR(255) NOT NULL,
+  customer_gstin VARCHAR(15),
+  customer_email VARCHAR(255),
+  customer_contact VARCHAR(20),
+  billing_address TEXT,
+  customer_state_code VARCHAR(5),
+  supply_type VARCHAR(10) NOT NULL DEFAULT 'intra',
+  subtotal INTEGER NOT NULL DEFAULT 0,
+  total_discount INTEGER NOT NULL DEFAULT 0,
+  total_taxable_amount INTEGER NOT NULL DEFAULT 0,
+  total_cgst INTEGER NOT NULL DEFAULT 0,
+  total_sgst INTEGER NOT NULL DEFAULT 0,
+  total_igst INTEGER NOT NULL DEFAULT 0,
+  total_gst INTEGER NOT NULL DEFAULT 0,
+  grand_total INTEGER NOT NULL DEFAULT 0,
+  amount_in_words VARCHAR(500),
+  status VARCHAR(20) NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','issued','paid','cancelled')),
+  payment_status VARCHAR(20) NOT NULL DEFAULT 'unpaid' CHECK (payment_status IN ('unpaid','paid')),
+  cancel_reason TEXT,
+  notes TEXT,
+  -- Mecandria subscription invoice raised by Super Admin to this tenant (§4.3).
+  is_platform_invoice BOOLEAN NOT NULL DEFAULT FALSE,
+  is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+  deleted_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  company_id UUID REFERENCES company(id),
+  created_by UUID REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_service_invoices_is_platform
+  ON service_invoices (is_platform_invoice) WHERE is_platform_invoice = TRUE;
+
+-- Platform (Mecandria) seller company profile (single row) — Super Admin managed.
+CREATE TABLE IF NOT EXISTS platform_company (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(255) NOT NULL DEFAULT 'Mecandria',
+  legal_name VARCHAR(255),
+  gstin VARCHAR(15),
+  gstin_status VARCHAR(20) NOT NULL DEFAULT 'non-registered',
+  pan VARCHAR(10),
+  import_export_number VARCHAR(50),
+  company_director_name VARCHAR(255),
+  company_director_contact VARCHAR(255),
+  address_line1 VARCHAR(255),
+  address_line2 VARCHAR(255),
+  city VARCHAR(100),
+  state VARCHAR(100),
+  country VARCHAR(100),
+  state_code VARCHAR(5),
+  pincode VARCHAR(10),
+  phone VARCHAR(15),
+  email VARCHAR(255),
+  website VARCHAR(255),
+  logo_url VARCHAR(500),
+  ambassador_logo_url VARCHAR(500),
+  bank_name VARCHAR(150),
+  account_holder_name VARCHAR(255),
+  bank_account_no VARCHAR(50),
+  bank_ifsc VARCHAR(20),
+  bank_branch VARCHAR(150),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+INSERT INTO platform_company (name)
+SELECT 'Mecandria' WHERE NOT EXISTS (SELECT 1 FROM platform_company);
+
+CREATE TABLE service_invoice_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  service_invoice_id UUID NOT NULL REFERENCES service_invoices(id) ON DELETE CASCADE,
+  sr_no INTEGER NOT NULL DEFAULT 1,
+  item_name VARCHAR(255) NOT NULL,
+  description TEXT,
+  hsn_sac_code VARCHAR(20),
+  quantity NUMERIC(12,4) NOT NULL DEFAULT 1,
+  basic_price INTEGER NOT NULL DEFAULT 0,
+  discount_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
+  discount_amount INTEGER NOT NULL DEFAULT 0,
+  is_free BOOLEAN NOT NULL DEFAULT FALSE,
+  taxable_amount INTEGER NOT NULL DEFAULT 0,
+  gst_rate INTEGER NOT NULL DEFAULT 18,
+  cgst_amount INTEGER NOT NULL DEFAULT 0,
+  sgst_amount INTEGER NOT NULL DEFAULT 0,
+  igst_amount INTEGER NOT NULL DEFAULT 0,
+  total_amount INTEGER NOT NULL DEFAULT 0,
+  is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS ix_service_invoices_company_id ON service_invoices (company_id);
+CREATE INDEX IF NOT EXISTS ix_service_invoices_invoice_date ON service_invoices (invoice_date);
+CREATE INDEX IF NOT EXISTS ix_service_invoice_items_invoice_id ON service_invoice_items (service_invoice_id);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_service_invoices_company_number ON service_invoices (company_id, invoice_number);
+
+-- ── Subscription Plan Configuration (DB-222) ─────────────────────────────────
+-- DB-backed plan matrix (Super Admin → Plan Configuration). plan_service reads
+-- these rows (cached) with a code fallback.
+CREATE TABLE IF NOT EXISTS subscription_plans (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  plan_key VARCHAR(20) NOT NULL UNIQUE,
+  name VARCHAR(80) NOT NULL,
+  price_paise BIGINT NOT NULL DEFAULT 0,
+  billing_period VARCHAR(20) NOT NULL DEFAULT 'monthly',
+  user_limit INTEGER NOT NULL DEFAULT 1,
+  modules JSONB NOT NULL DEFAULT '[]'::jsonb,
+  features JSONB NOT NULL DEFAULT '[]'::jsonb,
+  roles JSONB NOT NULL DEFAULT '[]'::jsonb,
+  free_invoice_cap INTEGER,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS ix_subscription_plans_plan_key ON subscription_plans (plan_key);
+
+INSERT INTO subscription_plans
+  (plan_key, name, price_paise, billing_period, user_limit, modules, features, roles, free_invoice_cap, is_active, sort_order)
+VALUES
+  ('FREE', 'Free', 0, 'none', 1,
+   '["service_invoice"]'::jsonb, '["email_invoices"]'::jsonb, '["basic"]'::jsonb, 10, TRUE, 1),
+  ('SILVER', 'Silver', 99900, 'monthly', 2,
+   '["service_invoice","masters","purchase","sales","accounts","dashboard"]'::jsonb,
+   '["email_invoices"]'::jsonb, '["admin","accounts"]'::jsonb, NULL, TRUE, 2),
+  ('GOLD', 'Gold', 199900, 'monthly', 4,
+   '["service_invoice","masters","purchase","sales","accounts","dashboard","inventory","reports","audit_logs"]'::jsonb,
+   '["email_invoices","advanced_reports","gst_filing","audit_trail"]'::jsonb,
+   '["admin","accounts","inventory","management"]'::jsonb, NULL, TRUE, 3),
+  ('PLATINUM', 'Platinum', 499900, 'monthly', 6,
+   '["service_invoice","masters","purchase","sales","accounts","dashboard","inventory","reports","audit_logs","export","pos","hr"]'::jsonb,
+   '["email_invoices","advanced_reports","gst_filing","data_export","bulk_import","multi_currency","audit_trail","api_access"]'::jsonb,
+   '["admin","accounts","inventory","management","hr"]'::jsonb, NULL, TRUE, 4)
+ON CONFLICT (plan_key) DO NOTHING;
 
 COMMIT;
 

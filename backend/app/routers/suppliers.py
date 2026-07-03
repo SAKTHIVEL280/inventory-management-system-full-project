@@ -12,7 +12,7 @@ from app.dependencies import enforce_resource_ownership, require_permissions, ge
 from app.models.customization_option import CustomizationOption
 from app.models.supplier import Supplier
 from app.models.user import User
-from app.services.auth_service import normalize_role
+from app.services.auth_service import normalize_role, PRIVILEGED_ROLES
 from app.services.data_masking import DataMasker, should_mask_sensitive_fields
 from app.utils.input_validation import normalize_search_query
 from app.utils.countries import COUNTRY_MASTER
@@ -38,7 +38,7 @@ def _scope_to_owner(query, model_cls, current_user: User):
     # Always apply company filter
     if current_user.company_id is not None:
         query = scope_query_to_company(query, model_cls, current_user.company_id)
-    if normalize_role(current_user.role) in {"admin", "inventory manager", "general manager"}:
+    if normalize_role(current_user.role) in PRIVILEGED_ROLES:
         return query
     owner_col = getattr(model_cls, "created_by", None)
     if owner_col is None:
@@ -164,11 +164,12 @@ def _is_international(payload: SupplierCreateRequest | SupplierUpdateRequest) ->
     return bool(country and country not in {"india", "in"})
 
 
-def _generate_supplier_code(db: Session, payload: SupplierCreateRequest | SupplierUpdateRequest) -> str:
+def _generate_supplier_code(db: Session, payload: SupplierCreateRequest | SupplierUpdateRequest, company_id) -> str:
     prefix = "SUPP-INT" if _is_international(payload) else f"SUPP-{_state_prefix_from_payload(payload)}"
+    # Per-tenant sequence (supplier_code is unique per company_id).
     existing_codes = (
         db.query(Supplier.supplier_code)
-        .filter(Supplier.supplier_code.like(f"{prefix}-%"))
+        .filter(Supplier.supplier_code.like(f"{prefix}-%"), Supplier.company_id == company_id)
         .all()
     )
 
@@ -217,6 +218,7 @@ def _validate_and_autofill_supplier_state(payload: SupplierCreateRequest | Suppl
 def _upsert_supplier_customization_option(
     db: Session,
     *,
+    company_id: UUID | None,
     field_name: str,
     option_value: str,
     created_by: UUID | None,
@@ -224,6 +226,7 @@ def _upsert_supplier_customization_option(
     existing = (
         db.query(CustomizationOption)
         .filter(
+            CustomizationOption.company_id == company_id,
             CustomizationOption.module == "supplier",
             CustomizationOption.field_name == field_name,
             func.lower(CustomizationOption.option_value) == option_value.lower(),
@@ -242,6 +245,7 @@ def _upsert_supplier_customization_option(
 
     db.add(
         CustomizationOption(
+            company_id=company_id,
             module="supplier",
             field_name=field_name,
             option_value=option_value,
@@ -256,11 +260,13 @@ def _persist_supplier_customization_values(
     db: Session,
     payload: SupplierCreateRequest | SupplierUpdateRequest,
     created_by: UUID | None,
+    company_id: UUID | None,
 ) -> None:
     currency = (payload.currency_code or "").strip().upper()
     if currency:
         _upsert_supplier_customization_option(
             db,
+            company_id=company_id,
             field_name="currency",
             option_value=currency,
             created_by=created_by,
@@ -270,6 +276,7 @@ def _persist_supplier_customization_values(
     if country:
         _upsert_supplier_customization_option(
             db,
+            company_id=company_id,
             field_name="country",
             option_value=country,
             created_by=created_by,
@@ -279,6 +286,7 @@ def _persist_supplier_customization_values(
     if state:
         _upsert_supplier_customization_option(
             db,
+            company_id=company_id,
             field_name="state",
             option_value=state,
             created_by=created_by,
@@ -381,6 +389,7 @@ async def get_supplier_customization_options(
     rows = (
         db.query(CustomizationOption)
         .filter(
+            CustomizationOption.company_id == current_user.company_id,
             CustomizationOption.module == "supplier",
             CustomizationOption.field_name.in_(["country", "currency", "state"]),
             CustomizationOption.is_active == True,
@@ -440,19 +449,31 @@ async def create_supplier(
     _normalize_supplier_currency(payload)
     _validate_and_autofill_supplier_state(payload)
 
+    # Per-tenant name uniqueness (scoped to company_id only).
+    if db.query(Supplier).filter(
+        func.lower(Supplier.company_name) == (payload.company_name or "").strip().lower(),
+        Supplier.company_id == current_user.company_id,
+        Supplier.is_deleted == False,
+    ).first():
+        raise HTTPException(status_code=400, detail="Supplier Name already exists.")
+
     if payload.gstin:
-        duplicate = db.query(Supplier).filter(Supplier.gstin == payload.gstin, Supplier.is_deleted == False).first()
+        duplicate = db.query(Supplier).filter(
+            Supplier.gstin == payload.gstin,
+            Supplier.company_id == current_user.company_id,
+            Supplier.is_deleted == False,
+        ).first()
         if duplicate:
             raise HTTPException(
                 status_code=400,
                 detail={"error_code": "DUPLICATE_GSTIN", "message": "GSTIN already exists"},
             )
 
-    _persist_supplier_customization_values(db, payload, current_user.id)
+    _persist_supplier_customization_values(db, payload, current_user.id, current_user.company_id)
 
     supplier = Supplier(
         **payload.model_dump(exclude={"supplier_code", "state_code"}),
-        supplier_code=payload.supplier_code or _generate_supplier_code(db, payload),
+        supplier_code=payload.supplier_code or _generate_supplier_code(db, payload, current_user.company_id),
         state_code=_state_code_from_payload(payload),
         company_id=current_user.company_id,
         created_by=current_user.id,
@@ -495,7 +516,12 @@ async def update_supplier(
     if payload.gstin:
         duplicate = (
             db.query(Supplier)
-            .filter(Supplier.gstin == payload.gstin, Supplier.id != supplier_id, Supplier.is_deleted == False)
+            .filter(
+                Supplier.gstin == payload.gstin,
+                Supplier.company_id == current_user.company_id,
+                Supplier.id != supplier_id,
+                Supplier.is_deleted == False,
+            )
             .first()
         )
         if duplicate:
@@ -504,7 +530,7 @@ async def update_supplier(
                 detail={"error_code": "DUPLICATE_GSTIN", "message": "GSTIN already exists"},
             )
 
-    _persist_supplier_customization_values(db, payload, current_user.id)
+    _persist_supplier_customization_values(db, payload, current_user.id, current_user.company_id)
 
     for field, value in payload.model_dump(exclude={"supplier_code"}).items():
         setattr(supplier, field, value)

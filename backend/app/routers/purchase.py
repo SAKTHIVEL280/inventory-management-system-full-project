@@ -48,7 +48,7 @@ from app.services.order_number_service import (
 from app.services.gst_service import determine_tax_mode, calc_line_item, split_tax
 from app.services.stock_service import add_stock_entry, refresh_materialized_view, get_product_batch_snapshot, get_current_stock
 from app.services.audit_service import log_audit_event, build_audit_changes
-from app.services.auth_service import normalize_role
+from app.services.auth_service import normalize_role, PRIVILEGED_ROLES
 from app.utils.input_validation import validate_optional_token
 
 router = APIRouter(tags=["purchase"])
@@ -58,7 +58,7 @@ def _scope_to_owner(query, model, current_user: User):
     """Scope by company_id first, then by ownership for non-privileged users."""
     if current_user.company_id is not None:
         query = scope_query_to_company(query, model, current_user.company_id)
-    if normalize_role(current_user.role) in {"admin", "inventory manager", "general manager"}:
+    if normalize_role(current_user.role) in PRIVILEGED_ROLES:
         return query
     owner_col = getattr(model, "created_by", None)
     if owner_col is None:
@@ -211,7 +211,7 @@ async def create_purchase_order(
     _enforce_supplier_gstin_for_gst_purchase(supplier=supplier, gst_applicable=gst_applicable)
 
     # BUG-03: Thread-safe number generation with FOR UPDATE lock
-    po_number = generate_po_number(db)
+    po_number = generate_po_number(db, current_user.company_id)
 
     under_delivery_tolerance = float(payload.under_delivery_tolerance or 0)
     _validate_payload_under_delivery_tolerance(under_delivery_tolerance, payload.items)
@@ -629,7 +629,7 @@ async def create_grn(
     gst_applicable = tax_mode["gst_applicable"]
     _enforce_supplier_gstin_for_gst_purchase(supplier=supplier, gst_applicable=gst_applicable)
 
-    grn_number = generate_grn_number(db)
+    grn_number = generate_grn_number(db, current_user.company_id)
     grn = GoodsReceiptNote(
         grn_number=grn_number,
         purchase_order_id=payload.purchase_order_id,
@@ -1700,7 +1700,7 @@ async def create_purchase_return(
     _enforce_supplier_gstin_for_gst_purchase(supplier=supplier, gst_applicable=gst_applicable)
 
     # BUG-04: Safe return number generation
-    return_number = generate_purchase_return_number(db)
+    return_number = generate_purchase_return_number(db, current_user.company_id)
 
     ret = PurchaseReturn(
         return_number=return_number,

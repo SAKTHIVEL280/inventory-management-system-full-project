@@ -38,7 +38,10 @@ async def list_customization_options(
     db: Session = Depends(get_db),
     current_user=Depends(require_role("admin")),
 ):
-    query = db.query(CustomizationOption).filter(CustomizationOption.is_deleted == False)
+    query = db.query(CustomizationOption).filter(
+        CustomizationOption.is_deleted == False,
+        CustomizationOption.company_id == current_user.company_id,
+    )
 
     if module:
         query = query.filter(func.lower(CustomizationOption.module) == module.strip().lower())
@@ -90,6 +93,7 @@ async def create_customization_option(
     existing = (
         db.query(CustomizationOption)
         .filter(
+            CustomizationOption.company_id == current_user.company_id,
             func.lower(CustomizationOption.module) == module,
             func.lower(CustomizationOption.field_name) == field_name,
             func.lower(CustomizationOption.option_value) == option_value.lower(),
@@ -109,6 +113,7 @@ async def create_customization_option(
         return CustomizationOptionResponse.model_validate(existing)
 
     option = CustomizationOption(
+        company_id=current_user.company_id,
         module=module,
         field_name=field_name,
         option_value=option_value,
@@ -132,7 +137,11 @@ async def update_customization_option(
 ):
     option = (
         db.query(CustomizationOption)
-        .filter(CustomizationOption.id == option_id, CustomizationOption.is_deleted == False)
+        .filter(
+            CustomizationOption.id == option_id,
+            CustomizationOption.is_deleted == False,
+            CustomizationOption.company_id == current_user.company_id,
+        )
         .first()
     )
     if not option:
@@ -152,6 +161,7 @@ async def update_customization_option(
     duplicate = (
         db.query(CustomizationOption)
         .filter(
+            CustomizationOption.company_id == current_user.company_id,
             func.lower(CustomizationOption.module) == module,
             func.lower(CustomizationOption.field_name) == field_name,
             func.lower(CustomizationOption.option_value) == option_value.lower(),
@@ -186,7 +196,11 @@ async def delete_customization_option(
 ):
     option = (
         db.query(CustomizationOption)
-        .filter(CustomizationOption.id == option_id, CustomizationOption.is_deleted == False)
+        .filter(
+            CustomizationOption.id == option_id,
+            CustomizationOption.is_deleted == False,
+            CustomizationOption.company_id == current_user.company_id,
+        )
         .first()
     )
     if not option:

@@ -1,12 +1,18 @@
 """Company model."""
 from uuid import uuid4
-from datetime import datetime
-from sqlalchemy import Column, String, Integer, DateTime, UUID
+from datetime import datetime, date
+from sqlalchemy import Column, String, Integer, DateTime, Date, UUID
 from app.database import Base
 
 
 class Company(Base):
-    """Single-row company profile and numbering counters."""
+    """Tenant registry row: company profile, numbering counters, and (M0+)
+    multi-tenant subscription / lifecycle metadata.
+
+    In the shared-database multi-tenant model each row in this table is one
+    tenant (ERP Customer). All scoped business tables carry a company_id FK back
+    to this row. The legacy single-company deployment is treated as Tenant #1.
+    """
 
     __tablename__ = "company"
 
@@ -54,6 +60,23 @@ class Company(Base):
     grn_counter = Column(Integer, nullable=False, default=1)
     rdn_prefix = Column(String(10), nullable=False, default="RDN")
     rdn_counter = Column(Integer, nullable=False, default=1)
+    # Service Invoice numbering (M5) — per-tenant sequence.
+    svc_prefix = Column(String(10), nullable=False, default="SINV")
+    svc_counter = Column(Integer, nullable=False, default=1)
+
+    # ── Multi-tenant registry fields (M0). Additive; no plan gating is enforced
+    #    on these yet (that arrives in module M2). The legacy tenant defaults to an
+    #    ACTIVE, PLATINUM (full-access), paid account so behaviour is unchanged. ──
+    subscription_plan = Column(String(20), nullable=False, default="PLATINUM")
+    account_status = Column(String(20), nullable=False, default="active")
+    payment_status = Column(String(20), nullable=False, default="paid")
+    onboarding_date = Column(Date, nullable=True, default=date.today)
+    subscription_start_date = Column(Date, nullable=True)
+    subscription_expiry_date = Column(Date, nullable=True)
+    business_category = Column(String(100), nullable=True)
+    contact_person_name = Column(String(255), nullable=True)
+    contact_number = Column(String(20), nullable=True)
+    tenant_code = Column(String(50), nullable=True, unique=True)
 
     created_at = Column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at = Column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)

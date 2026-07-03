@@ -185,10 +185,6 @@ def determine_tax_mode(db: Session, party_type: str, party_id: UUID) -> TaxMode:
 
         Customer location is shipping-first (country/state-code/state), then billing fallback.
         """
-    company = db.query(Company).first()
-    if not company:
-        return {"gst_applicable": False, "is_igst": False, "use_utgst": False}
-
     party_country: str | None = None
     party_state_code: str | None = None
     party_state_name: str | None = None
@@ -212,6 +208,16 @@ def determine_tax_mode(db: Session, party_type: str, party_id: UUID) -> TaxMode:
         party_state_name = _preferred_value(party.place_of_supply, party.state)
         supplier_business_type = party.business_type
     else:
+        return {"gst_applicable": False, "is_igst": False, "use_utgst": False}
+
+    # Seller is the tenant that OWNS this party (multi-tenant isolation) — never an
+    # arbitrary company. Derive the company from the party's company_id.
+    company = (
+        db.query(Company).filter(Company.id == party.company_id).first()
+        if getattr(party, "company_id", None) is not None
+        else None
+    )
+    if not company:
         return {"gst_applicable": False, "is_igst": False, "use_utgst": False}
 
     company_country = _resolve_company_country(company)
@@ -270,10 +276,15 @@ def determine_is_igst(db: Session, party_type: str, party_id: UUID) -> bool:
 
 def determine_default_invoice_type(db: Session, customer_id: UUID) -> str:
     """Derive default invoice type from shipping-first customer location and company location."""
-    company = db.query(Company).first()
     customer = db.query(Customer).filter(Customer.id == customer_id, Customer.is_deleted == False).first()
     if not customer:
         return INVOICE_TYPE_WITHIN_STATE
+    # Seller company = the tenant that owns this customer (multi-tenant isolation).
+    company = (
+        db.query(Company).filter(Company.id == customer.company_id).first()
+        if getattr(customer, "company_id", None) is not None
+        else None
+    )
 
     customer_country = _preferred_value(customer.shipping_country, customer.billing_country)
     normalized_customer_country = _normalize_text(customer_country)

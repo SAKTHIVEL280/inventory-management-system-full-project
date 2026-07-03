@@ -4,7 +4,15 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 
 
-ALLOWED_ROLES = {"admin", "inventory manager", "general manager"}
+def _validate_role_token(value: str) -> str:
+    """Normalise legacy role values and validate against the BRD role set."""
+    # Lazy import avoids a circular import (auth_service ← schemas.auth ← schemas.user).
+    from app.services.auth_service import VALID_ROLES, normalize_role
+
+    token = normalize_role(value)  # lowercases + maps legacy → BRD role
+    if token not in VALID_ROLES:
+        raise ValueError("Invalid role")
+    return token
 
 
 class UserCreateRequest(BaseModel):
@@ -25,10 +33,7 @@ class UserCreateRequest(BaseModel):
     @field_validator("role")
     @classmethod
     def validate_role(cls, value: str) -> str:
-        token = (value or "").strip().lower()
-        if token not in ALLOWED_ROLES:
-            raise ValueError("Invalid role")
-        return token
+        return _validate_role_token(value)
 
 
 class UserUpdateRequest(BaseModel):
@@ -49,10 +54,7 @@ class UserUpdateRequest(BaseModel):
     @field_validator("role")
     @classmethod
     def validate_role(cls, value: str) -> str:
-        token = (value or "").strip().lower()
-        if token not in ALLOWED_ROLES:
-            raise ValueError("Invalid role")
-        return token
+        return _validate_role_token(value)
 
 
 class UserPermissionsUpdateRequest(BaseModel):

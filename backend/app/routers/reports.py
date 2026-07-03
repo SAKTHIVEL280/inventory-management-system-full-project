@@ -13,11 +13,12 @@ from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import require_permissions, require_role, scope_query_to_company
+from app.dependencies import require_permissions, require_role, require_module, scope_query_to_company
 from app.models.user import User
 from app.models.inventory_count import InventoryCountDifferenceAudit, InventoryCountItem
 from app.models.product import Product, StockLedger
 from app.models.sales import SalesInvoice, SalesInvoiceItem, SalesOrder, SalesReturn, SalesReturnItem
+from app.models.service_invoice import ServiceInvoice
 from app.models.purchase import GoodsReceiptNote, GRNItem, PurchaseOrder, PurchaseReturn, PurchaseReturnItem
 from app.models.rdn import ReturnDeliveryNote, ReturnDeliveryNoteItem, RdnCreditNote, RdnCreditNoteItem
 from app.models.customer import Customer
@@ -35,6 +36,40 @@ from app.services.gst_service import (
 )
 
 router = APIRouter(prefix="/api/v1/reports", tags=["reports"])
+
+
+# ── Tenant Service Invoices in sales/revenue aggregates ──────────────────────
+# A tenant's own service invoices are real sales revenue and must be included in
+# Sales, P&L, Reports, Analytics and Dashboard totals — alongside Sales Invoices.
+# Rules (mirrors the Sales Invoice revenue criteria + tenant isolation):
+#   * company_id == the current tenant                 (tenant isolation)
+#   * is_platform_invoice == False                     (exclude Mecandria's own
+#                                                        subscription bills TO the tenant)
+#   * is_deleted == False
+#   * status in ('issued','paid')                      (finalised, not draft/cancelled)
+# Amounts: grand_total is tax-inclusive (≈ SalesInvoice.total_amount);
+#          total_taxable_amount is the pre-tax base (≈ SalesInvoice.total_taxable_amount).
+_SVC_REVENUE_STATUSES = ("issued", "paid")
+
+
+def _svc_revenue_filters(company_id):
+    """Filter conditions selecting a tenant's own revenue-bearing service invoices."""
+    return [
+        ServiceInvoice.company_id == company_id,
+        ServiceInvoice.is_deleted == False,
+        ServiceInvoice.is_platform_invoice == False,
+        ServiceInvoice.status.in_(_SVC_REVENUE_STATUSES),
+    ]
+
+
+def _svc_revenue_sum(db, company_id, column, *extra_filters):
+    """Sum a service-invoice money column for the tenant's revenue invoices."""
+    if not company_id:
+        return 0
+    q = db.query(func.coalesce(func.sum(column), 0)).filter(*_svc_revenue_filters(company_id))
+    if extra_filters:
+        q = q.filter(*extra_filters)
+    return int(q.scalar() or 0)
 
 
 GSTIN_REGEX = re.compile(r"^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$")
@@ -327,21 +362,29 @@ def _customer_country_for_gstr(customer: Customer | None) -> str | None:
 
 
 def _ensure_finance_tax_user(current_user: User) -> None:
-    if normalize_role(current_user.role) not in {"admin", "general manager"}:
+    # GST reports are part of the Reports module → Tenant Admin or Management role.
+    if normalize_role(current_user.role) not in {"admin", "management"}:
         raise HTTPException(
             status_code=403,
-            detail="Only admin or general manager users are allowed to generate GST reports",
+            detail="Only Admin or Management users are allowed to generate GST reports",
         )
 
 
-def _get_company_details_for_gst_reports(db: Session) -> dict:
-    """Fetch company details for GST report headers (PDF & Excel)."""
+def _get_company_details_for_gst_reports(db: Session, company_id=None) -> dict:
+    """Fetch the tenant's company details for GST report headers (PDF & Excel).
+
+    Multi-tenant: scoped to the requesting tenant's company_id so a tenant's GST
+    report never shows another tenant's (e.g. Tenant #1's) seller identity.
+    """
     import base64
     import io
     from pathlib import Path
     from PIL import Image, ImageFile
-    
-    company = db.query(Company).first()
+
+    company = (
+        db.query(Company).filter(Company.id == company_id).first()
+        if company_id is not None else None
+    )
     
     if not company:
         return {
@@ -671,7 +714,7 @@ def _log_gst_report_event(
         pass
 
 
-@router.get("/dashboard")
+@router.get("/dashboard", dependencies=[Depends(require_module("dashboard"))])
 async def dashboard_report(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("dashboard_read")),
@@ -730,6 +773,7 @@ async def dashboard_report(
 
     # Today sales
     today_sales_q = db.query(func.coalesce(func.sum(SalesInvoice.total_amount), 0)).filter(
+        SalesInvoice.company_id == current_user.company_id,
         SalesInvoice.invoice_date == today,
         SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
         SalesInvoice.is_deleted == False,
@@ -737,9 +781,14 @@ async def dashboard_report(
     if cid:
         today_sales_q = today_sales_q.filter(SalesInvoice.company_id == cid)
     today_sales = today_sales_q.scalar() or 0
+    # + tenant Service Invoices raised today
+    today_sales = int(today_sales) + _svc_revenue_sum(
+        db, cid, ServiceInvoice.grand_total, ServiceInvoice.invoice_date == today
+    )
 
     # Month sales
     month_sales_q = db.query(func.coalesce(func.sum(SalesInvoice.total_amount), 0)).filter(
+        SalesInvoice.company_id == current_user.company_id,
         SalesInvoice.invoice_date >= month_start,
         SalesInvoice.invoice_date <= today,
         SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
@@ -748,9 +797,16 @@ async def dashboard_report(
     if cid:
         month_sales_q = month_sales_q.filter(SalesInvoice.company_id == cid)
     month_sales = month_sales_q.scalar() or 0
+    # + tenant Service Invoices raised this month
+    month_sales = int(month_sales) + _svc_revenue_sum(
+        db, cid, ServiceInvoice.grand_total,
+        ServiceInvoice.invoice_date >= month_start,
+        ServiceInvoice.invoice_date <= today,
+    )
 
     # Outstanding receivables
     receivables_q = db.query(func.coalesce(func.sum(SalesInvoice.amount_due), 0)).filter(
+        SalesInvoice.company_id == current_user.company_id,
         SalesInvoice.amount_due > 0,
         SalesInvoice.status.in_(receivable_statuses),
         SalesInvoice.is_deleted == False,
@@ -758,9 +814,24 @@ async def dashboard_report(
     if cid:
         receivables_q = receivables_q.filter(SalesInvoice.company_id == cid)
     outstanding_receivables = receivables_q.scalar() or 0
+    # + tenant Service Invoices that are issued but not yet paid (open receivables).
+    if cid:
+        svc_receivables = int(
+            db.query(func.coalesce(func.sum(ServiceInvoice.grand_total), 0))
+            .filter(
+                ServiceInvoice.company_id == cid,
+                ServiceInvoice.is_deleted == False,
+                ServiceInvoice.is_platform_invoice == False,
+                ServiceInvoice.status == "issued",
+            )
+            .scalar()
+            or 0
+        )
+        outstanding_receivables = int(outstanding_receivables) + svc_receivables
 
     # Overdue invoices count
     overdue_q = db.query(func.count(SalesInvoice.id)).filter(
+        SalesInvoice.company_id == current_user.company_id,
         SalesInvoice.due_date < today,
         SalesInvoice.status.in_(["issued", "partial_paid"]),
         SalesInvoice.is_deleted == False,
@@ -774,6 +845,7 @@ async def dashboard_report(
     for i in range(6, -1, -1):
         day = today - timedelta(days=i)
         trend_q = db.query(func.coalesce(func.sum(SalesInvoice.total_amount), 0)).filter(
+            SalesInvoice.company_id == current_user.company_id,
             SalesInvoice.invoice_date == day,
             func.lower(func.trim(SalesInvoice.status)).in_(["issued", "partial_paid", "paid", "returned"]),
             SalesInvoice.is_deleted == False,
@@ -781,6 +853,10 @@ async def dashboard_report(
         if cid:
             trend_q = trend_q.filter(SalesInvoice.company_id == cid)
         amount = trend_q.scalar() or 0
+        # + tenant Service Invoices raised that day
+        amount = int(amount) + _svc_revenue_sum(
+            db, cid, ServiceInvoice.grand_total, ServiceInvoice.invoice_date == day
+        )
         sales_trend.append({"date": day.isoformat(), "amount": int(amount)})
 
     # Top products
@@ -791,6 +867,7 @@ async def dashboard_report(
     ).join(SalesInvoiceItem, SalesInvoiceItem.product_id == Product.id).join(
         SalesInvoice, SalesInvoice.id == SalesInvoiceItem.invoice_id
     ).filter(
+        SalesInvoice.company_id == current_user.company_id,
         SalesInvoice.invoice_date >= month_start,
         SalesInvoice.invoice_date <= today,
         SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
@@ -1013,6 +1090,7 @@ async def dashboard_report(
 
     # Outstanding payables
     outstanding_payables = db.query(func.coalesce(func.sum(GoodsReceiptNote.total_amount), 0)).filter(
+        GoodsReceiptNote.company_id == current_user.company_id,
         GoodsReceiptNote.status == "confirmed",
         GoodsReceiptNote.is_deleted == False,
     ).scalar() or 0
@@ -1038,7 +1116,11 @@ async def dashboard_report(
     }
 
 
-@router.get("/stock")
+# Stock overview powers BOTH the Inventory → Stock page (inventory module) and the
+# Reports → Stock tab (reports module). Gate on EITHER module (OR) so a plan that
+# includes inventory but not reports (e.g. SILVER with Inventory enabled) can still
+# open the Stock page. Mirrors the user-permission OR (stock_ledger_read/reports_read).
+@router.get("/stock", dependencies=[Depends(require_module("inventory", "reports"))])
 async def stock_report(
     low_stock_only: bool = Query(default=False),
     db: Session = Depends(get_db),
@@ -1102,6 +1184,7 @@ async def stock_report(
         )
         .join(GoodsReceiptNote, GRNItem.grn_id == GoodsReceiptNote.id)
         .filter(
+            GoodsReceiptNote.company_id == current_user.company_id,
             GoodsReceiptNote.status == "confirmed",
             GoodsReceiptNote.is_deleted == False,
             GRNItem.is_deleted == False,
@@ -1134,6 +1217,7 @@ async def stock_report(
         .join(PurchaseReturn, PurchaseReturnItem.purchase_return_id == PurchaseReturn.id)
         .outerjoin(GRNItem, PurchaseReturnItem.grn_item_id == GRNItem.id)
         .filter(
+            PurchaseReturn.company_id == current_user.company_id,
             PurchaseReturn.status == "confirmed",
             PurchaseReturn.is_deleted == False,
             PurchaseReturnItem.is_deleted == False,
@@ -1165,6 +1249,7 @@ async def stock_report(
         )
         .join(SalesInvoice, SalesInvoiceItem.invoice_id == SalesInvoice.id)
         .filter(
+            SalesInvoice.company_id == current_user.company_id,
             SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
             SalesInvoice.is_deleted == False,
             SalesInvoiceItem.is_deleted == False,
@@ -1197,6 +1282,7 @@ async def stock_report(
         .join(SalesReturn, SalesReturnItem.sales_return_id == SalesReturn.id)
         .outerjoin(SalesInvoiceItem, SalesReturnItem.invoice_item_id == SalesInvoiceItem.id)
         .filter(
+            SalesReturn.company_id == current_user.company_id,
             SalesReturn.status == "confirmed",
             SalesReturn.is_deleted == False,
             SalesReturnItem.is_deleted == False,
@@ -1228,6 +1314,7 @@ async def stock_report(
         )
         .join(ReturnDeliveryNote, ReturnDeliveryNoteItem.rdn_id == ReturnDeliveryNote.id)
         .filter(
+            ReturnDeliveryNote.company_id == current_user.company_id,
             ReturnDeliveryNote.status == "confirmed",
             ReturnDeliveryNote.is_deleted == False,
             ReturnDeliveryNoteItem.is_deleted == False,
@@ -1287,7 +1374,14 @@ async def stock_report(
             (batch_no, manufacture_date, expiry_date, qty)
         )
 
-    products = db.query(Product).filter(Product.is_deleted == False).all()
+    # Tenant isolation: only the logged-in tenant's products (batch/ledger totals
+    # are keyed by product_id, which is unique to one tenant, so per-product figures
+    # stay correct once the product set is scoped).
+    products = (
+        db.query(Product)
+        .filter(Product.is_deleted == False, Product.company_id == current_user.company_id)
+        .all()
+    )
     grand_total_mrp_value = 0.0
     for product in products:
         product_id = str(product.id)
@@ -1333,7 +1427,7 @@ async def stock_report(
     return {"items": rows, "total": len(rows), "grand_total_mrp_value": grand_total_mrp_value}
 
 
-@router.get("/sales")
+@router.get("/sales", dependencies=[Depends(require_module("reports"))])
 async def sales_report(
     from_date: date,
     to_date: date,
@@ -1351,6 +1445,7 @@ async def sales_report(
             Customer.id == func.coalesce(SalesInvoice.bill_to_customer_id, SalesInvoice.customer_id),
         )
         .filter(
+            SalesInvoice.company_id == current_user.company_id,
             SalesInvoice.invoice_date >= from_date,
             SalesInvoice.invoice_date <= to_date,
             SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
@@ -1358,25 +1453,60 @@ async def sales_report(
         )
         .all()
     )
+    # Tenant Service Invoices in the same window count as sales too (tenant-isolated,
+    # excluding Mecandria's platform subscription bills). They are appended to the
+    # item list (tagged source='service') and included in the combined total_amount.
+    svc_rows = (
+        db.query(ServiceInvoice)
+        .filter(
+            *_svc_revenue_filters(current_user.company_id),
+            ServiceInvoice.invoice_date >= from_date,
+            ServiceInvoice.invoice_date <= to_date,
+        )
+        .all()
+    )
+
+    sales_items = [
+        {
+            "invoice_number": row.SalesInvoice.invoice_number,
+            "invoice_date": row.SalesInvoice.invoice_date.isoformat() if row.SalesInvoice.invoice_date else None,
+            "customer_name": row.customer_name or "-",
+            "total_amount": row.SalesInvoice.total_amount,
+            "amount_paid": row.SalesInvoice.amount_paid,
+            "amount_due": row.SalesInvoice.amount_due,
+            "status": row.SalesInvoice.status,
+            "source": "sales",
+        }
+        for row in rows
+    ]
+    service_items = [
+        {
+            "invoice_number": s.invoice_number,
+            "invoice_date": s.invoice_date.isoformat() if s.invoice_date else None,
+            "customer_name": s.customer_name or "-",
+            "total_amount": int(s.grand_total or 0),
+            "amount_paid": int(s.grand_total or 0) if s.status == "paid" else 0,
+            "amount_due": int(s.grand_total or 0) if s.status == "issued" else 0,
+            "status": s.status,
+            "source": "service",
+        }
+        for s in svc_rows
+    ]
+    items = sales_items + service_items
+    items.sort(key=lambda it: it["invoice_date"] or "", reverse=True)
+
+    sales_total = int(sum(row.SalesInvoice.total_amount for row in rows))
+    service_total = int(sum(int(s.grand_total or 0) for s in svc_rows))
     return {
-        "count": len(rows),
-        "total_amount": int(sum(row.SalesInvoice.total_amount for row in rows)),
-        "items": [
-            {
-                "invoice_number": row.SalesInvoice.invoice_number,
-                "invoice_date": row.SalesInvoice.invoice_date.isoformat() if row.SalesInvoice.invoice_date else None,
-                "customer_name": row.customer_name or "-",
-                "total_amount": row.SalesInvoice.total_amount,
-                "amount_paid": row.SalesInvoice.amount_paid,
-                "amount_due": row.SalesInvoice.amount_due,
-                "status": row.SalesInvoice.status,
-            }
-            for row in rows
-        ],
+        "count": len(items),
+        "total_amount": sales_total + service_total,
+        "sales_invoice_total": sales_total,
+        "service_invoice_total": service_total,
+        "items": items,
     }
 
 
-@router.get("/purchase")
+@router.get("/purchase", dependencies=[Depends(require_module("reports"))])
 async def purchase_report(
     from_date: date,
     to_date: date,
@@ -1385,6 +1515,7 @@ async def purchase_report(
 ):
     _ensure_valid_date_range(from_date, to_date)
     rows = db.query(GoodsReceiptNote).filter(
+        GoodsReceiptNote.company_id == current_user.company_id,
         GoodsReceiptNote.receipt_date >= from_date,
         GoodsReceiptNote.receipt_date <= to_date,
         GoodsReceiptNote.status == "confirmed",
@@ -1405,12 +1536,13 @@ async def purchase_report(
     }
 
 
-@router.get("/outstanding-receivables")
+@router.get("/outstanding-receivables", dependencies=[Depends(require_module("reports"))])
 async def outstanding_receivables(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("reports_read")),
 ):
     rows = db.query(SalesInvoice).filter(
+        SalesInvoice.company_id == current_user.company_id,
         SalesInvoice.amount_due > 0,
         SalesInvoice.status.in_(["issued", "partial_paid"]),
         SalesInvoice.is_deleted == False,
@@ -1429,12 +1561,13 @@ async def outstanding_receivables(
     }
 
 
-@router.get("/outstanding-payables")
+@router.get("/outstanding-payables", dependencies=[Depends(require_module("reports"))])
 async def outstanding_payables(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("reports_read")),
 ):
     rows = db.query(GoodsReceiptNote).filter(
+        GoodsReceiptNote.company_id == current_user.company_id,
         GoodsReceiptNote.status == "confirmed",
         GoodsReceiptNote.is_deleted == False,
     ).all()
@@ -1451,7 +1584,7 @@ async def outstanding_payables(
     }
 
 
-@router.get("/gstr1")
+@router.get("/gstr1", dependencies=[Depends(require_module("reports"))])
 async def gstr1_report(
     from_date: date,
     to_date: date,
@@ -1468,6 +1601,7 @@ async def gstr1_report(
     invoices = (
         db.query(SalesInvoice)
         .filter(
+            SalesInvoice.company_id == current_user.company_id,
             SalesInvoice.invoice_date >= from_date,
             SalesInvoice.invoice_date <= to_date,
             SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
@@ -1480,6 +1614,7 @@ async def gstr1_report(
     credit_notes = (
         db.query(RdnCreditNote)
         .filter(
+            RdnCreditNote.company_id == current_user.company_id,
             RdnCreditNote.credit_note_date >= from_date,
             RdnCreditNote.credit_note_date <= to_date,
             RdnCreditNote.status == "posted",
@@ -1686,6 +1821,7 @@ async def gstr1_report(
         for invoice_number, count in (
             db.query(SalesInvoice.invoice_number, func.count(SalesInvoice.id).label("cnt"))
             .filter(
+                SalesInvoice.company_id == current_user.company_id,
                 SalesInvoice.invoice_date >= from_date,
                 SalesInvoice.invoice_date <= to_date,
                 SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
@@ -2218,7 +2354,7 @@ async def gstr1_report(
     }
 
 
-@router.get("/gstr1/export")
+@router.get("/gstr1/export", dependencies=[Depends(require_module("reports"))])
 async def gstr1_export(
     from_date: date,
     to_date: date,
@@ -2246,7 +2382,7 @@ async def gstr1_export(
     filename_base = f"gstr1_{from_date.isoformat()}_{to_date.isoformat()}"
     
     # Fetch company details
-    company_details = _get_company_details_for_gst_reports(db)
+    company_details = _get_company_details_for_gst_reports(db, current_user.company_id)
 
     if format_token == "xlsx":
         from openpyxl import Workbook
@@ -2680,7 +2816,7 @@ async def gstr1_export(
     )
 
 
-@router.get("/gstr3b")
+@router.get("/gstr3b", dependencies=[Depends(require_module("reports"))])
 async def gstr3b_report(
     from_date: date,
     to_date: date,
@@ -2690,12 +2826,14 @@ async def gstr3b_report(
     _ensure_finance_tax_user(current_user)
     _ensure_valid_date_range(from_date, to_date)
     sales_rows = db.query(SalesInvoice).filter(
+        SalesInvoice.company_id == current_user.company_id,
         SalesInvoice.invoice_date >= from_date,
         SalesInvoice.invoice_date <= to_date,
         SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
         SalesInvoice.is_deleted == False,
     ).all()
     purchase_rows = db.query(GoodsReceiptNote).filter(
+        GoodsReceiptNote.company_id == current_user.company_id,
         GoodsReceiptNote.receipt_date >= from_date,
         GoodsReceiptNote.receipt_date <= to_date,
         GoodsReceiptNote.status == "confirmed",
@@ -2712,7 +2850,7 @@ async def gstr3b_report(
     }
 
 
-@router.get("/gstr2")
+@router.get("/gstr2", dependencies=[Depends(require_module("reports"))])
 async def gstr2_report(
     from_date: date,
     to_date: date,
@@ -2729,6 +2867,7 @@ async def gstr2_report(
     grns = (
         db.query(GoodsReceiptNote)
         .filter(
+            GoodsReceiptNote.company_id == current_user.company_id,
             GoodsReceiptNote.receipt_date >= from_date,
             GoodsReceiptNote.receipt_date <= to_date,
             GoodsReceiptNote.status == "confirmed",
@@ -2853,7 +2992,7 @@ async def gstr2_report(
     )
     supplier_map = {str(row.id): row for row in suppliers}
 
-    company = db.query(Company).first()
+    company = db.query(Company).filter(Company.id == current_user.company_id).first()
     business_place = (
         ", ".join([part for part in [company.city if company else None, company.state if company else None] if part])
         if company else ""
@@ -2868,6 +3007,7 @@ async def gstr2_report(
         for grn_number, count in (
             db.query(GoodsReceiptNote.grn_number, func.count(GoodsReceiptNote.id).label("cnt"))
             .filter(
+                GoodsReceiptNote.company_id == current_user.company_id,
                 GoodsReceiptNote.receipt_date >= from_date,
                 GoodsReceiptNote.receipt_date <= to_date,
                 GoodsReceiptNote.status == "confirmed",
@@ -3200,7 +3340,7 @@ async def gstr2_report(
     }
 
 
-@router.get("/gstr2/export")
+@router.get("/gstr2/export", dependencies=[Depends(require_module("reports"))])
 async def gstr2_export(
     from_date: date,
     to_date: date,
@@ -3228,7 +3368,7 @@ async def gstr2_export(
     filename_base = f"gstr2_{from_date.isoformat()}_{to_date.isoformat()}"
     
     # Fetch company details
-    company_details = _get_company_details_for_gst_reports(db)
+    company_details = _get_company_details_for_gst_reports(db, current_user.company_id)
 
     if format_token == "xlsx":
         from openpyxl import Workbook
@@ -3561,7 +3701,7 @@ async def gstr2_export(
     )
 
 
-@router.get("/gst-reconciliation")
+@router.get("/gst-reconciliation", dependencies=[Depends(require_module("reports"))])
 async def gst_reconciliation_report(
     from_date: date,
     to_date: date,
@@ -3589,7 +3729,7 @@ async def gst_reconciliation_report(
         current_user=current_user,
     )
 
-    company = db.query(Company).first()
+    company = db.query(Company).filter(Company.id == current_user.company_id).first()
     business_place = (
         ", ".join([part for part in [company.city if company else None, company.state if company else None] if part])
         if company else ""
@@ -3822,7 +3962,7 @@ async def gst_reconciliation_report(
     }
 
 
-@router.get("/gst-reconciliation/export")
+@router.get("/gst-reconciliation/export", dependencies=[Depends(require_module("reports"))])
 async def gst_reconciliation_export(
     from_date: date,
     to_date: date,
@@ -3853,7 +3993,7 @@ async def gst_reconciliation_export(
     filename_base = f"gst_reconciliation_{from_date.isoformat()}_{to_date.isoformat()}"
     
     # Fetch company details
-    company_details = _get_company_details_for_gst_reports(db)
+    company_details = _get_company_details_for_gst_reports(db, current_user.company_id)
 
     if format_token == "xlsx":
         from openpyxl import Workbook
@@ -4167,7 +4307,7 @@ async def gst_reconciliation_export(
     )
 
 
-@router.get("/gst-audit-trail")
+@router.get("/gst-audit-trail", dependencies=[Depends(require_module("reports"))])
 async def gst_audit_trail_report(
     from_date: date,
     to_date: date,
@@ -4302,7 +4442,7 @@ async def gst_audit_trail_report(
     }
 
 
-@router.get("/action-logs")
+@router.get("/action-logs", dependencies=[Depends(require_module("audit_logs"))])
 async def action_logs_report(
     from_date: date,
     to_date: date,
@@ -4519,7 +4659,7 @@ async def action_logs_report(
     }
 
 
-@router.get("/retention-status")
+@router.get("/retention-status", dependencies=[Depends(require_module("audit_logs"))])
 async def retention_status_report(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("reports_read")),
@@ -4542,7 +4682,7 @@ async def retention_status_report(
         raise HTTPException(status_code=500, detail=f"Error getting retention status: {str(e)}")
 
 
-@router.post("/retention-cleanup")
+@router.post("/retention-cleanup", dependencies=[Depends(require_module("audit_logs"))])
 async def run_retention_cleanup_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("admin")),
@@ -4594,7 +4734,7 @@ async def run_retention_cleanup_endpoint(
         raise HTTPException(status_code=500, detail=f"Retention cleanup failed: {str(e)}")
 
 
-@router.get("/pl")
+@router.get("/pl", dependencies=[Depends(require_module("reports"))])
 async def profit_and_loss_report(
     from_date: date,
     to_date: date,
@@ -4603,19 +4743,29 @@ async def profit_and_loss_report(
 ):
     _ensure_valid_date_range(from_date, to_date)
     sales_rows = db.query(SalesInvoice).filter(
+        SalesInvoice.company_id == current_user.company_id,
         SalesInvoice.invoice_date >= from_date,
         SalesInvoice.invoice_date <= to_date,
         SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
         SalesInvoice.is_deleted == False,
     ).all()
     purchase_rows = db.query(GoodsReceiptNote).filter(
+        GoodsReceiptNote.company_id == current_user.company_id,
         GoodsReceiptNote.receipt_date >= from_date,
         GoodsReceiptNote.receipt_date <= to_date,
         GoodsReceiptNote.status == "confirmed",
         GoodsReceiptNote.is_deleted == False,
     ).all()
 
-    net_sales = int(sum(row.total_taxable_amount for row in sales_rows))
+    # Net sales = Sales Invoices + tenant Service Invoices (taxable base), so the
+    # P&L reflects total tenant revenue. Service invoices are tenant-isolated and
+    # exclude Mecandria's platform subscription bills.
+    svc_taxable = _svc_revenue_sum(
+        db, current_user.company_id, ServiceInvoice.total_taxable_amount,
+        ServiceInvoice.invoice_date >= from_date,
+        ServiceInvoice.invoice_date <= to_date,
+    )
+    net_sales = int(sum(row.total_taxable_amount for row in sales_rows)) + svc_taxable
     purchases = int(sum(row.total_taxable_amount for row in purchase_rows))
     gross_profit = net_sales - purchases
 

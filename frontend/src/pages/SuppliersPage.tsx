@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
+import { TypeaheadInput } from '../components/TypeaheadInput';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import { suppliersApi } from '../api/suppliers';
@@ -290,95 +291,6 @@ const toSupplierCodePreview = (businessType: 'domestic' | 'international', state
   const fallbackCode = normalizedState.replace(/[^a-z]/g, '').toUpperCase();
   const finalCode = codeFromState || (fallbackCode.length >= 2 ? fallbackCode.slice(0, 2) : 'NA');
   return `SUPP-${finalCode}-XXXXX`;
-};
-
-type TypeaheadInputProps = {
-  id: string;
-  value: string;
-  options: string[];
-  placeholder: string;
-  onChange: (nextValue: string) => void;
-  className?: string;
-  showAllWhenFocused?: boolean;
-  autoComplete?: string;
-};
-
-const TypeaheadInput = ({
-  id,
-  value,
-  options,
-  placeholder,
-  onChange,
-  className = 'hms-input',
-  showAllWhenFocused = false,
-  autoComplete = 'off',
-}: TypeaheadInputProps) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [hasTypedSinceFocus, setHasTypedSinceFocus] = useState(false);
-
-  const filteredOptions = useMemo(() => {
-    const needle = showAllWhenFocused && !hasTypedSinceFocus
-      ? ''
-      : value.trim().toLowerCase();
-    const base = options
-      .map((option) => option.trim())
-      .filter((option) => option.length > 0);
-
-    if (!needle) {
-      return [...new Set(base)].slice(0, 10);
-    }
-
-    const startsWithMatches = base.filter((option) => option.toLowerCase().startsWith(needle));
-    const includesMatches = base.filter(
-      (option) => !option.toLowerCase().startsWith(needle) && option.toLowerCase().includes(needle)
-    );
-
-    return [...new Set([...startsWithMatches, ...includesMatches])].slice(0, 10);
-  }, [hasTypedSinceFocus, options, showAllWhenFocused, value]);
-
-  return (
-    <div className="relative">
-      <input
-        id={id}
-        className={className}
-        value={value}
-        placeholder={placeholder}
-        autoComplete={autoComplete}
-        onFocus={() => {
-          setHasTypedSinceFocus(false);
-          setIsOpen(true);
-        }}
-        onBlur={() => {
-          window.setTimeout(() => setIsOpen(false), 120);
-          setHasTypedSinceFocus(false);
-        }}
-        onChange={(event) => {
-          setHasTypedSinceFocus(true);
-          onChange(event.target.value);
-          setIsOpen(true);
-        }}
-      />
-      {isOpen && filteredOptions.length > 0 && (
-        <div className="absolute z-20 mt-1 max-h-52 w-full overflow-auto rounded-lg border border-neutral-200 bg-white shadow-lg">
-          {filteredOptions.map((option) => (
-            <button
-              key={`${id}-${option}`}
-              type="button"
-              className="block w-full px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
-              onMouseDown={(event) => {
-                event.preventDefault();
-                onChange(option);
-                setHasTypedSinceFocus(false);
-                setIsOpen(false);
-              }}
-            >
-              {option}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 };
 
 const SuppliersPage = () => {

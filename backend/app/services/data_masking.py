@@ -1,6 +1,8 @@
 """Data masking helpers for sensitive fields in non-privileged views."""
 from __future__ import annotations
 
+from app.services.auth_service import normalize_role, PRIVILEGED_ROLES
+
 
 class DataMasker:
     @staticmethod
@@ -69,5 +71,4 @@ class DataMasker:
 
 
 def should_mask_sensitive_fields(role: str | None) -> bool:
-    normalized_role = (role or "").strip().lower()
-    return normalized_role not in {"admin", "inventory manager", "general manager"}
+    return normalize_role(role) not in PRIVILEGED_ROLES

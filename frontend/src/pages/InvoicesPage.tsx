@@ -2,7 +2,7 @@
  * Sales Invoices Page
  * List, create, edit, issue invoices. GST-aware line items.
  */
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { AppLayout } from '../components/AppLayout';
 import { salesApi, type SalesInvoice, type CreateInvoicePayload, type SalesLineItem, type SalesInvoiceItem, type InvoiceTypeValue, type InvoiceBatchOption } from '../api/sales';
@@ -13,6 +13,7 @@ import { confirmWithToast } from '../utils/toastHelper';
 import { addDaysToDateInputValue, todayLocalDateInputValue } from '../utils/date';
 import { emptyWhenZero } from '../utils/numberInput';
 import { usePermissions } from '../hooks/usePermissions';
+import { useSubscription } from '../hooks/useSubscription';
 import type { Stockist, SalesManager } from '../types';
 
 interface ProductOption { id: string; name: string; product_code: string; sku?: string | null; selling_price: number; mrp: number; gst_rate: number; hsn_code: string; description?: string; uom_id?: string | null; alt_uom_id?: string | null; }
@@ -171,6 +172,8 @@ type SearchableSelectProps = {
 const SearchableSelect = ({ value, options, placeholder, onChange, disabled, className }: SearchableSelectProps) => {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [highlight, setHighlight] = useState(0);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -181,6 +184,33 @@ const SearchableSelect = ({ value, options, placeholder, onChange, disabled, cla
     return [...new Set([...starts, ...includes])].slice(0, 50);
   }, [options, query]);
 
+  useEffect(() => {
+    setHighlight((h) => (filtered.length === 0 ? 0 : Math.min(h, filtered.length - 1)));
+  }, [filtered]);
+
+  useEffect(() => {
+    if (!open || !listRef.current) return;
+    (listRef.current.children[highlight] as HTMLElement | undefined)?.scrollIntoView({ block: 'nearest' });
+  }, [highlight, open]);
+
+  const select = (option: string) => { onChange(option); setOpen(false); };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (disabled) return;
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && !open) { setOpen(true); return; }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlight((h) => (filtered.length ? (h + 1) % filtered.length : 0));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlight((h) => (filtered.length ? (h - 1 + filtered.length) % filtered.length : 0));
+    } else if (e.key === 'Enter') {
+      if (open && filtered[highlight] !== undefined) { e.preventDefault(); select(filtered[highlight]); }
+    } else if (e.key === 'Escape') {
+      setOpen(false);
+    }
+  };
+
   return (
     <div className="relative">
       <input
@@ -189,21 +219,26 @@ const SearchableSelect = ({ value, options, placeholder, onChange, disabled, cla
         placeholder={placeholder}
         disabled={disabled}
         autoComplete="off"
-        onFocus={() => { setQuery(''); setOpen(true); }}
+        role="combobox"
+        aria-expanded={open}
+        aria-autocomplete="list"
+        onFocus={() => { setQuery(''); setHighlight(0); setOpen(true); }}
         onBlur={() => { window.setTimeout(() => setOpen(false), 150); }}
-        onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+        onKeyDown={handleKeyDown}
+        onChange={(e) => { setQuery(e.target.value); setHighlight(0); setOpen(true); }}
       />
       {open && !disabled && (
-        <div className="absolute z-30 mt-1 max-h-52 w-full overflow-auto rounded-lg border border-neutral-200 bg-white shadow-lg">
+        <div ref={listRef} className="absolute z-30 mt-1 max-h-52 w-full overflow-auto rounded-lg border border-neutral-200 bg-white shadow-lg">
           {filtered.length === 0 ? (
             <div className="px-3 py-2 text-sm text-neutral-400">No matches</div>
           ) : (
-            filtered.map((option) => (
+            filtered.map((option, idx) => (
               <button
                 key={option}
                 type="button"
-                className="block w-full px-3 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-100"
-                onMouseDown={(e) => { e.preventDefault(); onChange(option); setOpen(false); }}
+                className={`block w-full px-3 py-2 text-left text-sm text-neutral-700 ${idx === highlight ? 'bg-neutral-100' : 'hover:bg-neutral-100'}`}
+                onMouseEnter={() => setHighlight(idx)}
+                onMouseDown={(e) => { e.preventDefault(); select(option); }}
               >
                 {option}
               </button>
@@ -275,6 +310,9 @@ const MultiSelectFilter = ({ label, options, selected, onChange }: MultiSelectFi
 
 const InvoicesPage = () => {
   const { isAdmin } = usePermissions();
+  // Export module is PLATINUM-only (BRD §5.5) — hide CSV export below that tier.
+  const { canAccessModule } = useSubscription();
+  const canExport = canAccessModule('export');
   const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -774,6 +812,15 @@ const InvoicesPage = () => {
     if (!stockistCity.trim()) { setError('Stockist City is required'); return; }
     if (!salesManagerName.trim()) { setError('Sales Manager Name is required'); return; }
 
+    // Batch selection is mandatory for every line item.
+    const missingBatchIndex = items.findIndex(
+      (i) => i.product_id && !(i.batch_no || '').trim(),
+    );
+    if (missingBatchIndex >= 0) {
+      setError(`Line item ${missingBatchIndex + 1}: Batch is required. Please select a batch.`);
+      return;
+    }
+
     const todayIso = todayLocalDateInputValue();
     const invalidMfgDateIndex = items.findIndex(
       (i) => i.manufacture_date && i.manufacture_date >= todayIso,
@@ -1054,14 +1101,16 @@ const InvoicesPage = () => {
             />
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={handleExportCsv}
-              className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50"
-              title="Export the filtered Sales Invoice list to CSV"
-            >
-              <span className="material-icons text-sm" aria-hidden="true">download</span>
-              Export CSV
-            </button>
+            {canExport && (
+              <button
+                onClick={handleExportCsv}
+                className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50"
+                title="Export the filtered Sales Invoice list to CSV"
+              >
+                <span className="material-icons text-sm" aria-hidden="true">download</span>
+                Export CSV
+              </button>
+            )}
             <button onClick={() => { resetForm(); setShowForm(true); }} className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/20 hover:bg-primary/90">+ New Invoice</button>
           </div>
         </div>

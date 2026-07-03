@@ -970,8 +970,13 @@ def log_audit_event(
     details: dict[str, Any] | None = None,
     ip_address: str | None = None,
     company_id: UUID | str | None = None,
+    force_persist: bool = False,
 ) -> None:
     """Write a best-effort audit event.
+
+    By default only financial-module events are persisted (see _FINANCIAL_MODULES).
+    Pass ``force_persist=True`` to store a platform/configuration event (e.g. Super
+    Admin plan-configuration changes) that is not a financial module.
 
     This function must never break request flow, so failures are swallowed.
     """
@@ -994,7 +999,7 @@ def log_audit_event(
         safe_details = _sanitize_details(details or {})
         action_type = _derive_action_type(action)
         module_name = (resource_type or "system").strip().lower() or "system"
-        if module_name not in _FINANCIAL_MODULES:
+        if not force_persist and module_name not in _FINANCIAL_MODULES:
             return
         safe_detail_dict = safe_details if isinstance(safe_details, dict) else {}
         record_reference = _derive_record_reference(resource_id, safe_detail_dict, action)

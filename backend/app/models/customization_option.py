@@ -11,6 +11,7 @@ class CustomizationOption(Base):
     __tablename__ = "customization_options"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("company.id"), nullable=True, index=True)
     module = Column(String(50), nullable=False, index=True)
     field_name = Column(String(50), nullable=False, index=True)
     option_value = Column(String(120), nullable=False)
@@ -24,5 +25,10 @@ class CustomizationOption(Base):
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
 
     __table_args__ = (
-        UniqueConstraint("module", "field_name", "option_value", name="uq_customization_option_scope"),
+        # Per-tenant uniqueness (multi-tenant): the same option value may exist for
+        # different tenants. Enforced by ux_customization_options_company_scope.
+        UniqueConstraint(
+            "company_id", "module", "field_name", "option_value",
+            name="ux_customization_options_company_scope",
+        ),
     )

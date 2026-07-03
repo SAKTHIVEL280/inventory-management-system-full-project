@@ -524,13 +524,24 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
     {% endif %}
 {% endif %}
 
+{# When unit columns are hidden (e.g. Service Invoice), fold their width into the
+   description column so the table still fills 100%. Sales/Quotation/Proforma do
+   not set this flag, so they keep the Base Unit / Packing columns unchanged. #}
+{% if show_unit_columns is defined and not show_unit_columns %}
+    {% set col_desc = col_desc + col_base + col_pack %}
+    {% set col_base = 0 %}
+    {% set col_pack = 0 %}
+{% endif %}
+
 <table style="table-layout: fixed; width: 100%; border-left: 1px solid #000; border-right: 1px solid #000; border-bottom: 1px solid #000;">
     <thead>
         <tr style="background: #f2f2f2; border-bottom: 1px solid #000;">
             <th style="width: {{ col_sr }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Sr</th>
             <th style="width: {{ col_desc }}%; border-right: 1px solid #000; padding: 3px 2px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Item &amp; Description</th>
+            {% if show_unit_columns is not defined or show_unit_columns %}
             <th style="width: {{ col_base }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">{{ unit_col_label }}</th>
             <th style="width: {{ col_pack }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Packing / Order Unit</th>
+            {% endif %}
             {% if show_batch_columns %}
             <th style="width: {{ col_batch }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">Batch No</th>
             <th style="width: {{ col_mfg }}%; border-right: 1px solid #000; padding: 3px 1px; text-align: center; font-size: 7px; font-weight: bold; vertical-align: middle;">MFG Date</th>
@@ -557,8 +568,10 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
         <tr>
             <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.sr }}</td>
             <td style="border: 1px solid #000; padding: 2px 2px; text-align: left; font-size: 7px; word-wrap: break-word; overflow-wrap: break-word;">{{ row.description }}</td>
+            {% if show_unit_columns is not defined or show_unit_columns %}
             <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.base_unit }}</td>
             <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.packing_unit }}</td>
+            {% endif %}
             {% if show_batch_columns %}
             <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.batch_no }}</td>
             <td style="border: 1px solid #000; padding: 2px 1px; text-align: center; font-size: 7px;">{{ row.mfg_date }}</td>
@@ -584,8 +597,10 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
         <tr style="height: {% if rows|length < items_per_page %}120px{% else %}12px{% endif %};">
             <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
             <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
+            {% if show_unit_columns is not defined or show_unit_columns %}
             <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
             <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
+            {% endif %}
             {% if show_batch_columns %}
             <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
             <td style="border-left: 1px solid #000; border-right: 1px solid #000; border-top: 1px solid #000;"></td>
@@ -1160,7 +1175,7 @@ def generate_po_pdf(db: Session, po_id: UUID) -> bytes:
     if not po:
         raise ValueError("Purchase Order not found")
 
-    company = db.query(Company).first()
+    company = db.query(Company).filter(Company.id == po.company_id).first()
     supplier = db.query(Supplier).filter(Supplier.id == po.supplier_id).first()
     items = (
         db.query(PurchaseOrderItem)
@@ -1311,7 +1326,7 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
     if not invoice:
         raise ValueError("Invoice not found")
 
-    company = db.query(Company).first()
+    company = db.query(Company).filter(Company.id == invoice.company_id).first()
     bill_to_customer_id = getattr(invoice, "bill_to_customer_id", None) or invoice.customer_id
     ship_to_customer_id = getattr(invoice, "ship_to_customer_id", None) or invoice.customer_id
 
@@ -1539,7 +1554,7 @@ def generate_quotation_pdf(db: Session, quotation_id: UUID) -> bytes:
     if not quotation:
         raise ValueError("Quotation not found")
 
-    company = db.query(Company).first()
+    company = db.query(Company).filter(Company.id == quotation.company_id).first()
     customer = db.query(Customer).filter(Customer.id == quotation.customer_id).first()
     items = (
         db.query(QuotationItem)
@@ -1706,7 +1721,7 @@ def generate_proforma_invoice_pdf(db: Session, proforma_id: UUID) -> bytes:
     if not proforma:
         raise ValueError("Proforma Invoice not found")
 
-    company = db.query(Company).first()
+    company = db.query(Company).filter(Company.id == proforma.company_id).first()
     customer = db.query(Customer).filter(Customer.id == proforma.customer_id).first()
     items = (
         db.query(ProformaInvoiceItem)
@@ -1857,6 +1872,207 @@ def generate_proforma_invoice_pdf(db: Session, proforma_id: UUID) -> bytes:
         "balance_due_rupee": _format_total_with_currency(int(proforma.total_amount or 0) / 100, cs),
         "total_in_words": _amount_in_words(int(proforma.total_amount or 0), currency),
         "notes": notes_text,
+        "watermark_text": watermark_text,
+    }
+    return _render_pdf_with_pagination(context, INVOICE_TEMPLATE, rows, items_per_page=BILLING_PDF_ITEMS_PER_PAGE)
+
+
+# ── Service Invoice PDF (Super Admin → tenant subscription invoice, BRD §8) ────
+_SERVICE_INVOICE_TEMPLATE = """
+<html><head><style>
+  @page { size: a4; margin: 1.4cm; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 9pt; color: #222; }
+  h1 { font-size: 15pt; margin: 0 0 2px 0; color: #1a1a1a; }
+  .muted { color: #666; }
+  .box { border: 1px solid #ccc; padding: 8px; }
+  table { width: 100%; border-collapse: collapse; }
+  .items th { background: #f0f0f0; border: 1px solid #ccc; padding: 5px; font-size: 8pt; text-align: left; }
+  .items td { border: 1px solid #ddd; padding: 5px; font-size: 8pt; vertical-align: top; }
+  .right { text-align: right; }
+  .totals td { padding: 3px 6px; font-size: 9pt; }
+  .grand { font-size: 11pt; font-weight: bold; }
+</style></head><body>
+  <table><tr>
+    <td style="width:60%;">
+      <h1>{{ seller_name }}</h1>
+      <div class="muted">{{ seller_address }}</div>
+      {% if seller_gstin %}<div class="muted">GSTIN: {{ seller_gstin }}{% if seller_state %} &nbsp; State: {{ seller_state }}{% endif %}</div>{% endif %}
+      {% if seller_email %}<div class="muted">{{ seller_email }}{% if seller_contact %} &nbsp; {{ seller_contact }}{% endif %}</div>{% endif %}
+    </td>
+    <td style="width:40%;" class="right">
+      <h1>SERVICE INVOICE</h1>
+      <div><b>{{ invoice_number }}</b></div>
+      <div class="muted">Date: {{ invoice_date }}</div>
+      {% if due_date %}<div class="muted">Due: {{ due_date }}</div>{% endif %}
+      <div class="muted">Status: {{ status }}{% if status == 'cancelled' %} (CANCELLED){% endif %}</div>
+    </td>
+  </tr></table>
+  <br/>
+  <div class="box">
+    <b>Bill To:</b> {{ customer_name }}<br/>
+    {% if customer_gstin %}GSTIN: {{ customer_gstin }}<br/>{% endif %}
+    {% if billing_address %}{{ billing_address }}<br/>{% endif %}
+    {% if customer_email %}{{ customer_email }}{% endif %}{% if customer_contact %} &nbsp; {{ customer_contact }}{% endif %}
+    &nbsp; | Supply: {{ supply_type }}
+  </div>
+  <br/>
+  <table class="items">
+    <thead><tr>
+      <th>#</th><th>Item / Particulars</th><th>Description</th><th>HSN/SAC</th>
+      <th class="right">Qty</th><th class="right">Rate</th><th class="right">Disc</th>
+      <th class="right">Taxable</th><th class="right">GST%</th><th class="right">GST Amt</th><th class="right">Amount</th>
+    </tr></thead>
+    <tbody>
+    {% for it in items %}
+      <tr>
+        <td>{{ it.sr_no }}</td><td>{{ it.item_name }}{% if it.is_free %} <b>(FREE)</b>{% endif %}</td>
+        <td>{{ it.description }}</td><td>{{ it.hsn_sac_code }}</td>
+        <td class="right">{{ it.quantity }}</td><td class="right">{{ it.basic_price }}</td>
+        <td class="right">{{ it.discount }}</td><td class="right">{{ it.taxable }}</td>
+        <td class="right">{{ it.gst_rate }}%</td><td class="right">{{ it.gst_amount }}</td><td class="right">{{ it.amount }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <br/>
+  <table><tr>
+    <td style="width:55%;" class="muted"><b>Amount in words:</b> {{ amount_in_words }}{% if notes %}<br/><br/><b>Notes:</b> {{ notes }}{% endif %}</td>
+    <td style="width:45%;">
+      <table class="totals">
+        <tr><td>Sub Total</td><td class="right">{{ subtotal }}</td></tr>
+        <tr><td>Total Discount</td><td class="right">{{ total_discount }}</td></tr>
+        <tr><td>Taxable Amount</td><td class="right">{{ total_taxable }}</td></tr>
+        {% if is_igst %}<tr><td>IGST</td><td class="right">{{ total_igst }}</td></tr>
+        {% else %}<tr><td>CGST</td><td class="right">{{ total_cgst }}</td></tr>
+        <tr><td>SGST</td><td class="right">{{ total_sgst }}</td></tr>{% endif %}
+        <tr><td>Total GST</td><td class="right">{{ total_gst }}</td></tr>
+        <tr class="grand"><td>Grand Total</td><td class="right">{{ grand_total }}</td></tr>
+      </table>
+    </td>
+  </tr></table>
+</body></html>
+"""
+
+
+def _inr(paise) -> str:
+    try:
+        return f"{(int(paise) / 100):,.2f}"
+    except Exception:
+        return "0.00"
+
+
+def generate_service_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
+    """Render a service invoice as a PDF using the SAME layout as the Sales Invoice
+    (BRD §8 / parity request).
+
+    Seller block: a platform invoice (Super Admin → tenant) uses the Mecandria
+    platform-company profile; a tenant's own service invoice uses the tenant's
+    company (scoped by company_id). Both are passed to the shared invoice helpers.
+    """
+    from app.models.service_invoice import ServiceInvoice
+    from app.models.platform_company import PlatformCompany
+
+    inv = db.query(ServiceInvoice).filter(ServiceInvoice.id == invoice_id).first()
+    if not inv:
+        raise ValueError("Service invoice not found")
+
+    if getattr(inv, "is_platform_invoice", False):
+        company = db.query(PlatformCompany).order_by(PlatformCompany.created_at.asc()).first()
+    else:
+        company = db.query(Company).filter(Company.id == inv.company_id).first()
+
+    currency = "INR"
+    cs = "Rs."
+    is_igst = (inv.supply_type or "intra").strip().lower() == "inter"
+
+    rows: list[dict[str, str]] = []
+    for idx, item in enumerate(sorted(inv.items, key=lambda x: x.sr_no), start=1):
+        gst_rate = int(item.gst_rate or 0)
+        half_rate = gst_rate / 2
+        rows.append(
+            {
+                "sr": str(idx),
+                "description": _safe_text(
+                    item.item_name + (f" — {item.description}" if item.description else "")
+                ),
+                "hsn": _safe_text(item.hsn_sac_code),
+                "qty": f"{float(item.quantity):.2f}",
+                "free": "0",
+                "base_unit": "-",
+                "packing_unit": "-",
+                "rate": f"{(int(item.basic_price or 0) / 100):,.2f}",
+                "disc": f"{float(item.discount_percent or 0):.1f}%",
+                "cgst_pct": "0.0%" if is_igst else f"{half_rate:.1f}%",
+                "sgst_pct": "0.0%" if is_igst else f"{half_rate:.1f}%",
+                "igst_pct": f"{gst_rate}%",
+                "amount": f"{(int(item.total_amount or 0) / 100):,.2f}",
+            }
+        )
+    if not rows:
+        rows.append({
+            "sr": "1", "description": "-", "hsn": "-", "qty": "0.00", "free": "0",
+            "base_unit": "-", "packing_unit": "-", "rate": "0.00", "disc": "0.0%",
+            "cgst_pct": "0.0%", "sgst_pct": "0.0%", "igst_pct": "0%", "amount": "0.00",
+        })
+
+    tax_col_2_label = "SGST"
+    watermark_text = "Approved" if (inv.status or "").strip().lower() not in ("draft", "cancelled") else "Not Approved"
+
+    context = {
+        "doc_title": "SERVICE INVOICE",
+        "export_invoice": False,
+        "show_igst": is_igst,
+        "tax_col_1_label": "CGST",
+        "tax_col_2_label": tax_col_2_label,
+        "unit_col_label": "Base Unit",
+        "show_batch_columns": False,
+        # Service Invoice has no inventory units — hide Base Unit / Packing columns
+        # (tenant Sales/Quotation/Proforma PDFs don't set this flag, so unaffected).
+        "show_unit_columns": False,
+        "doc_number_label": "Invoice Number",
+        "doc_date_label": "Invoice Date",
+        "doc_number": _safe_text(inv.invoice_number),
+        "doc_date": _format_date(inv.invoice_date),
+        "due_date": _format_date(inv.due_date),
+        "payment_terms": "-",
+        "order_currency": _format_order_currency_display(currency),
+        "raw_currency": currency,
+        "invoice_type_label": "Inter-State (IGST)" if is_igst else "Intra-State (CGST+SGST)",
+        "company_logo": _resolve_logo_src(company),
+        "company_ambassador_logo": _resolve_ambassador_logo_src(company),
+        "company_name": _safe_text(company.name if company else None),
+        "company_address": _build_company_address(company),
+        "company_gstin": _safe_text(company.gstin if company else None),
+        "company_contact": _safe_text(
+            company.phone if company and company.phone else (company.email if company else None)
+        ),
+        "company_import_export_number": _optional_text(getattr(company, "import_export_number", None) if company else None),
+        "account_holder_name": _optional_text(company.account_holder_name if company else None),
+        "company_bank_name": _optional_text(company.bank_name if company else None),
+        "company_bank_account_no": _optional_text(company.bank_account_no if company else None),
+        "company_bank_ifsc": _optional_text(company.bank_ifsc if company else None),
+        "company_bank_branch": _optional_text(company.bank_branch if company else None),
+        "party_gstin": _safe_text(inv.customer_gstin),
+        "bill_to_state": "-",
+        "place_of_supply": "-",
+        "bill_to_name": _safe_text(inv.customer_name),
+        "bill_to_address": _safe_text(inv.billing_address),
+        "bill_to_gstin": _safe_text(inv.customer_gstin),
+        "ship_to_name": _safe_text(inv.customer_name),
+        "ship_to_address": _safe_text(inv.billing_address),
+        "ship_to_gstin": _safe_text(inv.customer_gstin),
+        "rows": rows,
+        "subtotal": _format_total_with_currency(int(inv.subtotal or 0) / 100, cs),
+        "cgst_label": "CGST",
+        "cgst_total": _format_total_with_currency(int(inv.total_cgst or 0) / 100, cs),
+        "tax_secondary_label": "SGST",
+        "tax_secondary_total": _format_total_with_currency(int(inv.total_sgst or 0) / 100, cs),
+        "igst_label": "IGST",
+        "igst_total": _format_total_with_currency(int(inv.total_igst or 0) / 100, cs),
+        "grand_total_rupee": _format_total_with_currency(int(inv.grand_total or 0) / 100, cs),
+        "balance_due_rupee": _format_total_with_currency(int(inv.grand_total or 0) / 100, cs),
+        "total_in_words": inv.amount_in_words or _amount_in_words(int(inv.grand_total or 0), currency),
+        "notes": _safe_text(inv.notes),
         "watermark_text": watermark_text,
     }
     return _render_pdf_with_pagination(context, INVOICE_TEMPLATE, rows, items_per_page=BILLING_PDF_ITEMS_PER_PAGE)

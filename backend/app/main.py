@@ -1,7 +1,7 @@
 """Main FastAPI application."""
 import logging
 from pathlib import Path
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -44,7 +44,7 @@ app = FastAPI(
 limiter = Limiter(key_func=get_remote_address, default_limits=[settings.rate_limit_api])
 rate_limit_module.limiter = limiter
 
-from app.routers import auth, company, users, customers, suppliers, products, purchase, sales, payments, reports, stock, archive, compliance, rdn, customization_options, proforma, master_data
+from app.routers import auth, company, users, customers, suppliers, products, purchase, sales, payments, reports, stock, archive, compliance, rdn, customization_options, proforma, master_data, subscription, super_admin, service_invoice, plan_config
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -133,24 +133,43 @@ app.add_middleware(
     max_age=3600,
 )
 
-# Include routers
+# Include routers.
+#
+# Multi-tenant gating:
+#  * require_module(...) — tenant whose plan excludes a module gets 403 "upgrade".
+#    These routers map 1:1 to a subscription module. require_module also loads the
+#    tenant (get_current_company), so a Super Admin (no tenant) is 403'd here too.
+#  * require_tenant — hard tenant-isolation boundary (M1, BRD §10). Applied to the
+#    cross-cutting tenant routers that are NOT module-gated (auth excluded — it must
+#    work pre-tenant for login). This blocks Super Admins from reading any single
+#    tenant's data directly and guarantees a tenant context exists, closing the
+#    latent `if company_id:` soft-filter leak (without a tenant those filters were
+#    skipped and returned every tenant's rows merged).
+# Platform routers (subscription/super_admin) carry their own guards. The legacy
+# tenant is PLATINUM, so all plan gates pass today (no behaviour change for it).
+from app.dependencies import require_module, require_tenant
+
 app.include_router(auth.router)
-app.include_router(company.router)
-app.include_router(users.router)
-app.include_router(customers.router)
-app.include_router(suppliers.router)
-app.include_router(products.router)
-app.include_router(purchase.router)
-app.include_router(sales.router)
-app.include_router(proforma.router)
-app.include_router(payments.router)
-app.include_router(reports.router)
-app.include_router(stock.router)
-app.include_router(rdn.router)
-app.include_router(customization_options.router)
-app.include_router(master_data.router)
-app.include_router(archive.router)
-app.include_router(compliance.router)
+app.include_router(company.router, dependencies=[Depends(require_tenant)])
+app.include_router(users.router, dependencies=[Depends(require_tenant)])
+app.include_router(customers.router, dependencies=[Depends(require_module("masters"))])
+app.include_router(suppliers.router, dependencies=[Depends(require_module("masters"))])
+app.include_router(products.router, dependencies=[Depends(require_module("masters"))])
+app.include_router(purchase.router, dependencies=[Depends(require_module("purchase"))])
+app.include_router(sales.router, dependencies=[Depends(require_module("sales"))])
+app.include_router(proforma.router, dependencies=[Depends(require_module("sales"))])
+app.include_router(payments.router, dependencies=[Depends(require_module("accounts"))])
+app.include_router(reports.router, dependencies=[Depends(require_tenant)])
+app.include_router(stock.router, dependencies=[Depends(require_module("inventory"))])
+app.include_router(rdn.router, dependencies=[Depends(require_module("sales"))])
+app.include_router(customization_options.router, dependencies=[Depends(require_tenant)])
+app.include_router(master_data.router, dependencies=[Depends(require_module("masters"))])
+app.include_router(archive.router, dependencies=[Depends(require_tenant)])
+app.include_router(compliance.router, dependencies=[Depends(require_tenant)])
+app.include_router(subscription.router)
+app.include_router(super_admin.router)
+app.include_router(plan_config.router)
+app.include_router(service_invoice.router)
 
 
 _VALIDATION_MSG_REWRITES = (
@@ -247,11 +266,31 @@ async def integrity_error_handler(request: Request, exc: IntegrityError):
     logger.error(f"IntegrityError on {request.method} {request.url.path}: {message}")
 
     if "unique" in lower or "duplicate key value" in lower:
-        detail = "Duplicate value found. Please use a unique value."
-        if "email" in lower:
-            detail = "Email already exists. Please use a different email."
+        # Field-specific message based on the violated constraint/column (safety net;
+        # most flows pre-check and raise their own clear message first).
+        detail = "This value already exists. Please use a unique value."
+        if "gstin" in lower:
+            detail = "GSTIN already exists."
+        elif "tenant_code" in lower:
+            detail = "Tenant Code already exists."
+        elif "customer_code" in lower:
+            detail = "Customer Code already exists."
+        elif "supplier_code" in lower:
+            detail = "Supplier Code already exists."
         elif "product_code" in lower:
-            detail = "Product code already exists. Please try again."
+            detail = "Product Code already exists. Please try again."
+        elif "abbreviation" in lower:
+            detail = "Unit abbreviation already exists."
+        elif "contact_number" in lower or "contact" in lower:
+            detail = "Contact Number already exists."
+        elif "email" in lower:
+            detail = "Email is already registered."
+        elif "category" in lower and "name" in lower:
+            detail = "Category Name already exists."
+        elif "company" in lower and "name" in lower:
+            detail = "Company Name already exists."
+        elif "invoice_number" in lower:
+            detail = "Invoice number already exists. Please retry."
         return JSONResponse(status_code=400, content={"detail": detail, "path": request.url.path})
 
     if "foreign key" in lower:

@@ -34,7 +34,7 @@ from app.schemas.proforma import (
 )
 from app.services.order_number_service import generate_proforma_invoice_number
 from app.services.gst_service import determine_tax_mode, calc_line_item
-from app.services.auth_service import normalize_role
+from app.services.auth_service import normalize_role, PRIVILEGED_ROLES
 from app.utils.input_validation import validate_optional_token
 
 router = APIRouter(tags=["proforma-invoices"])
@@ -44,7 +44,7 @@ def _scope_to_owner(query, model, current_user: User):
     """Scope by company_id first, then by ownership for non-privileged users."""
     if current_user.company_id is not None:
         query = scope_query_to_company(query, model, current_user.company_id)
-    if normalize_role(current_user.role) in {"admin", "inventory manager", "general manager"}:
+    if normalize_role(current_user.role) in PRIVILEGED_ROLES:
         return query
     owner_col = getattr(model, "created_by", None)
     if owner_col is None:
@@ -130,7 +130,7 @@ async def create_proforma_invoice(
     gst_applicable = tax_mode["gst_applicable"]
 
     p = ProformaInvoice(
-        proforma_number=generate_proforma_invoice_number(db),
+        proforma_number=generate_proforma_invoice_number(db, current_user.company_id),
         customer_id=payload.customer_id,
         proforma_date=payload.proforma_date,
         valid_until=payload.valid_until,

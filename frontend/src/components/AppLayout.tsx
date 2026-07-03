@@ -1,11 +1,14 @@
 import { ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '../store/auth';
 import { usePermissions } from '../hooks/usePermissions';
+import { useSubscription } from '../hooks/useSubscription';
 import { companyApi } from '../api/company';
 import { getStaticUrl } from '../utils/url_utils';
 import { archiveApi } from '../api/archive';
+import { PlanBanner } from './PlanBanner';
+import { ROLE_LABELS } from '../types';
 import { toast } from 'sonner';
 
 interface AppLayoutProps {
@@ -32,16 +35,26 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
   const logoutFromStore = useAuthStore((state) => state.logout);
+  const queryClient = useQueryClient();
   const { can } = usePermissions();
+  // Plan-based module visibility (BRD §5.5): modules NOT in the tenant's plan are
+  // hidden from navigation entirely (no "locked/upgrade" placeholder). Fails open
+  // while entitlements load — the backend require_module gate stays authoritative.
+  const { canAccessModule } = useSubscription();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showArchivePurgeModal, setShowArchivePurgeModal] = useState(false);
   const [confirmationText, setConfirmationText] = useState('');
+
+  // Super Admins have no tenant; the company-branding/archive/subscription
+  // endpoints are tenant-only (require_tenant) and would 403 for them. Skip those
+  // queries entirely so the shared layout works for the Super Admin portal too.
+  const isSuperAdmin = !!user?.is_super_admin;
 
   const { data: company } = useQuery({
     queryKey: ['company-branding'],
     queryFn: companyApi.getBranding,
     staleTime: 5 * 60 * 1000,
-    enabled: Boolean(user),
+    enabled: Boolean(user) && !isSuperAdmin,
   });
 
   const { data: archiveAlerts } = useQuery({
@@ -70,7 +83,7 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
       }
     },
     staleTime: 60 * 1000,
-    enabled: Boolean(user),
+    enabled: Boolean(user) && !isSuperAdmin,
     retry: false,
   });
 
@@ -97,77 +110,109 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
 
   const isAdmin = (user?.role?.toLowerCase() ?? '') === 'admin';
 
-  const navGroups: NavGroup[] = useMemo(() => [
-    {
-      key: 'dashboard',
-      label: 'Dashboard',
-      icon: 'dashboard',
-      items: [{ to: '/dashboard', label: 'Dashboard', visible: true, icon: 'dashboard' }],
-    },
-    {
-      key: 'masters',
-      label: 'Masters',
-      icon: 'folder',
-      items: [
-        { to: '/masters/company', label: 'Company', visible: can('company_write'), icon: 'corporate_fare' },
-        { to: '/masters/users', label: 'Users', visible: can('users_write'), icon: 'groups' },
-        { to: '/masters/customers', label: 'Customers', visible: can('customers_write'), icon: 'person' },
-        { to: '/masters/suppliers', label: 'Suppliers', visible: can('suppliers_write'), icon: 'local_shipping' },
-        { to: '/masters/categories', label: 'Categories', visible: can('categories_write'), icon: 'label' },
-        { to: '/masters/products', label: 'Products', visible: can('products_write'), icon: 'inventory_2' },
-        { to: '/masters/customization-options', label: 'Customization Options', visible: isAdmin, icon: 'tune' },
-      ],
-    },
-    {
-      key: 'inventory',
-      label: 'Inventory',
-      icon: 'warehouse',
-      items: [
-        { to: '/inventory/stock', label: 'Stock', visible: can('stock_ledger_read'), icon: 'warehouse' },
-        { to: '/inventory/count', label: 'Inventory Count', visible: can('stock_ledger_write'), icon: 'fact_check' },
-        { to: '/inventory/count-difference', label: 'Count Difference', visible: can('stock_ledger_read'), icon: 'difference' },
-      ],
-    },
-    {
-      key: 'purchase',
-      label: 'Purchase',
-      icon: 'shopping_cart',
-      items: [
-        { to: '/purchase/orders', label: 'Purchase Orders', visible: can('purchase_orders_read'), icon: 'shopping_cart' },
-        { to: '/purchase/grn', label: 'Good Receipt Notes', visible: can('grn_read'), icon: 'move_to_inbox' },
-      ],
-    },
-    {
-      key: 'sales',
-      label: 'Sales',
-      icon: 'receipt_long',
-      items: [
-        { to: '/sales/quotations', label: 'Quotations', visible: can('quotations_read'), icon: 'request_quote' },
-        { to: '/sales/proforma-invoices', label: 'Proforma Invoice', visible: can('proforma_read'), icon: 'description' },
-        { to: '/sales/invoices', label: 'Sales Invoice', visible: can('sales_invoices_read'), icon: 'receipt' },
-        { to: '/sales/rdn', label: 'Return Delivery Note', visible: can('rdn_read'), icon: 'assignment_return' },
-        { to: '/sales/rdn-credit-notes', label: 'RDN Credit Note', visible: can('rdn_read'), icon: 'note_alt' },
-      ],
-    },
-    {
-      key: 'accounts',
-      label: 'Accounts',
-      icon: 'account_balance_wallet',
-      items: [
-        { to: '/payments/receivables', label: 'Receivables', visible: can('receipts_read'), icon: 'account_balance_wallet' },
-        { to: '/payments/payables', label: 'Payables', visible: can('payments_read'), icon: 'payments' },
-      ],
-    },
-    {
-      key: 'reports',
-      label: 'Reports',
-      icon: 'bar_chart',
-      items: [
-        { to: '/reports', label: 'Reports', visible: can('reports_read'), icon: 'bar_chart' },
-        { to: '/reports/action-logs', label: 'Action Logs', visible: can('action_logs_read'), icon: 'history' },
-      ],
-    },
-  ], [can, isAdmin]);
+  const navGroups: NavGroup[] = useMemo(() => {
+    // Super Admins (Mecandria platform) operate ONLY the Super Admin portal — they
+    // have no tenant and must not see any tenant module (BRD §4 / §10). Return the
+    // platform nav exclusively; tenant data access is solely via "Login As".
+    if (isSuperAdmin) {
+      return [{
+        key: 'super-admin',
+        label: 'Super Admin',
+        icon: 'admin_panel_settings',
+        items: [
+          { to: '/admin/tenants', label: 'ERP Customers', visible: true, icon: 'apartment' },
+          { to: '/admin/plan-configuration', label: 'Plan Configuration', visible: true, icon: 'tune' },
+          { to: '/admin/company-profile', label: 'Company Profile', visible: true, icon: 'corporate_fare' },
+        ],
+      }];
+    }
+
+    // Tenant nav. Each item is visible only when BOTH the user's role permits it
+    // (can) AND the tenant's plan includes the module (mod) — plan-excluded modules
+    // are hidden outright (no upgrade placeholder), per the strict-visibility rule.
+    const mod = canAccessModule;
+    return [
+      {
+        key: 'dashboard',
+        label: 'Dashboard',
+        icon: 'dashboard',
+        items: [{ to: '/dashboard', label: 'Dashboard', visible: can('dashboard_read') && mod('dashboard'), icon: 'dashboard' }],
+      },
+      {
+        key: 'masters',
+        label: 'Masters',
+        icon: 'folder',
+        items: [
+          { to: '/masters/company', label: 'Company', visible: can('company_write') && mod('masters'), icon: 'corporate_fare' },
+          { to: '/masters/users', label: 'Users', visible: can('users_write') && mod('masters'), icon: 'groups' },
+          { to: '/masters/customers', label: 'Customers', visible: can('customers_write') && mod('masters'), icon: 'person' },
+          { to: '/masters/suppliers', label: 'Suppliers', visible: can('suppliers_write') && mod('masters'), icon: 'local_shipping' },
+          { to: '/masters/categories', label: 'Categories', visible: can('categories_write') && mod('masters'), icon: 'label' },
+          { to: '/masters/products', label: 'Products', visible: can('products_write') && mod('masters'), icon: 'inventory_2' },
+          { to: '/masters/customization-options', label: 'Customization Options', visible: isAdmin && mod('masters'), icon: 'tune' },
+        ],
+      },
+      {
+        key: 'inventory',
+        label: 'Inventory',
+        icon: 'warehouse',
+        items: [
+          { to: '/inventory/stock', label: 'Stock', visible: can('stock_ledger_read') && mod('inventory'), icon: 'warehouse' },
+          { to: '/inventory/count', label: 'Inventory Count', visible: can('stock_ledger_write') && mod('inventory'), icon: 'fact_check' },
+          { to: '/inventory/count-difference', label: 'Count Difference', visible: can('stock_ledger_read') && mod('inventory'), icon: 'difference' },
+        ],
+      },
+      {
+        key: 'purchase',
+        label: 'Purchase',
+        icon: 'shopping_cart',
+        items: [
+          { to: '/purchase/orders', label: 'Purchase Orders', visible: can('purchase_orders_read') && mod('purchase'), icon: 'shopping_cart' },
+          { to: '/purchase/grn', label: 'Good Receipt Notes', visible: can('grn_read') && mod('purchase'), icon: 'move_to_inbox' },
+        ],
+      },
+      {
+        key: 'sales',
+        label: 'Sales',
+        icon: 'receipt_long',
+        items: [
+          { to: '/sales/quotations', label: 'Quotations', visible: can('quotations_read') && mod('sales'), icon: 'request_quote' },
+          { to: '/sales/proforma-invoices', label: 'Proforma Invoice', visible: can('proforma_read') && mod('sales'), icon: 'description' },
+          { to: '/sales/invoices', label: 'Sales Invoice', visible: can('sales_invoices_read') && mod('sales'), icon: 'receipt' },
+          { to: '/sales/rdn', label: 'Return Delivery Note', visible: can('rdn_read') && mod('sales'), icon: 'assignment_return' },
+          { to: '/sales/rdn-credit-notes', label: 'RDN Credit Note', visible: can('rdn_read') && mod('sales'), icon: 'note_alt' },
+        ],
+      },
+      {
+        // Service Invoice is its own module, available on ALL plans (incl. FREE) —
+        // kept as a standalone group so FREE tenants (no Sales module) still see it.
+        key: 'service-invoice',
+        label: 'Service Invoice',
+        icon: 'receipt_long',
+        items: [
+          { to: '/service-invoices', label: 'Service Invoice', visible: can('service_invoice_read') && mod('service_invoice'), icon: 'receipt_long' },
+        ],
+      },
+      {
+        key: 'accounts',
+        label: 'Accounts',
+        icon: 'account_balance_wallet',
+        items: [
+          { to: '/payments/receivables', label: 'Receivables', visible: can('receipts_read') && mod('accounts'), icon: 'account_balance_wallet' },
+          { to: '/payments/payables', label: 'Payables', visible: can('payments_read') && mod('accounts'), icon: 'payments' },
+        ],
+      },
+      {
+        key: 'reports',
+        label: 'Reports',
+        icon: 'bar_chart',
+        items: [
+          { to: '/reports', label: 'Reports', visible: can('reports_read') && mod('reports'), icon: 'bar_chart' },
+          { to: '/reports/action-logs', label: 'Action Logs', visible: can('action_logs_read') && mod('audit_logs'), icon: 'history' },
+        ],
+      },
+    ];
+  }, [can, isAdmin, isSuperAdmin, canAccessModule]);
 
   const getGroupForPath = useCallback((pathname: string): string => {
     for (const group of navGroups) {
@@ -197,6 +242,7 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
 
   const handleConfirmLogout = (): void => {
     setShowLogoutConfirm(false);
+    queryClient.clear(); // drop all cached tenant data so the next login starts clean
     logoutFromStore();
     navigate('/login');
   };
@@ -226,8 +272,8 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
                 )}
               </div>
               <div className="flex-1 overflow-hidden">
-                <p className="truncate text-sm font-semibold text-primary" title={company?.name || 'Inventory Management'}>
-                  {company?.name || 'Inventory Management'}
+                <p className="truncate text-sm font-semibold text-primary" title={isSuperAdmin ? 'Mecandria Super Admin' : (company?.name || 'Inventory Management')}>
+                  {isSuperAdmin ? 'Mecandria Super Admin' : (company?.name || 'Inventory Management')}
                 </p>
               </div>
             </div>
@@ -330,7 +376,7 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
               <div className="flex items-center gap-3">
                 <div className="text-right">
                   <p className="text-sm font-semibold text-neutral-900">{user?.full_name}</p>
-                  <p className="text-xs uppercase tracking-wide text-neutral-500">{user?.role}</p>
+                  <p className="text-xs uppercase tracking-wide text-neutral-500">{user?.is_super_admin ? 'Super Admin' : (ROLE_LABELS[user?.role ?? ''] ?? user?.role)}</p>
                 </div>
                 <button
                   type="button"
@@ -391,7 +437,7 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
               ))}
             </nav>
 
-            <main id="main-content" tabIndex={-1}>{children}</main>
+            <main id="main-content" tabIndex={-1}><PlanBanner />{children}</main>
           </div>
         </div>
       </div>

@@ -315,6 +315,9 @@ public/
 **/media/
 **/staticfiles/
 **/assets/
+MULTI_TENANT_SERVER_DEPLOY_UBUNTU.md
+MULTI_TENANT_SETUP.md
+ims_backup_pre_mt.dump
 
 # ============================================
 # BACKUP FILES

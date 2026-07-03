@@ -1,7 +1,7 @@
 """Supplier model."""
 from uuid import uuid4
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, UUID, ForeignKey
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, UUID, ForeignKey, UniqueConstraint
 from app.database import Base
 from app.services.encryption import EncryptedString
 
@@ -10,9 +10,11 @@ class Supplier(Base):
     """Supplier master."""
 
     __tablename__ = "suppliers"
+    # supplier_code is unique PER TENANT (multi-tenant); see ux_suppliers_company_code.
+    __table_args__ = (UniqueConstraint("company_id", "supplier_code", name="ux_suppliers_company_code"),)
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    supplier_code = Column(String(20), unique=True, nullable=False, index=True)
+    supplier_code = Column(String(20), nullable=False, index=True)
     company_name = Column(String(255), nullable=False)
     contact_person = Column(String(150), nullable=True)
     email = Column(String(255), nullable=True)

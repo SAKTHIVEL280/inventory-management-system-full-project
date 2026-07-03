@@ -205,6 +205,14 @@ const CompanyPage = () => {
   const stateValue = watch('state') ?? '';
   const stateCodeValue = watch('state_code') ?? '';
 
+  // GSTIN only applies to registered companies. When set to non-registered, clear
+  // it so no stale/sample value lingers or gets saved.
+  useEffect(() => {
+    if (gstin_status === 'non-registered' && (watch('gstin') ?? '') !== '') {
+      setValue('gstin', '', { shouldDirty: false });
+    }
+  }, [gstin_status, setValue, watch]);
+
   useEffect(() => {
     const resolvedFromCode = stateNameFromStateCode(stateCodeValue);
     if (resolvedFromCode && stateValue.trim().length === 0) {

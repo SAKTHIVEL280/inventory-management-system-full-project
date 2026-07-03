@@ -10,24 +10,48 @@
 import { ReactNode } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
+import { useSubscription } from '../hooks/useSubscription';
 import { PermissionScope } from '../types';
 
 interface ProtectedRouteProps {
   children: ReactNode;
   requiredPermission?: PermissionScope | PermissionScope[];
   requiredRole?: string | string[];
+  /** Subscription module this route belongs to. If the tenant's plan excludes it,
+   *  the route redirects home (instead of letting the page fire an API call that
+   *  would 403 with an "upgrade" toast). */
+  requiredModule?: string;
 }
 
 export const ProtectedRoute = ({
   children,
   requiredPermission,
   requiredRole,
+  requiredModule,
 }: ProtectedRouteProps) => {
   const { user, isAuthenticated } = useAuthStore();
+  const { canAccessModule, isLoading: subLoading } = useSubscription();
 
   // No token - redirect to login
   if (!isAuthenticated || !user) {
     return <Navigate to="/login" replace />;
+  }
+
+  // Plan-based module gate (BRD §5.5). Super Admins have no tenant plan and are
+  // routed only to their own pages, so they bypass this. For tenant users, wait
+  // until entitlements load before deciding (avoids the page mounting and firing
+  // a module-locked API call); then redirect home if the plan excludes the module.
+  if (requiredModule && !user.is_super_admin) {
+    if (subLoading) {
+      return (
+        <div className="flex items-center justify-center min-h-screen bg-gray-50" role="status" aria-live="polite">
+          <div className="inline-block animate-spin rounded-full h-10 w-10 border-b-2 border-primary" />
+        </div>
+      );
+    }
+    if (!canAccessModule(requiredModule)) {
+      return <Navigate to="/" replace />;
+    }
   }
 
   // Check role if specified
@@ -66,10 +90,10 @@ const ForbiddenPage = () => (
         You don't have permission to access this resource.
       </p>
       <Link
-        to="/dashboard"
+        to="/login"
         className="mt-4 inline-block px-4 py-2 bg-primary text-white rounded hover:bg-opacity-90"
       >
-        Back to Dashboard
+        Back to Login
       </Link>
     </div>
   </main>

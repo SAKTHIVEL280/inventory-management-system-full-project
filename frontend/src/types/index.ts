@@ -13,11 +13,12 @@ export interface User {
   id: string;
   full_name: string;
   email: string;
-  role: 'admin' | 'inventory manager' | 'general manager';
+  role: 'admin' | 'basic' | 'accounts' | 'inventory' | 'management' | 'hr';
   company_id?: string | null;
   permission_overrides?: Record<string, unknown> | null;
   effective_access: string[];
   force_password_change: boolean;
+  is_super_admin?: boolean;
 }
 
 export interface AuthToken {
@@ -531,11 +532,41 @@ export interface RDNCreditNoteDetailResponse {
 // Constants
 // ============================================================================
 
+// BRD §6 roles. 'admin' is the Tenant Admin; the five below are the assignable,
+// plan-gated end-user roles.
 export const ROLES = {
   ADMIN: 'admin',
-  INVENTORY_MANAGER: 'inventory manager',
-  GENERAL_MANAGER: 'general manager',
+  BASIC: 'basic',
+  ACCOUNTS: 'accounts',
+  INVENTORY: 'inventory',
+  MANAGEMENT: 'management',
+  HR: 'hr',
 } as const;
+
+// Role display labels + colour chips (BRD §6.1). Legacy stored values are mapped to
+// their BRD replacement (General Manager → Accounts, Inventory Manager → Inventory)
+// so the UI shows the correct name/colour even before the DB migration runs.
+export const ROLE_LABELS: Record<string, string> = {
+  admin: 'Administrator',
+  basic: 'Basic User',
+  accounts: 'Accounts User',
+  inventory: 'Inventory User',
+  management: 'Management User',
+  hr: 'HR User',
+  'general manager': 'Accounts User',
+  'inventory manager': 'Inventory User',
+};
+
+export const ROLE_BADGE_CLASS: Record<string, string> = {
+  admin: 'bg-neutral-800',
+  basic: 'bg-red-500',
+  accounts: 'bg-blue-600',
+  inventory: 'bg-green-600',
+  management: 'bg-violet-600',
+  hr: 'bg-amber-800',
+  'general manager': 'bg-blue-600',
+  'inventory manager': 'bg-green-600',
+};
 
 export const PERMISSION_SCOPES = {
   // Company
@@ -596,6 +627,10 @@ export const PERMISSION_SCOPES = {
   REPORTS_READ: 'reports_read',
   ACTION_LOGS_READ: 'action_logs_read',
   DASHBOARD_READ: 'dashboard_read',
+
+  // Service Invoice (M5)
+  SERVICE_INVOICE_READ: 'service_invoice_read',
+  SERVICE_INVOICE_WRITE: 'service_invoice_write',
 } as const;
 
 export type PermissionScope = typeof PERMISSION_SCOPES[keyof typeof PERMISSION_SCOPES];

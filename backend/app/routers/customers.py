@@ -14,7 +14,7 @@ from app.models.customer import Customer
 from app.models.customization_option import CustomizationOption
 from app.models.user import User
 from app.services.audit_service import log_audit_event
-from app.services.auth_service import normalize_role
+from app.services.auth_service import normalize_role, PRIVILEGED_ROLES
 from app.services.data_masking import DataMasker, should_mask_sensitive_fields
 from app.utils.input_validation import normalize_search_query
 from app.utils.state_mappings import validate_and_autofill_state_fields
@@ -39,7 +39,7 @@ def _scope_to_owner(query, model_cls, current_user: User):
             raise HTTPException(status_code=403, detail="User is not assigned to a company")
         query = query.filter(company_col == current_user.company_id)
 
-    if normalize_role(current_user.role) in {"admin", "inventory manager", "general manager"}:
+    if normalize_role(current_user.role) in PRIVILEGED_ROLES:
         return query
     owner_col = getattr(model_cls, "created_by", None)
     if owner_col is None:
@@ -153,11 +153,13 @@ def _is_international(payload: CustomerCreateRequest | CustomerUpdateRequest) ->
     return bool(country and country not in {"india", "in"})
 
 
-def _generate_customer_code(db: Session, payload: CustomerCreateRequest | CustomerUpdateRequest) -> str:
+def _generate_customer_code(db: Session, payload: CustomerCreateRequest | CustomerUpdateRequest, company_id) -> str:
     prefix = "CUST-INT" if _is_international(payload) else f"CUST-{_state_code_from_payload(payload)}"
+    # Per-tenant sequence: only consider THIS tenant's codes (codes are unique per
+    # company_id, so different tenants may reuse the same number).
     existing_codes = (
         db.query(Customer.customer_code)
-        .filter(Customer.customer_code.like(f"{prefix}-%"))
+        .filter(Customer.customer_code.like(f"{prefix}-%"), Customer.company_id == company_id)
         .all()
     )
 
@@ -229,6 +231,7 @@ def _normalize_state(value: str | None) -> str | None:
 def _upsert_customer_customization_option(
     db: Session,
     *,
+    company_id: UUID | None,
     field_name: str,
     option_value: str,
     created_by: UUID | None,
@@ -236,6 +239,7 @@ def _upsert_customer_customization_option(
     existing = (
         db.query(CustomizationOption)
         .filter(
+            CustomizationOption.company_id == company_id,
             CustomizationOption.module == "customer",
             CustomizationOption.field_name == field_name,
             func.lower(CustomizationOption.option_value) == option_value.lower(),
@@ -254,6 +258,7 @@ def _upsert_customer_customization_option(
 
     db.add(
         CustomizationOption(
+            company_id=company_id,
             module="customer",
             field_name=field_name,
             option_value=option_value,
@@ -268,11 +273,13 @@ def _persist_customer_customization_values(
     db: Session,
     payload: CustomerCreateRequest | CustomerUpdateRequest,
     created_by: UUID | None,
+    company_id: UUID | None,
 ) -> None:
     currency = (payload.currency_code or "").strip().upper()
     if currency:
         _upsert_customer_customization_option(
             db,
+            company_id=company_id,
             field_name="currency",
             option_value=currency,
             created_by=created_by,
@@ -282,6 +289,7 @@ def _persist_customer_customization_values(
     if billing_country:
         _upsert_customer_customization_option(
             db,
+            company_id=company_id,
             field_name="country",
             option_value=billing_country,
             created_by=created_by,
@@ -294,6 +302,7 @@ def _persist_customer_customization_values(
         ):
             _upsert_customer_customization_option(
                 db,
+                company_id=company_id,
                 field_name="country",
                 option_value=shipping_country,
                 created_by=created_by,
@@ -303,6 +312,7 @@ def _persist_customer_customization_values(
     if billing_state:
         _upsert_customer_customization_option(
             db,
+            company_id=company_id,
             field_name="state",
             option_value=billing_state,
             created_by=created_by,
@@ -315,6 +325,7 @@ def _persist_customer_customization_values(
         ):
             _upsert_customer_customization_option(
                 db,
+                company_id=company_id,
                 field_name="state",
                 option_value=shipping_state,
                 created_by=created_by,
@@ -421,6 +432,7 @@ async def get_customer_customization_options(
     rows = (
         db.query(CustomizationOption)
         .filter(
+            CustomizationOption.company_id == current_user.company_id,
             CustomizationOption.module == "customer",
             CustomizationOption.field_name.in_(["country", "currency", "state"]),
             CustomizationOption.is_active == True,
@@ -480,6 +492,14 @@ async def create_customer(
     if current_user.company_id is None:
         raise HTTPException(status_code=403, detail="User is not assigned to a company")
 
+    # Per-tenant name uniqueness (scoped to company_id only).
+    if db.query(Customer).filter(
+        func.lower(Customer.company_name) == (payload.company_name or "").strip().lower(),
+        Customer.company_id == current_user.company_id,
+        Customer.is_deleted == False,
+    ).first():
+        raise HTTPException(status_code=400, detail="Customer Name already exists.")
+
     _apply_gstin_policy(payload)
     _normalize_customer_currency(payload)
 
@@ -503,11 +523,11 @@ async def create_customer(
     _validate_and_autofill_customer_states(payload)
     _normalize_shipping(payload)
     _validate_and_autofill_customer_states(payload)
-    _persist_customer_customization_values(db, payload, current_user.id)
+    _persist_customer_customization_values(db, payload, current_user.id, current_user.company_id)
 
     customer = Customer(
         **payload.model_dump(exclude={"customer_code"}),
-        customer_code=payload.customer_code or _generate_customer_code(db, payload),
+        customer_code=payload.customer_code or _generate_customer_code(db, payload, current_user.company_id),
         company_id=current_user.company_id,
         created_by=current_user.id,
     )
@@ -607,7 +627,7 @@ async def update_customer(
     _validate_and_autofill_customer_states(payload)
     _normalize_shipping(payload)
     _validate_and_autofill_customer_states(payload)
-    _persist_customer_customization_values(db, payload, current_user.id)
+    _persist_customer_customization_values(db, payload, current_user.id, current_user.company_id)
 
     for field, value in payload.model_dump(exclude={"customer_code"}).items():
         setattr(customer, field, value)
