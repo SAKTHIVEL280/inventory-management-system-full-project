@@ -517,12 +517,18 @@ def main() -> int:
                 frequency VARCHAR(20) NOT NULL,
                 \"timestamp\" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 status VARCHAR(20) NOT NULL,
-                details JSONB NOT NULL DEFAULT '{}'::jsonb
+                details JSONB NOT NULL DEFAULT '{}'::jsonb,
+                company_id UUID
             )
             """,
+            # Multi-tenant: ensure company_id exists on pre-existing installs too
+            # (CREATE TABLE IF NOT EXISTS won't add it to an already-created table).
+            # Must run BEFORE the residual backfill below, which UPDATEs this column.
+            "ALTER TABLE gst_report_audit_logs ADD COLUMN IF NOT EXISTS company_id UUID",
             "CREATE INDEX IF NOT EXISTS ix_gst_report_audit_logs_timestamp ON gst_report_audit_logs (\"timestamp\")",
             "CREATE INDEX IF NOT EXISTS ix_gst_report_audit_logs_report_type ON gst_report_audit_logs (report_type)",
             "CREATE INDEX IF NOT EXISTS ix_gst_report_audit_logs_user_id ON gst_report_audit_logs (user_id)",
+            "CREATE INDEX IF NOT EXISTS ix_gst_report_audit_logs_company_id ON gst_report_audit_logs (company_id)",
 
             # Customer international phone support
             "ALTER TABLE customers ALTER COLUMN phone TYPE VARCHAR(20)",
@@ -707,6 +713,11 @@ def main() -> int:
             #    tables = derive from acting user (system/pre-auth rows stay NULL).
             "ALTER TABLE product_categories ADD COLUMN IF NOT EXISTS company_id UUID",
             "CREATE INDEX IF NOT EXISTS ix_product_categories_company_id ON product_categories (company_id)",
+            # Guarantee company_id exists on both audit tables before backfilling them
+            # (idempotent; audit_logs.company_id is normally added by the v1.5 block,
+            # but add it here too so the backfill can never hit an undefined column).
+            "ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS company_id UUID",
+            "ALTER TABLE gst_report_audit_logs ADD COLUMN IF NOT EXISTS company_id UUID",
             """
             DO $$
             DECLARE _legacy UUID;

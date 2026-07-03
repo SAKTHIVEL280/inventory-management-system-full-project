@@ -47,12 +47,14 @@ CREATE TABLE gst_report_audit_logs (
   frequency VARCHAR(20) NOT NULL,
   "timestamp" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   status VARCHAR(20) NOT NULL,
-  details JSONB NOT NULL DEFAULT '{}'::jsonb
+  details JSONB NOT NULL DEFAULT '{}'::jsonb,
+  company_id UUID
 );
 
 CREATE INDEX IF NOT EXISTS ix_gst_report_audit_logs_timestamp ON gst_report_audit_logs ("timestamp");
 CREATE INDEX IF NOT EXISTS ix_gst_report_audit_logs_report_type ON gst_report_audit_logs (report_type);
 CREATE INDEX IF NOT EXISTS ix_gst_report_audit_logs_user_id ON gst_report_audit_logs (user_id);
+CREATE INDEX IF NOT EXISTS ix_gst_report_audit_logs_company_id ON gst_report_audit_logs (company_id);
 
 -- 5.1.b System Action Logs
 CREATE TABLE audit_logs (
