@@ -1,6 +1,0 @@
-to=jack@med.com
-subject=Quotation QTN-00003
-body=
-Please find attached Quotation QTN-00003.
-
-attachment=20260504103546088720_QTN-00003.pdf
