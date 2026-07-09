@@ -5,6 +5,7 @@ import { useAuthStore } from '../store/auth';
 import { usePermissions } from '../hooks/usePermissions';
 import { useSubscription } from '../hooks/useSubscription';
 import { companyApi } from '../api/company';
+import { superAdminApi } from '../api/superAdmin';
 import { getStaticUrl } from '../utils/url_utils';
 import { archiveApi } from '../api/archive';
 import { PlanBanner } from './PlanBanner';
@@ -55,6 +56,16 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
     queryFn: companyApi.getBranding,
     staleTime: 5 * 60 * 1000,
     enabled: Boolean(user) && !isSuperAdmin,
+  });
+
+  // Super Admin platform (Mecandria) branding for the header — name + uploaded logo.
+  // Same query key the Company Profile page invalidates, so a logo/name change there
+  // updates this header immediately.
+  const { data: platformProfile } = useQuery({
+    queryKey: ['admin', 'company-profile'],
+    queryFn: superAdminApi.getCompanyProfile,
+    staleTime: 5 * 60 * 1000,
+    enabled: Boolean(user) && isSuperAdmin,
   });
 
   const { data: archiveAlerts } = useQuery({
@@ -263,20 +274,40 @@ export const AppLayout = ({ title, children }: AppLayoutProps) => {
       <div className="min-h-screen">
         <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-neutral-200 bg-white lg:block overflow-hidden">
           <div className="flex h-full flex-col p-6">
-            <div className="mb-8 flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary">
-                {company?.logo_data_url || company?.logo_url ? (
-                  <img src={company.logo_data_url || getStaticUrl(company.logo_url) || ''} alt={company.name} className="h-full w-full rounded-full object-cover" />
-                ) : (
-                  <span className="material-icons text-white" aria-hidden="true">business</span>
-                )}
-              </div>
-              <div className="flex-1 overflow-hidden">
-                <p className="truncate text-sm font-semibold text-primary" title={isSuperAdmin ? 'Mecandria Super Admin' : (company?.name || 'Inventory Management')}>
-                  {isSuperAdmin ? 'Mecandria Super Admin' : (company?.name || 'Inventory Management')}
-                </p>
-              </div>
-            </div>
+            {(() => {
+              // Branding source differs by portal: Super Admin uses the platform
+              // (Mecandria) company profile; tenants use their own company branding.
+              const brandName = isSuperAdmin
+                ? (platformProfile?.name || 'Mecandria')
+                : (company?.name || 'Inventory Management');
+              const logoSrc = isSuperAdmin
+                ? (platformProfile?.logo_data_url || getStaticUrl(platformProfile?.logo_url) || '')
+                : (company?.logo_data_url || getStaticUrl(company?.logo_url) || '');
+              const fullTitle = isSuperAdmin ? `${brandName} Super Admin` : brandName;
+              return (
+                <div className="mb-8 flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-primary">
+                    {logoSrc ? (
+                      <img src={logoSrc} alt={brandName} className="h-full w-full rounded-full object-cover" />
+                    ) : (
+                      <span className="material-icons text-white" aria-hidden="true">
+                        {isSuperAdmin ? 'admin_panel_settings' : 'business'}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0" title={fullTitle}>
+                    <p className="text-sm font-semibold leading-tight text-primary break-words line-clamp-2">
+                      {brandName}
+                    </p>
+                    {isSuperAdmin && (
+                      <p className="mt-0.5 text-[11px] font-bold uppercase tracking-wider text-neutral-400">
+                        Super Admin
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
             <nav aria-label="Primary" className="flex-1 space-y-1 overflow-hidden">
               {navGroups

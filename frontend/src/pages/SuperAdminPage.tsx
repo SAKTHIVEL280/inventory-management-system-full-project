@@ -7,6 +7,7 @@ import { AppLayout } from '../components/AppLayout';
 import { PageError, PageLoading, PageEmpty } from '../components/PageState';
 import { useAuthStore } from '../store/auth';
 import { superAdminApi, Tenant, TenantCreatePayload, TenantUpdatePayload, RaiseServiceInvoicePayload, ServiceInvoiceDetail } from '../api/superAdmin';
+import { planStyle } from '../utils/planStyles';
 
 const GST_RATES = [0, 5, 12, 18, 28];
 const rupees2 = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
@@ -18,12 +19,7 @@ const STATUSES = ['active', 'inactive', 'suspended', 'trial'];
 const PAYMENT_STATUSES = ['paid', 'pending', 'overdue', 'expired'];
 
 // Colour coding (used consistently in listing, detail, forms, dropdowns).
-const PLAN_BADGE: Record<string, string> = {
-  FREE: 'bg-neutral-200 text-neutral-700',
-  SILVER: 'bg-slate-300 text-slate-800',
-  GOLD: 'bg-amber-300 text-amber-900',
-  PLATINUM: 'bg-violet-200 text-violet-800',
-};
+// Plan colors come from the shared planStyles util so every screen matches.
 const STATUS_BADGE: Record<string, string> = {
   active: 'bg-green-100 text-green-700',
   trial: 'bg-blue-100 text-blue-700',
@@ -36,7 +32,7 @@ const PAYMENT_BADGE: Record<string, string> = {
   overdue: 'bg-red-100 text-red-700',
   expired: 'bg-red-200 text-red-900',
 };
-const planClass = (p?: string | null) => PLAN_BADGE[(p || '').toUpperCase()] ?? 'bg-neutral-200 text-neutral-700';
+const planClass = (p?: string | null) => planStyle(p).badge;
 const statusClass = (s?: string | null) => STATUS_BADGE[(s || '').toLowerCase()] ?? 'bg-neutral-200 text-neutral-600';
 const paymentClass = (p?: string | null) => PAYMENT_BADGE[(p || '').toLowerCase()] ?? 'bg-neutral-200 text-neutral-600';
 const badge = 'inline-block rounded-full px-2.5 py-0.5 text-xs font-bold capitalize';

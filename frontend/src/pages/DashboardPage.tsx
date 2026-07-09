@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { getDashboardStats, type DashboardStats as APIDashboardStats, type RevenueGeneration } from '../api/reports';
+import { useSubscription } from '../hooks/useSubscription';
+import { planStyle } from '../utils/planStyles';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { FileQuestion } from 'lucide-react';
 
@@ -121,6 +123,9 @@ const DashboardPage = () => {
   const [loading, setLoading] = useState(true);
   const [cashInFlowView, setCashInFlowView] = useState<'daily' | 'weekly' | 'monthly'>('daily');
 
+  // Current subscription plan (for the highlighted plan card).
+  const { plan, planName, userLimit, activeUserCount, expiryDate } = useSubscription();
+
   useEffect(() => {
     const fetchStats = async () => {
       try {
@@ -157,6 +162,50 @@ const DashboardPage = () => {
   return (
     <AppLayout title="Dashboard">
       <div className="space-y-6">
+        {/* Current subscription plan — prominent, color-coded highlight */}
+        {plan && (
+          <section
+            className={`relative overflow-hidden rounded-xl border shadow-sm ${planStyle(plan).card}`}
+          >
+            <div className={`absolute inset-x-0 top-0 h-1.5 ${planStyle(plan).accent}`} />
+            <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
+              <div className="flex items-center gap-4">
+                <span
+                  className={`flex h-12 w-12 items-center justify-center rounded-xl text-lg font-black shadow-inner ${planStyle(plan).badge}`}
+                  aria-hidden="true"
+                >
+                  {plan.charAt(0)}
+                </span>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-neutral-500">Current Plan</p>
+                  <div className="mt-0.5 flex items-center gap-2">
+                    <span className={`text-xl font-bold ${planStyle(plan).text}`}>{planName || plan}</span>
+                    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold uppercase tracking-wide ${planStyle(plan).badge}`}>
+                      {plan}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-6 text-sm">
+                {userLimit != null && (
+                  <div className="text-right">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Users</p>
+                    <p className="font-bold text-neutral-700">
+                      {activeUserCount ?? '—'}<span className="text-neutral-400"> / {userLimit}</span>
+                    </p>
+                  </div>
+                )}
+                {plan !== 'FREE' && expiryDate && (
+                  <div className="text-right">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Renews / Expires</p>
+                    <p className="font-bold text-neutral-700">{expiryDate}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
+
         {/* Financial KPI Cards */}
         <section className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
           <article className="hms-card p-5">
