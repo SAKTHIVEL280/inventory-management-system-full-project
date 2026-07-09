@@ -12,6 +12,13 @@ import { Link, Navigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { useSubscription } from '../hooks/useSubscription';
 import { PermissionScope } from '../types';
+import SubscriptionExpiredPage from '../pages/SubscriptionExpiredPage';
+
+const RouteSpinner = () => (
+  <div className="flex items-center justify-center min-h-screen bg-gray-50" role="status" aria-live="polite">
+    <div className="inline-block animate-spin rounded-full h-10 w-10 border-b-2 border-primary" />
+  </div>
+);
 
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -30,11 +37,21 @@ export const ProtectedRoute = ({
   requiredModule,
 }: ProtectedRouteProps) => {
   const { user, isAuthenticated } = useAuthStore();
-  const { canAccessModule, isLoading: subLoading } = useSubscription();
+  const { canAccessModule, isExpired, isLoading: subLoading } = useSubscription();
 
   // No token - redirect to login
   if (!isAuthenticated || !user) {
     return <Navigate to="/login" replace />;
+  }
+
+  // Subscription-expiry gate (front-line UX; the backend also 403s every tenant
+  // API, so this can't be bypassed). Applies to ALL tenant routes. Super Admins
+  // have no tenant plan and are unaffected. Wait for entitlements before deciding
+  // so we never flash a real page. Renders the expired page in place (data is
+  // preserved server-side and returns automatically once renewed).
+  if (!user.is_super_admin) {
+    if (subLoading) return <RouteSpinner />;
+    if (isExpired) return <SubscriptionExpiredPage />;
   }
 
   // Plan-based module gate (BRD §5.5). Super Admins have no tenant plan and are
@@ -43,11 +60,7 @@ export const ProtectedRoute = ({
   // a module-locked API call); then redirect home if the plan excludes the module.
   if (requiredModule && !user.is_super_admin) {
     if (subLoading) {
-      return (
-        <div className="flex items-center justify-center min-h-screen bg-gray-50" role="status" aria-live="polite">
-          <div className="inline-block animate-spin rounded-full h-10 w-10 border-b-2 border-primary" />
-        </div>
-      );
+      return <RouteSpinner />;
     }
     if (!canAccessModule(requiredModule)) {
       return <Navigate to="/" replace />;

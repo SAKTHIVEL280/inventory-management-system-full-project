@@ -4,6 +4,7 @@
  * Shows the tenant's active plan and an expiry reminder (BRD §9.2). Renders
  * nothing for Super Admins (no tenant) or while entitlements are loading.
  */
+import { useLocation } from 'react-router-dom';
 import { useSubscription } from '../hooks/useSubscription';
 import { useAuthStore } from '../store/auth';
 
@@ -16,9 +17,13 @@ const daysUntil = (iso: string | null): number | null => {
 
 export const PlanBanner = () => {
   const user = useAuthStore((s) => s.user);
+  const location = useLocation();
   const { plan, expiryDate } = useSubscription();
 
   if (user?.is_super_admin || !plan) return null;
+  // The Dashboard shows the full premium SubscriptionCard, so skip the thin banner
+  // there to avoid duplication. It still appears on all other tenant pages.
+  if (location.pathname === '/dashboard') return null;
 
   // FREE plan has no subscription fee and never expires (BRD §5.1).
   const isFree = plan === 'FREE';

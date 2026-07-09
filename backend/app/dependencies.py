@@ -1,5 +1,5 @@
 """FastAPI dependencies for auth and database."""
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Optional
 from uuid import UUID
 from jose import JWTError, jwt
@@ -13,6 +13,51 @@ from app.models.user import User
 from app.services.auth_service import normalize_role
 
 security = HTTPBearer(auto_error=False)
+
+# Message shown (and returned to the frontend) when a paid subscription has lapsed.
+SUBSCRIPTION_EXPIRED_DETAIL = (
+    "Your subscription has expired. Please renew to restore access. Your data is "
+    "safe and will be available immediately after renewal."
+)
+
+
+def is_subscription_expired(plan, expiry_date) -> bool:
+    """True when a PAID plan's subscription has lapsed (date-based, live).
+
+    Rules:
+      * FREE never expires.
+      * No expiry date configured (NULL) is treated as NOT expired — the tenant has
+        no fixed term (e.g. the legacy tenant), so access is preserved until a
+        Super Admin sets an expiry. This avoids locking out un-dated tenants.
+      * Otherwise expired when expiry_date is strictly before today (access is
+        allowed through the whole expiry day).
+    """
+    from app.services.plan_service import normalize_plan, PLAN_FREE
+
+    if normalize_plan(plan) == PLAN_FREE:
+        return False
+    if expiry_date is None:
+        return False
+    return expiry_date < date.today()
+
+
+def _enforce_active_subscription(company, current_user: User) -> None:
+    """Block tenant access when the subscription has expired (data is untouched).
+
+    Impersonated Super Admin sessions (support/renewal) bypass this so the platform
+    team can still reach the tenant. Raises 403 with an `X-Subscription-Status:
+    expired` header the frontend can detect.
+    """
+    if getattr(current_user, "is_impersonated", False):
+        return
+    plan = getattr(company, "subscription_plan", None)
+    expiry = getattr(company, "subscription_expiry_date", None)
+    if is_subscription_expired(plan, expiry):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=SUBSCRIPTION_EXPIRED_DETAIL,
+            headers={"X-Subscription-Status": "expired"},
+        )
 
 
 async def get_current_user(
@@ -41,18 +86,23 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",
         )
-    
+
     user = db.query(User).filter(
         User.id == user_id,
         User.is_active == True,
         User.is_deleted == False,
     ).first()
-    
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found or inactive",
         )
+
+    # Mark impersonated Super Admin support sessions (token carries `impersonated_by`)
+    # so subscription-expiry gates can let the platform team through to the tenant.
+    # Transient, non-persisted attribute — never a DB column.
+    user.is_impersonated = bool(payload.get("impersonated_by"))
 
     # Multi-tenant (M4): block access when the user's tenant is not active
     # (deactivated/suspended by a Super Admin). Super Admins (no tenant) skip this.
@@ -84,7 +134,10 @@ def require_super_admin(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
-def require_tenant(current_user: User = Depends(get_current_user)) -> User:
+def require_tenant(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
     """Dependency: require an active tenant context for tenant-scoped endpoints.
 
     Hard tenant-isolation boundary (BRD §10 Data Isolation, §4): a platform Super
@@ -97,6 +150,9 @@ def require_tenant(current_user: User = Depends(get_current_user)) -> User:
     with a soft `if company_id:` guard: without a tenant those filters were skipped,
     returning every tenant's rows merged. Requiring a tenant guarantees the filter
     always applies.
+
+    Also enforces subscription expiry: an expired PAID plan is blocked here (data is
+    preserved and untouched) so no tenant data endpoint is reachable past expiry.
     """
     if getattr(current_user, "is_super_admin", False):
         raise HTTPException(
@@ -110,6 +166,16 @@ def require_tenant(current_user: User = Depends(get_current_user)) -> User:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User is not associated with any company",
+        )
+
+    from app.models.company import Company
+    sub = db.query(
+        Company.subscription_plan, Company.subscription_expiry_date
+    ).filter(Company.id == current_user.company_id).first()
+    if sub is not None:
+        _enforce_active_subscription(
+            type("_Sub", (), {"subscription_plan": sub[0], "subscription_expiry_date": sub[1]})(),
+            current_user,
         )
     return current_user
 
@@ -263,7 +329,13 @@ def require_module(*modules: str):
     """
     from app.services.plan_service import plan_allows_any_module, upgrade_message
 
-    async def check_module(company=Depends(get_current_company)):
+    async def check_module(
+        company=Depends(get_current_company),
+        current_user: User = Depends(get_current_user),
+    ):
+        # Subscription expiry is enforced first: an expired paid plan blocks every
+        # module (data preserved). Impersonated Super Admin sessions bypass it.
+        _enforce_active_subscription(company, current_user)
         plan = getattr(company, "subscription_plan", None)
         if not plan_allows_any_module(plan, modules):
             raise HTTPException(

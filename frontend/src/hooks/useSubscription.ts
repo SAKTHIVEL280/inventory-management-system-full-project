@@ -54,6 +54,22 @@ export const useSubscription = () => {
     [data],
   );
 
+  // Subscription expiry (mirrors the backend rule): PAID plans expire the day AFTER
+  // their expiry date; FREE never expires; no date set = no fixed term (not expired).
+  // The backend is authoritative (blocks with 403) — this drives the UI expired page.
+  const { isExpired, daysRemaining } = useMemo(() => {
+    if (!data || data.plan === 'FREE' || !data.subscription_expiry_date) {
+      return { isExpired: false, daysRemaining: null as number | null };
+    }
+    const exp = new Date(data.subscription_expiry_date);
+    if (Number.isNaN(exp.getTime())) return { isExpired: false, daysRemaining: null };
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    exp.setHours(0, 0, 0, 0);
+    const days = Math.round((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    return { isExpired: days < 0, daysRemaining: days };
+  }, [data]);
+
   return useMemo(
     () => ({
       subscription: data,
@@ -69,8 +85,10 @@ export const useSubscription = () => {
       activeUserCount: data?.active_user_count ?? null,
       atUserLimit: !!data && data.active_user_count >= data.user_limit,
       expiryDate: data?.subscription_expiry_date ?? null,
+      isExpired,
+      daysRemaining,
       rolesCatalog: data?.roles_catalog ?? [],
     }),
-    [data, query.isLoading, canAccessModule, isModuleLocked, canAccessFeature],
+    [data, query.isLoading, canAccessModule, isModuleLocked, canAccessFeature, isExpired, daysRemaining],
   );
 };
