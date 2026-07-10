@@ -4,10 +4,21 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { AppLayout } from '../components/AppLayout';
 import { PageError, PageLoading, PageEmpty } from '../components/PageState';
+import { PaymentStatusBadge } from '../components/PaymentStatusBadge';
 import { serviceInvoiceApi, ServiceInvoicePayload, ServiceInvoice } from '../api/serviceInvoice';
 
 const rupees = (paise: number | undefined) =>
   paise == null ? '—' : `₹${(paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+
+// Color-coded invoice lifecycle status (draft/issued/paid/cancelled). Presentational only.
+const invoiceStatusClass = (status?: string | null): string => {
+  switch ((status || '').trim().toLowerCase()) {
+    case 'paid': return 'bg-green-100 text-green-700';
+    case 'issued': return 'bg-blue-100 text-blue-700';
+    case 'cancelled': return 'bg-red-100 text-red-700';
+    default: return 'bg-neutral-100 text-neutral-600'; // draft / unknown
+  }
+};
 
 type ItemForm = {
   item_name: string;
@@ -198,8 +209,8 @@ const ServiceInvoicePage = () => {
                       <td className="px-3 py-3 text-neutral-600">{inv.invoice_date}</td>
                       <td className="px-3 py-3">{inv.customer_name}</td>
                       <td className="px-3 py-3 font-medium">{rupees(inv.grand_total)}</td>
-                      <td className="px-3 py-3"><span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs">{inv.status}</span></td>
-                      <td className="px-3 py-3 text-neutral-600">{inv.payment_status}</td>
+                      <td className="px-3 py-3"><span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${invoiceStatusClass(inv.status)}`}>{inv.status}</span></td>
+                      <td className="px-3 py-3"><PaymentStatusBadge status={inv.payment_status} /></td>
                       <td className="px-3 py-3">
                         <div className="flex gap-2">
                           <button type="button" onClick={() => setViewing(inv)} className="rounded px-2 py-1 text-xs font-semibold text-neutral-700 hover:bg-neutral-100">View</button>
@@ -234,7 +245,8 @@ const ServiceInvoicePage = () => {
               <div><span className="text-neutral-400">Date:</span> {viewing.invoice_date}</div>
               <div><span className="text-neutral-400">Due:</span> {viewing.due_date || '—'}</div>
               <div><span className="text-neutral-400">Supply:</span> {viewing.supply_type === 'inter' ? 'Inter-state (IGST)' : 'Intra-state (CGST+SGST)'}</div>
-              <div><span className="text-neutral-400">Status:</span> <span className="capitalize">{viewing.status}</span></div>
+              <div className="flex items-center gap-2"><span className="text-neutral-400">Status:</span> <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${invoiceStatusClass(viewing.status)}`}>{viewing.status}</span></div>
+              <div className="flex items-center gap-2"><span className="text-neutral-400">Payment:</span> <PaymentStatusBadge status={viewing.payment_status} size="sm" /></div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
