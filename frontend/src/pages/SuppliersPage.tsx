@@ -6,6 +6,9 @@ import { z } from 'zod';
 import { suppliersApi } from '../api/suppliers';
 import { Supplier } from '../types';
 import { AppLayout } from '../components/AppLayout';
+import { PaginationControls } from '../components/PaginationControls';
+import { usePagination } from '../hooks/usePagination';
+import { fetchAllPages } from '../utils/fetchAllPages';
 import { PageEmpty, PageError, PageLoading } from '../components/PageState';
 import { getApiDetail, getApiDetailMessage } from '../utils/apiError';
 import { showError, showSuccess } from '../utils/toastHelper';
@@ -310,7 +313,12 @@ const SuppliersPage = () => {
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['suppliers'],
-    queryFn: () => suppliersApi.list({ page: 1, page_size: 500 }),
+    // Fetch the complete tenant dataset (chunked) so pagination supports thousands
+    // of records with no hardcoded page-size cap.
+    queryFn: () => fetchAllPages<Supplier>(async (p, size) => {
+      const res = await suppliersApi.list({ page: p, page_size: size });
+      return { items: res.items ?? [], total: res.total ?? 0 };
+    }),
   });
 
   const { data: customizationOptions } = useQuery({
@@ -569,6 +577,11 @@ const SuppliersPage = () => {
     sortDirection,
     statusFilter,
   ]);
+  // Standardized pagination (client-side slice of the filtered, tenant-scoped list).
+  const pagination = usePagination(
+    JSON.stringify([searchTerm, gstinFilter, businessTypeFilter, statusFilter, createdFrom, createdTo, sortBy, sortDirection]),
+  );
+  const pagedItems = pagination.paginate(filteredItems);
   const isSaving = createMutation.isPending || updateMutation.isPending;
   const isDeleting = deleteMutation.isPending;
   const businessType = watch('business_type');
@@ -1063,7 +1076,7 @@ const SuppliersPage = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
-                {filteredItems.map((item) => (
+                {pagedItems.map((item) => (
                   <tr key={item.id} className="hover:bg-neutral-50/80">
                     <td className="px-4 py-3 font-mono text-xs">{item.supplier_code}</td>
                     <td className="px-4 py-3 font-medium">{item.company_name}</td>
@@ -1080,6 +1093,14 @@ const SuppliersPage = () => {
                 ))}
               </tbody>
             </table>
+            <PaginationControls
+              page={pagination.page}
+              pageSize={pagination.pageSize}
+              total={filteredItems.length}
+              onPageChange={pagination.setPage}
+              onPageSizeChange={pagination.setPageSize}
+              entityLabel="suppliers"
+            />
             </div>
           )}
           </div>

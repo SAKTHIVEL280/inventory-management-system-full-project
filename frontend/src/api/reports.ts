@@ -395,6 +395,26 @@ export const getDashboardStats = async (): Promise<DashboardStats> => {
   return response.data;
 };
 
+// MCN-BUG-01: Financial-Year sales trend (Apr → Mar). Optional `month` (1-12)
+// drills into that month's daily totals.
+export interface SalesTrendPoint { label: string; period: string; amount: number }
+export interface SalesTrendResponse {
+  financial_year: number;
+  financial_year_label: string;
+  month: number | null;
+  granularity: 'month' | 'day';
+  total: number;
+  points: SalesTrendPoint[];
+}
+
+export const getSalesTrend = async (financialYear?: number, month?: number): Promise<SalesTrendResponse> => {
+  const params: Record<string, number> = {};
+  if (financialYear != null) params.financial_year = financialYear;
+  if (month != null) params.month = month;
+  const response = await apiClient.get('/api/v2/reports/sales-trend', { params });
+  return response.data;
+};
+
 /**
  * Fetch stock report
  */

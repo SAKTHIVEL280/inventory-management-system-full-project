@@ -67,3 +67,19 @@
 - **DB-221** (Users email partial unique): `migrations/0025_users_email_partial_unique.sql` (+ rollback). Replaces the global `UNIQUE(email)` on `users` with a **partial** unique index `ux_users_email_active (email) WHERE is_deleted=false`, so email stays globally unique among active users but a deleted user's email can be reused. Model `unique=True` removed; mirrored in `01_schema.sql` + `run_migration.py`. **Action:** re-run `python run_migration.py`.
 
 - **DB-222** (Subscription Plan Configuration): `migrations/0026_subscription_plans.sql` (+ rollback). New `subscription_plans` table (one row per plan) holding the DB-backed, Super-Admin-editable plan matrix: `plan_key` (UNIQUE), `name`, `price_paise` BIGINT, `billing_period`, `user_limit`, `modules`/`features`/`roles` JSONB, `free_invoice_cap`, `is_active`, `sort_order`, timestamps; index `ix_subscription_plans_plan_key`. Idempotently **seeds** FREE/SILVER/GOLD/PLATINUM from the current code defaults via `ON CONFLICT (plan_key) DO NOTHING` (never clobbers Super Admin edits on re-run). Mirrored in `01_schema.sql` (fresh installs) and `run_migration.py`. **Action:** re-run `python run_migration.py`. No existing table altered; fully additive. Executed on the dev DB (migration successful; 4 plans seeded).
+
+- **MCN-BUG-01** (Sales Trend — Financial Year): **No database/schema change.** The FY (April→March) grouping and month drill-down are computed in the query/aggregation layer (`reports.py`) from existing `sales_invoices` / `service_invoices` `invoice_date` columns; all queries remain `company_id`-scoped. Listed here to record that no migration was required.
+
+- **MCN-BUG-02** (Free Quantity Not Deducted from Stock): **No database/schema change.** Fixed in the aggregation layer — the batch-availability queries now sum `quantity + COALESCE(free_quantity, 0)` for sales issues (matching the stock ledger). Data already stored correctly; no migration or backfill required.
+
+- **MCN-BUG-03** (Accounts Receivable list limit): **No database/schema change.** Fixed by removing the frontend pagination dependency and adding a DB-direct open-invoices endpoint; queries are `company_id`-scoped. No migration required.
+
+- **MCN-BUG-04** (Sales Manager Revenue Report): **No database/schema change.** Fixed the aggregation grouping key (created_by → `sales_manager_name`) in `reports.py`; still `company_id`-scoped. No migration required.
+
+- **MCN-BUG-05** (Historical approved invoice in Accounts Receivable): **No database/schema change.** Resolved by the same DB-direct, date-filter-free, `company_id`-scoped open-invoices query used for BUG-03. No migration required.
+
+- **Standardized pagination**: **No database/schema change.** Pagination is applied in the API/frontend layers over existing, `company_id`-scoped queries. No migration required.
+
+- **BE-260 (Receivables edit fix)**: **No database/schema change.** New update endpoint + payment_id-aware open-invoices lookup operate over existing `payments` / `payment_allocations` / `sales_invoices` tables; all queries `company_id`-scoped. No migration required.
+
+- **DB-224 / BE-261** (Invoice settlement cleared-only recompute): `migrations/0028_invoice_settlement_cleared_only.sql` (+ rollback note). **Data-only, idempotent** UPDATE that re-derives every non-deleted sales invoice's `amount_paid` / `amount_due` / `status` from its **CLEARED** payment allocations (pending receipts no longer settle). Does not touch cancelled/returned/draft statuses. Mirrored in `run_migration.py`. **Action:** re-run `python run_migration.py` (recomputes existing invoices). No schema change. Executed on dev DB — e.g. INV-00002 corrected from ₹0/paid to ₹400/partial_paid.

@@ -1195,6 +1195,36 @@ def main() -> int:
                  NULL, TRUE, 4)
             ON CONFLICT (plan_key) DO NOTHING
             """,
+
+            # BE-261: settle invoices from CLEARED receipts only. Re-derive every
+            # invoice's amount_paid/amount_due/status from its cleared allocations
+            # (pending receipts reserve capacity but no longer settle). Idempotent.
+            """
+            UPDATE sales_invoices si
+            SET amount_paid = sub.paid,
+                amount_due  = si.total_amount - sub.paid,
+                status = CASE
+                    WHEN lower(trim(si.status)) NOT IN ('issued','partial_paid','paid') THEN si.status
+                    WHEN si.total_amount > 0 AND si.total_amount - sub.paid = 0 THEN 'paid'
+                    WHEN sub.paid > 0 THEN 'partial_paid'
+                    ELSE 'issued'
+                END
+            FROM (
+                SELECT si2.id,
+                       LEAST(si2.total_amount, COALESCE((
+                           SELECT SUM(pa.allocated_amount)
+                           FROM payment_allocations pa
+                           JOIN payments p ON p.id = pa.payment_id
+                           WHERE pa.invoice_id = si2.id
+                             AND pa.is_deleted = false
+                             AND p.is_deleted = false
+                             AND lower(trim(p.status)) IN ('cleared','advance_payment_cleared','advance_cleared','full_payment_cleared')
+                       ), 0)) AS paid
+                FROM sales_invoices si2
+                WHERE si2.is_deleted = false
+            ) sub
+            WHERE si.id = sub.id AND si.is_deleted = false
+            """,
     ]
 
     with engine.begin() as conn:

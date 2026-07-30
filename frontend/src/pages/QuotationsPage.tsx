@@ -16,6 +16,9 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AppLayout } from '../components/AppLayout';
+import { PaginationControls } from '../components/PaginationControls';
+import { usePagination } from '../hooks/usePagination';
+import { fetchAllPages } from '../utils/fetchAllPages';
 import { salesApi, type Quotation, type CreateQuotationPayload, type SalesLineItem } from '../api/sales';
 import { apiClient } from '../api/client';
 import { toast } from 'sonner';
@@ -66,10 +69,15 @@ const QuotationsPage = () => {
   const fetchQuotations = async () => {
     try {
       setLoading(true);
-      const res = await salesApi.listQuotations(statusFilter || undefined, 1, 20, {
-        archived_only: archiveView === 'archived',
+      // Fetch the complete tenant dataset (chunked) so client-side filtering +
+      // pagination see every record, not just the first page.
+      const { items } = await fetchAllPages<Quotation>(async (p, size) => {
+        const res = await salesApi.listQuotations(statusFilter || undefined, p, size, {
+          archived_only: archiveView === 'archived',
+        });
+        return { items: res.data.items || [], total: res.data.total ?? 0 };
       });
-      setQuotations(res.data.items || []);
+      setQuotations(items);
     } catch {
       setError('Failed to load quotations');
     } finally {
@@ -310,6 +318,10 @@ const QuotationsPage = () => {
     return matchesSearch && matchesFrom && matchesTo;
   });
 
+  // Standardized pagination (client-side slice of the filtered, tenant-scoped list).
+  const pagination = usePagination(JSON.stringify([searchQuery, statusFilter, dateFrom, dateTo]));
+  const pagedQuotations = pagination.paginate(filteredQuotations);
+
   return (
     <AppLayout title="Quotations">
       <div className="space-y-6">
@@ -395,7 +407,7 @@ const QuotationsPage = () => {
                   <tr><td colSpan={7} className="px-4 py-8 text-center text-neutral-500">Loading...</td></tr>
                 ) : filteredQuotations.length === 0 ? (
                   <tr><td colSpan={7} className="px-4 py-8 text-center text-neutral-500">No quotations found</td></tr>
-                ) : filteredQuotations.map(q => (
+                ) : pagedQuotations.map(q => (
                   <tr key={q.id} className="border-b border-neutral-100 hover:bg-neutral-50">
                     <td className="px-4 py-3 font-medium">{q.quotation_number}</td>
                     <td className="px-4 py-3">{customerNameById(q.customer_id)}</td>
@@ -451,7 +463,16 @@ const QuotationsPage = () => {
               </tbody>
             </table>
           </div>
-          {!loading && <p className="border-t border-neutral-200 px-4 py-3 text-xs text-neutral-500">Showing {filteredQuotations.length} of {quotations.length} record(s)</p>}
+          {!loading && (
+            <PaginationControls
+              page={pagination.page}
+              pageSize={pagination.pageSize}
+              total={filteredQuotations.length}
+              onPageChange={pagination.setPage}
+              onPageSizeChange={pagination.setPageSize}
+              entityLabel="quotations"
+            />
+          )}
         </div>
 
         {/* Create/Edit Modal */}

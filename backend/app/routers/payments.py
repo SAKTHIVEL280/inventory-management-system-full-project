@@ -12,7 +12,7 @@ import re
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 
 from app.database import get_db
 from app.dependencies import enforce_resource_ownership, require_permissions, require_role, scope_query_to_company
@@ -304,17 +304,100 @@ def _reverse_invoice_allocation(db: Session, invoice_id: UUID, amount: int) -> N
         invoice.status = "partial_paid"
 
 
-def _get_customer_open_invoices(db: Session, customer_id: UUID) -> list[SalesInvoice]:
+# ── Settlement model: only CLEARED receipts reduce an invoice's outstanding ──
+# A pending (uncleared) receipt reserves allocation capacity but does NOT settle
+# the invoice until it clears. Invoice amount_paid/amount_due/status are therefore
+# derived from the sum of allocations belonging to CLEARED payments only; pending
+# allocations reserve capacity so an invoice can't be over-allocated.
+CLEARED_PAYMENT_STATUSES = ("cleared", "advance_payment_cleared", "advance_cleared", "full_payment_cleared")
+ACTIVE_PAYMENT_STATUSES = ("pending",) + CLEARED_PAYMENT_STATUSES
+
+
+def _sum_invoice_allocations(db: Session, invoice_id: UUID, statuses, exclude_payment_id: UUID | None = None) -> int:
+    q = (
+        db.query(func.coalesce(func.sum(PaymentAllocation.allocated_amount), 0))
+        .join(Payment, PaymentAllocation.payment_id == Payment.id)
+        .filter(
+            PaymentAllocation.invoice_id == invoice_id,
+            PaymentAllocation.is_deleted == False,
+            Payment.is_deleted == False,
+            func.lower(func.trim(Payment.status)).in_(statuses),
+        )
+    )
+    if exclude_payment_id is not None:
+        q = q.filter(Payment.id != exclude_payment_id)
+    return int(q.scalar() or 0)
+
+
+def _recompute_invoice_settlement(db: Session, invoice_id: UUID) -> None:
+    """Recompute an invoice's paid/due/status from its CLEARED allocations only."""
+    invoice = db.query(SalesInvoice).filter(SalesInvoice.id == invoice_id, SalesInvoice.is_deleted == False).first()
+    if not invoice:
+        return
+    total = int(invoice.total_amount or 0)
+    paid = min(_sum_invoice_allocations(db, invoice_id, CLEARED_PAYMENT_STATUSES), total)
+    invoice.amount_paid = paid
+    invoice.amount_due = max(0, total - paid)
+    # Only manage the normal receivable statuses; never override returned/cancelled/draft.
+    if (invoice.status or "").strip().lower() in ("issued", "partial_paid", "paid"):
+        if total > 0 and invoice.amount_due == 0:
+            invoice.status = "paid"
+        elif paid > 0:
+            invoice.status = "partial_paid"
+        else:
+            invoice.status = "issued"
+
+
+def _invoice_alloc_capacity(db: Session, invoice_id: UUID, exclude_payment_id: UUID | None = None) -> int:
+    """Remaining amount that can still be allocated to an invoice.
+
+    = total − allocations already reserved by ACTIVE (pending + cleared) payments,
+    optionally excluding one payment (used when editing that payment).
+    """
+    invoice = db.query(SalesInvoice).filter(SalesInvoice.id == invoice_id).first()
+    if not invoice:
+        return 0
+    total = int(invoice.total_amount or 0)
+    reserved = _sum_invoice_allocations(db, invoice_id, ACTIVE_PAYMENT_STATUSES, exclude_payment_id)
+    return max(0, total - reserved)
+
+
+def _customer_candidate_invoices(db: Session, customer_id: UUID, company_id: UUID):
+    """Non-cancelled, non-deleted invoices for a customer (tenant-scoped)."""
     return (
         db.query(SalesInvoice)
         .filter(
             SalesInvoice.customer_id == customer_id,
+            SalesInvoice.company_id == company_id,
             SalesInvoice.is_deleted == False,
-            SalesInvoice.amount_due > 0,
-            SalesInvoice.status.in_(["issued", "partial_paid"]),
+            func.lower(func.trim(SalesInvoice.status)).in_(("issued", "partial_paid", "paid")),
         )
+        .order_by(SalesInvoice.invoice_date.asc())
         .all()
     )
+
+
+def _get_customer_open_invoices(
+    db: Session, customer_id: UUID, company_id: UUID | None = None
+) -> list[SalesInvoice]:
+    """All open (unpaid / partially paid) approved invoices for a customer.
+
+    MCN-BUG-03 / MCN-BUG-05: fetched directly from the database with NO date, month,
+    financial-year, or pagination limit — so historical invoices from any period
+    remain selectable until fully settled. Only invoices with an outstanding balance
+    (`amount_due > 0`) and status issued/partial_paid are returned; paid, cancelled,
+    deleted and rejected invoices are excluded. `company_id` scoping enforces
+    multi-tenant isolation (no cross-tenant invoices).
+    """
+    query = db.query(SalesInvoice).filter(
+        SalesInvoice.customer_id == customer_id,
+        SalesInvoice.is_deleted == False,
+        SalesInvoice.amount_due > 0,
+        SalesInvoice.status.in_(["issued", "partial_paid"]),
+    )
+    if company_id is not None:
+        query = query.filter(SalesInvoice.company_id == company_id)
+    return query.order_by(SalesInvoice.invoice_date.asc()).all()
 
 
 # BUG-15: Supplier GRN allocation tracking
@@ -512,11 +595,13 @@ async def create_payment(
             raise HTTPException(status_code=400, detail="Invalid customer")
         _enforce_owner(customer, current_user)
 
-        open_invoices = _get_customer_open_invoices(db, payload.customer_id)
-        if not open_invoices:
+        # Candidate invoices + remaining allocation capacity (pending allocations
+        # reserve capacity so an invoice cannot be over-allocated).
+        candidates = _customer_candidate_invoices(db, payload.customer_id, current_user.company_id)
+        capacity = {inv.id: _invoice_alloc_capacity(db, inv.id) for inv in candidates}
+        allocatable_ids = {inv.id for inv in candidates if capacity[inv.id] > 0}
+        if not allocatable_ids:
             raise HTTPException(status_code=400, detail="No Open Invoice")
-        for invoice in open_invoices:
-            _enforce_owner(invoice, current_user)
 
         # MCN-BUG-003: invoice allocation is mandatory for customer payments — block
         # "floating" receipts that distort accounts receivable balances.
@@ -530,17 +615,18 @@ async def create_payment(
                 detail="Please allocate the payment against at least one invoice before saving.",
             )
 
-        open_invoice_ids = {invoice.id for invoice in open_invoices}
         for allocation in payload.allocations:
             if allocation.purchase_grn_id:
                 raise HTTPException(status_code=400, detail="GRN allocations are not allowed for customer payments")
             if not allocation.invoice_id:
                 raise HTTPException(status_code=400, detail="invoice_id is required for customer payment allocations")
-            if allocation.invoice_id not in open_invoice_ids:
+            if allocation.invoice_id not in allocatable_ids:
                 raise HTTPException(
                     status_code=400,
                     detail="Selected invoice is not an open invoice for this customer",
                 )
+            if _to_minor_units(allocation.allocated_amount) > capacity.get(allocation.invoice_id, 0):
+                raise HTTPException(status_code=400, detail="Allocated amount exceeds invoice due")
 
     selected_po = None
     if payload.party_type == "supplier" and payload.purchase_order_id:
@@ -638,9 +724,9 @@ async def create_payment(
             purchase_grn_id=allocation.purchase_grn_id,
             allocated_amount=_to_minor_units(allocation.allocated_amount),
         ))
-        # BUG-15: Handle both invoice and GRN allocations
-        if allocation.invoice_id:
-            _apply_invoice_allocation(db, allocation.invoice_id, _to_minor_units(allocation.allocated_amount))
+        # GRN allocation tracking (supplier side) is recorded here; invoice
+        # settlement is NOT applied on creation — the payment is pending and only
+        # settles the invoice when it CLEARS (see update_payment_status).
         if allocation.purchase_grn_id:
             _apply_grn_allocation(db, allocation.purchase_grn_id, _to_minor_units(allocation.allocated_amount))
 
@@ -668,8 +754,194 @@ async def create_payment(
         },
         ip_address=request.client.host if request.client else None,
     )
-    
+
     return payment
+
+
+@router.put("/{payment_id}")
+async def update_payment(
+    payment_id: UUID,
+    payload: PaymentCreateRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("payments_write", "receipts_write")),
+):
+    """Edit a PENDING payment: reverse its current allocations, then re-apply the new
+    ones (and update the payment fields).
+
+    Previously the Receivables/Payables "Edit" action always POSTed a brand-new
+    payment (a silent duplicate), and the settled invoice was invisible to the edit
+    form. This properly updates the existing payment and keeps invoice balances
+    consistent. Only pending payments may be edited (cleared/bounced/cancelled must
+    be handled via the status workflow). Tenant-scoped + owner-enforced.
+    """
+    payment = (
+        db.query(Payment)
+        .filter(Payment.id == payment_id, Payment.is_deleted == False)
+        .first()
+    )
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    _enforce_owner(payment, current_user)
+    if (payment.status or "").strip().lower() != "pending":
+        raise HTTPException(
+            status_code=400,
+            detail="Only pending payments can be edited. Cleared, bounced or cancelled payments cannot be modified.",
+        )
+
+    normalized_amount = _to_minor_units(payload.amount)
+    total_allocated = sum(_to_minor_units(a.allocated_amount) for a in payload.allocations)
+    if normalized_amount <= 0:
+        raise HTTPException(status_code=400, detail="Payment amount must be greater than zero")
+    if total_allocated > normalized_amount:
+        raise HTTPException(status_code=400, detail="Total allocations exceed payment amount")
+
+    # 1) Soft-delete the existing allocation rows (settlement is recomputed from
+    #    CLEARED allocations at the end, so no manual reversal is needed).
+    existing_allocs = (
+        db.query(PaymentAllocation)
+        .filter(PaymentAllocation.payment_id == payment.id, PaymentAllocation.is_deleted == False)
+        .all()
+    )
+    affected_invoice_ids = set()
+    for a in existing_allocs:
+        if a.invoice_id:
+            affected_invoice_ids.add(a.invoice_id)
+        if a.purchase_grn_id:
+            _reverse_grn_allocation(db, a.purchase_grn_id, int(a.allocated_amount or 0))
+        a.is_deleted = True
+        a.deleted_at = datetime.utcnow()
+    db.flush()
+
+    # 2) Validate the new allocations against remaining capacity (excluding THIS
+    #    payment's just-removed allocations).
+    if payment.party_type == "customer":
+        cust_id = payload.customer_id or payment.customer_id
+        customer = db.query(Customer).filter(Customer.id == cust_id, Customer.is_deleted == False).first()
+        if not customer:
+            raise HTTPException(status_code=400, detail="Invalid customer")
+        _enforce_owner(customer, current_user)
+        candidates = _customer_candidate_invoices(db, cust_id, current_user.company_id)
+        capacity = {inv.id: _invoice_alloc_capacity(db, inv.id, exclude_payment_id=payment.id) for inv in candidates}
+        allocatable_ids = {iid for iid, cap in capacity.items() if cap > 0}
+        invoice_allocs = [a for a in payload.allocations if a.invoice_id and _to_minor_units(a.allocated_amount) > 0]
+        if not invoice_allocs:
+            raise HTTPException(status_code=400, detail="Please allocate the payment against at least one invoice before saving.")
+        for a in payload.allocations:
+            if a.purchase_grn_id:
+                raise HTTPException(status_code=400, detail="GRN allocations are not allowed for customer payments")
+            if not a.invoice_id:
+                raise HTTPException(status_code=400, detail="invoice_id is required for customer payment allocations")
+            if a.invoice_id not in allocatable_ids:
+                raise HTTPException(status_code=400, detail="Selected invoice is not an open invoice for this customer")
+            if _to_minor_units(a.allocated_amount) > capacity.get(a.invoice_id, 0):
+                raise HTTPException(status_code=400, detail="Allocated amount exceeds invoice due")
+
+    # 3) Update the payment fields.
+    payment.payment_date = payload.payment_date
+    payment.amount = normalized_amount
+    payment.payment_mode = payload.payment_mode
+    payment.reference_number = payload.reference_number
+    payment.cheque_date = payload.cheque_date
+    payment.bank_name = payload.bank_name
+    payment.notes = _attach_po_meta_to_notes(payload.notes, payload.purchase_order_id)
+
+    # 4) Record the new allocation rows (invoice settlement stays cleared-based).
+    for allocation in payload.allocations:
+        amt = _to_minor_units(allocation.allocated_amount)
+        if allocation.invoice_id:
+            affected_invoice_ids.add(allocation.invoice_id)
+        db.add(PaymentAllocation(
+            payment_id=payment.id,
+            invoice_id=allocation.invoice_id,
+            purchase_grn_id=allocation.purchase_grn_id,
+            allocated_amount=amt,
+        ))
+        if allocation.purchase_grn_id:
+            _apply_grn_allocation(db, allocation.purchase_grn_id, amt)
+
+    # 5) Recompute settlement for every affected invoice (cleared-only basis).
+    db.flush()
+    for iid in affected_invoice_ids:
+        _recompute_invoice_settlement(db, iid)
+
+    db.commit()
+    db.refresh(payment)
+
+    log_audit_event(
+        db,
+        action=f"PUT:/api/v1/payments/{payment_id}",
+        resource_type="payments",
+        status="success",
+        user_id=current_user.id,
+        resource_id=payment.id,
+        details={"payment_number": payment.payment_number, "amount": payment.amount, "method": "PUT"},
+        ip_address=request.client.host if request.client else None,
+    )
+    return {"id": str(payment.id), "payment_number": payment.payment_number, "status": payment.status, "message": "Payment updated"}
+
+
+@router.get("/customer-open-invoices/{customer_id}")
+async def get_customer_open_invoices(
+    customer_id: UUID,
+    payment_id: UUID | None = Query(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("receipts_read", "receipts_write")),
+):
+    """Return ALL open (outstanding) approved invoices for a customer, from the DB.
+
+    MCN-BUG-03 / MCN-BUG-05: the frontend previously fetched only the first page of
+    the global invoice list and filtered client-side, so historical / beyond-page
+    invoices were missed ("No Open Invoice"). This returns every open invoice for
+    the customer directly from the database — any month or financial year — until
+    fully settled. Tenant-scoped: the customer must belong to the caller's company,
+    and invoices are filtered by the same `company_id`.
+    """
+    if current_user.company_id is None:
+        raise HTTPException(status_code=403, detail="User is not assigned to a company")
+
+    customer = (
+        db.query(Customer)
+        .filter(
+            Customer.id == customer_id,
+            Customer.is_deleted == False,
+            Customer.company_id == current_user.company_id,   # cross-tenant protection
+        )
+        .first()
+    )
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+
+    # Selectable amount per invoice = remaining allocation capacity (total minus
+    # what active pending/cleared payments already reserve). When editing a payment
+    # (`payment_id`), that payment's own reservation is excluded, so its invoices
+    # remain selectable and show the amount it can re-allocate. This replaces the
+    # old "gross-up" and is consistent with the cleared-only settlement model.
+    exclude_id = payment_id if payment_id is not None else None
+    items = []
+    for inv in _customer_candidate_invoices(db, customer_id, current_user.company_id):
+        capacity = _invoice_alloc_capacity(db, inv.id, exclude_payment_id=exclude_id)
+        if capacity <= 0:
+            continue
+        items.append({
+            "id": str(inv.id),
+            "invoice_number": inv.invoice_number,
+            "invoice_date": inv.invoice_date.isoformat() if inv.invoice_date else None,
+            "due_date": inv.due_date.isoformat() if inv.due_date else None,
+            "customer_id": str(inv.customer_id),
+            "total_amount": int(inv.total_amount or 0),
+            "amount_paid": int(inv.amount_paid or 0),
+            # amount_due here is the allocatable capacity for this receipt.
+            "amount_due": int(capacity),
+            "actual_amount_due": int(inv.amount_due or 0),
+            "status": inv.status,
+        })
+    return {
+        "customer_id": str(customer_id),
+        "count": len(items),
+        "total_outstanding": sum(i["amount_due"] for i in items),
+        "items": items,
+    }
 
 
 @router.get("/{payment_id}")
@@ -766,16 +1038,28 @@ async def update_payment_status(
         raise HTTPException(status_code=400, detail="Invalid payment status")
 
     # BUG-15: Reverse both invoice AND GRN allocations on bounce/cancel
-    if requested_status in {"bounced", "cancelled"} and payment.status == "pending":
-        allocations = db.query(PaymentAllocation).filter(PaymentAllocation.payment_id == payment.id).all()
+    allocations = db.query(PaymentAllocation).filter(
+        PaymentAllocation.payment_id == payment.id, PaymentAllocation.is_deleted == False
+    ).all()
+
+    # GRN (supplier) tracking is reversed on bounce/cancel (no-op for the ledger,
+    # kept for audit consistency).
+    if requested_status in {"bounced", "cancelled"}:
         for allocation in allocations:
-            if allocation.invoice_id:
-                _reverse_invoice_allocation(db, allocation.invoice_id, allocation.allocated_amount)
             if allocation.purchase_grn_id:
                 _reverse_grn_allocation(db, allocation.purchase_grn_id, allocation.allocated_amount)
 
     old_payment_status = payment.status
     payment.status = requested_status
+    db.flush()  # persist the new status so the settlement recompute (a fresh query) sees it
+
+    # Re-derive each allocated invoice's settlement from CLEARED allocations only.
+    # pending → cleared now settles the invoice; pending → bounced/cancelled leaves
+    # it unchanged (it was never settled while pending).
+    for allocation in allocations:
+        if allocation.invoice_id:
+            _recompute_invoice_settlement(db, allocation.invoice_id)
+
     db.commit()
     db.refresh(payment)
 

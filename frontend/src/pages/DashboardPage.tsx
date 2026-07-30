@@ -13,7 +13,8 @@ import {
 import { useEffect, useState } from 'react';
 import { getDashboardStats, type DashboardStats as APIDashboardStats, type RevenueGeneration } from '../api/reports';
 import { SubscriptionCard } from '../components/SubscriptionCard';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { SalesTrendChart } from '../components/SalesTrendChart';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { FileQuestion } from 'lucide-react';
 
 const formatAmount = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
@@ -139,7 +140,6 @@ const DashboardPage = () => {
     fetchStats();
   }, []);
 
-  const salesTrend = stats?.sales_trend || [];
   const cashInFlowRows = stats?.cash_in_flow?.[cashInFlowView] || [];
   const cashInFlowSummary = stats?.cash_in_flow_summary?.[cashInFlowView] || {
     total_received_amount: 0,
@@ -242,22 +242,7 @@ const DashboardPage = () => {
 
         {/* Charts Row */}
         <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <div className="hms-card p-6">
-            <h3 className="mb-4 text-sm font-bold text-neutral-700">Sales Trend (Last 7 Days)</h3>
-            {!loading && salesTrend.length > 0 ? (
-              <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={salesTrend}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                  <YAxis tick={{ fontSize: 11 }} tickFormatter={v => formatAmountShort(v)} />
-                  <Tooltip formatter={(v) => formatAmount(Number(v ?? 0))} labelStyle={{ fontWeight: 600 }} />
-                  <Line type="monotone" dataKey="amount" stroke="#1E3A5F" strokeWidth={2.5} dot={{ fill: '#1E3A5F', r: 4 }} />
-                </LineChart>
-              </ResponsiveContainer>
-            ) : (
-              <NoDataPlaceholder message="No sales trend data available yet. Start creating invoices to see growth." />
-            )}
-          </div>
+          <SalesTrendChart />
 
           <div className="hms-card overflow-hidden p-6">
             <div className="mb-4 flex items-center justify-between gap-3">

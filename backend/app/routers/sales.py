@@ -339,7 +339,8 @@ def _build_product_batch_snapshot(db: Session, product_id: UUID) -> dict[str, di
             SalesInvoiceItem.batch_no,
             SalesInvoiceItem.manufacture_date,
             SalesInvoiceItem.expiry_date,
-            func.coalesce(func.sum(SalesInvoiceItem.quantity), 0).label("qty"),
+            # MCN-BUG-02: deduct billed + free quantity (matches the stock ledger).
+            func.coalesce(func.sum(SalesInvoiceItem.quantity + func.coalesce(SalesInvoiceItem.free_quantity, 0)), 0).label("qty"),
         )
         .join(SalesInvoice, SalesInvoiceItem.invoice_id == SalesInvoice.id)
         .filter(

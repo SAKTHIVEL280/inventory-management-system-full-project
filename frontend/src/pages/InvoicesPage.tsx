@@ -5,6 +5,9 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { AppLayout } from '../components/AppLayout';
+import { PaginationControls } from '../components/PaginationControls';
+import { DEFAULT_PAGE_SIZE, type PageSize } from '../hooks/usePagination';
+import { fetchAllPages } from '../utils/fetchAllPages';
 import { salesApi, type SalesInvoice, type CreateInvoicePayload, type SalesLineItem, type SalesInvoiceItem, type InvoiceTypeValue, type InvoiceBatchOption } from '../api/sales';
 import { stockistsApi, salesManagersApi } from '../api/masterData';
 import { apiClient } from '../api/client';
@@ -328,9 +331,9 @@ const InvoicesPage = () => {
   // Enhancement 3 (FR-21/FR-22): multi-select Stockist & Sales Manager filters
   const [stockistFilter, setStockistFilter] = useState<string[]>([]);
   const [salesManagerFilter, setSalesManagerFilter] = useState<string[]>([]);
-  // MCN-BUG-001: server-side pagination state
+  // Standardized pagination state (shared across the ERP; default 20 rows).
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<number | 'all'>(50);
+  const [pageSize, setPageSize] = useState<PageSize>(DEFAULT_PAGE_SIZE);
   const [total, setTotal] = useState(0);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [products, setProducts] = useState<ProductOption[]>([]);
@@ -437,19 +440,11 @@ const InvoicesPage = () => {
     try {
       setLoading(true);
       if (pageSize === 'all') {
-        const collected: SalesInvoice[] = [];
-        const chunk = 500;
-        let current = 1;
-        let fetchedTotal = 0;
-        for (;;) {
-          const res = await salesApi.listInvoices(statusFilter || undefined, current, chunk, filters);
-          const batch = res.data.items || [];
-          collected.push(...batch);
-          fetchedTotal = res.data.total ?? collected.length;
-          if (batch.length === 0 || collected.length >= fetchedTotal) break;
-          current += 1;
-        }
-        setInvoices(collected);
+        const { items, total: fetchedTotal } = await fetchAllPages<SalesInvoice>(async (p, size) => {
+          const res = await salesApi.listInvoices(statusFilter || undefined, p, size, filters);
+          return { items: res.data.items || [], total: res.data.total ?? 0 };
+        });
+        setInvoices(items);
         setTotal(fetchedTotal);
       } else {
         const res = await salesApi.listInvoices(statusFilter || undefined, page, pageSize, filters);
@@ -1044,10 +1039,6 @@ const InvoicesPage = () => {
     return products.find((p) => p.id === productId)?.name || productId;
   };
 
-  // MCN-BUG-001: filtering/searching now happens server-side; derive paging summary
-  const totalPages = pageSize === 'all' ? 1 : Math.max(1, Math.ceil(total / pageSize));
-  const rangeStart = total === 0 ? 0 : pageSize === 'all' ? 1 : (page - 1) * pageSize + 1;
-  const rangeEnd = pageSize === 'all' ? total : Math.min(page * pageSize, total);
 
   return (
     <AppLayout title="Sales Invoices">
@@ -1161,45 +1152,16 @@ const InvoicesPage = () => {
               </tbody>
             </table>
           </div>
-          {/* MCN-BUG-001: pagination controls — rows-per-page selector + Prev/Next + page indicator */}
+          {/* Standardized pagination controls (shared component) */}
           {!loading && (
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-200 px-4 py-3 text-xs text-neutral-600">
-              <div className="flex items-center gap-2">
-                <span className="font-medium">Rows per page</span>
-                <select
-                  className="rounded border border-neutral-200 bg-white px-2 py-1 text-xs"
-                  value={pageSize === 'all' ? 'all' : String(pageSize)}
-                  onChange={(e) => setPageSize(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-                >
-                  <option value="20">20</option>
-                  <option value="50">50</option>
-                  <option value="100">100</option>
-                  <option value="all">All</option>
-                </select>
-                <span className="text-neutral-500">
-                  {total === 0 ? 'No invoices' : `Showing ${rangeStart}-${rangeEnd} of ${total}`}
-                </span>
-              </div>
-              {pageSize !== 'all' && (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page <= 1}
-                    className="rounded border border-neutral-200 bg-white px-3 py-1 font-semibold text-neutral-700 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-neutral-50"
-                  >
-                    Previous
-                  </button>
-                  <span className="font-medium">Page {page} of {totalPages}</span>
-                  <button
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                    disabled={page >= totalPages}
-                    className="rounded border border-neutral-200 bg-white px-3 py-1 font-semibold text-neutral-700 disabled:cursor-not-allowed disabled:opacity-40 hover:bg-neutral-50"
-                  >
-                    Next
-                  </button>
-                </div>
-              )}
-            </div>
+            <PaginationControls
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+              entityLabel="invoices"
+            />
           )}
         </div>
 

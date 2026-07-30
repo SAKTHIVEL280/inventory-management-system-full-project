@@ -104,7 +104,9 @@ def get_product_batch_snapshot(db: Session, product_id: UUID) -> dict[str, dict[
             SalesInvoiceItem.batch_no,
             SalesInvoiceItem.manufacture_date,
             SalesInvoiceItem.expiry_date,
-            func.coalesce(func.sum(SalesInvoiceItem.quantity), 0).label("qty"),
+            # MCN-BUG-02: stock deducted = billed quantity + free quantity, matching
+            # the stock ledger (which posts both). Free items physically leave stock.
+            func.coalesce(func.sum(SalesInvoiceItem.quantity + func.coalesce(SalesInvoiceItem.free_quantity, 0)), 0).label("qty"),
         )
         .join(SalesInvoice, SalesInvoiceItem.invoice_id == SalesInvoice.id)
         .filter(

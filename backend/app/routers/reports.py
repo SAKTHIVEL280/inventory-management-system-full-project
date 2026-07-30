@@ -1031,21 +1031,24 @@ async def dashboard_report(
             SalesInvoice.is_deleted == False,
         ]
 
+        # MCN-BUG-04: group revenue by the invoice's assigned Sales Manager
+        # (SalesInvoice.sales_manager_name, Enhancement 3) — NOT by created_by (the
+        # user who created the invoice). Grouping by created_by collapsed the report
+        # to a single row (usually the one admin/accounts user); grouping by the
+        # actual sales manager surfaces every distinct manager with sales.
         sales_manager_query = (
             db.query(
-                SalesInvoice.created_by.label("uid"),
-                User.full_name.label("name"),
+                SalesInvoice.sales_manager_name.label("name"),
                 func.coalesce(func.sum(SalesInvoice.total_amount), 0).label("revenue"),
             )
-            .outerjoin(User, SalesInvoice.created_by == User.id)
             .filter(*revenue_filter)
         )
         if cid:
             sales_manager_query = sales_manager_query.filter(SalesInvoice.company_id == cid)
-        sales_manager_query = sales_manager_query.group_by(SalesInvoice.created_by, User.full_name).all()
+        sales_manager_query = sales_manager_query.group_by(SalesInvoice.sales_manager_name).all()
         sales_manager_rows = [
             {
-                "id": str(row.uid) if row.uid else "unassigned",
+                "id": (row.name or "unassigned"),
                 "name": row.name or "Unassigned",
                 "revenue": int(row.revenue or 0),
             }
@@ -1113,6 +1116,98 @@ async def dashboard_report(
         "cash_in_flow": cash_in_flow,
         "cash_in_flow_summary": cash_in_flow_summary,
         "revenue_generation": revenue_generation,
+    }
+
+
+# ── MCN-BUG-01: Financial-Year sales trend ───────────────────────────────────
+# Indian Financial Year runs April → March. FY "2025-26" = 1 Apr 2025 → 31 Mar 2026.
+# The graph groups sales by FY month (Apr..Mar order); selecting a month drills into
+# that month's daily totals. Revenue mirrors the Sales report / P&L status set
+# (issued/partial_paid/paid) + the tenant's own finalized service invoices, and is
+# strictly scoped to the caller's company_id (multi-tenant isolation).
+_SALES_TREND_STATUSES = ("issued", "partial_paid", "paid")
+_FY_MONTH_ORDER = (4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3)  # Apr → Mar
+_MONTH_LABELS = {
+    1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
+    7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec",
+}
+
+
+def _current_financial_year(today: date | None = None) -> int:
+    """Start year of the FY that contains `today` (Jan-Mar belongs to prior FY)."""
+    d = today or date.today()
+    return d.year if d.month >= 4 else d.year - 1
+
+
+def _fy_month_year(fy_start: int, month: int) -> int:
+    """Calendar year for a given month within FY starting `fy_start`.
+
+    Apr-Dec are in fy_start; Jan-Mar are in fy_start + 1.
+    """
+    return fy_start if month >= 4 else fy_start + 1
+
+
+@router.get("/sales-trend", dependencies=[Depends(require_module("dashboard"))])
+async def sales_trend_report(
+    financial_year: int | None = Query(default=None, description="FY start year, e.g. 2025 for FY 2025-26"),
+    month: int | None = Query(default=None, ge=1, le=12),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("dashboard_read")),
+):
+    cid = current_user.company_id
+    fy_start = int(financial_year) if financial_year else _current_financial_year()
+    fy_label = f"{fy_start}-{str(fy_start + 1)[-2:]}"  # e.g. 2025-26
+
+    def _sales_sum(d_from: date, d_to: date) -> int:
+        q = db.query(func.coalesce(func.sum(SalesInvoice.total_amount), 0)).filter(
+            SalesInvoice.company_id == cid,
+            SalesInvoice.invoice_date >= d_from,
+            SalesInvoice.invoice_date <= d_to,
+            func.lower(func.trim(SalesInvoice.status)).in_(_SALES_TREND_STATUSES),
+            SalesInvoice.is_deleted == False,
+        )
+        base = int(q.scalar() or 0)
+        base += _svc_revenue_sum(
+            db, cid, ServiceInvoice.grand_total,
+            ServiceInvoice.invoice_date >= d_from, ServiceInvoice.invoice_date <= d_to,
+        )
+        return base
+
+    points: list[dict] = []
+
+    if month is not None:
+        # Drill-down: daily totals for the selected FY month.
+        import calendar
+        year = _fy_month_year(fy_start, month)
+        days_in_month = calendar.monthrange(year, month)[1]
+        for day_num in range(1, days_in_month + 1):
+            d = date(year, month, day_num)
+            amount = _sales_sum(d, d)
+            points.append({"label": str(day_num), "period": d.isoformat(), "amount": amount})
+        granularity = "day"
+    else:
+        # 12 monthly buckets in FY order (Apr..Mar).
+        import calendar
+        for m in _FY_MONTH_ORDER:
+            year = _fy_month_year(fy_start, m)
+            last_day = calendar.monthrange(year, m)[1]
+            d_from = date(year, m, 1)
+            d_to = date(year, m, last_day)
+            amount = _sales_sum(d_from, d_to)
+            points.append({
+                "label": _MONTH_LABELS[m],
+                "period": f"{year}-{m:02d}",
+                "amount": amount,
+            })
+        granularity = "month"
+
+    return {
+        "financial_year": fy_start,
+        "financial_year_label": fy_label,
+        "month": month,
+        "granularity": granularity,
+        "total": sum(p["amount"] for p in points),
+        "points": points,
     }
 
 
@@ -1245,7 +1340,8 @@ async def stock_report(
             SalesInvoiceItem.batch_no,
             SalesInvoiceItem.manufacture_date,
             SalesInvoiceItem.expiry_date,
-            func.coalesce(func.sum(SalesInvoiceItem.quantity), 0).label("qty"),
+            # MCN-BUG-02: deduct billed + free quantity (matches the stock ledger).
+            func.coalesce(func.sum(SalesInvoiceItem.quantity + func.coalesce(SalesInvoiceItem.free_quantity, 0)), 0).label("qty"),
         )
         .join(SalesInvoice, SalesInvoiceItem.invoice_id == SalesInvoice.id)
         .filter(

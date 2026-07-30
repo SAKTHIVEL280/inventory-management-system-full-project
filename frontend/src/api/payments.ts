@@ -118,8 +118,35 @@ class PaymentsApiClient {
     return apiClient.get<PaymentDetail>(`/api/v2/payments/${id}`);
   }
 
+  // MCN-BUG-03/05: fetch ALL open invoices for a customer directly from the DB
+  // (any month / financial year, no pagination limit), tenant-scoped.
+  // When editing a payment, pass its id so the invoices this payment already
+  // settled are included (with grossed-up outstanding) and remain editable.
+  async getCustomerOpenInvoices(customerId: string, paymentId?: string) {
+    return apiClient.get<{
+      customer_id: string;
+      count: number;
+      total_outstanding: number;
+      items: Array<{
+        id: string; invoice_number: string; invoice_date: string | null;
+        due_date: string | null; customer_id: string; total_amount: number;
+        amount_paid: number; amount_due: number; status: string;
+        actual_amount_due?: number; allocated_by_payment?: number;
+      }>;
+    }>(`/api/v2/payments/customer-open-invoices/${customerId}`, {
+      params: paymentId ? { payment_id: paymentId } : undefined,
+    });
+  }
+
   async createPayment(payload: CreatePaymentPayload) {
     return apiClient.post<Payment>('/api/v2/payments', payload);
+  }
+
+  // Edit a pending payment (reverses old allocations, applies new ones server-side).
+  async updatePayment(id: string, payload: CreatePaymentPayload) {
+    return apiClient.put<{ id: string; payment_number: string; status: string; message: string }>(
+      `/api/v2/payments/${id}`, payload,
+    );
   }
 
   async updatePaymentStatus(id: string, status: string) {

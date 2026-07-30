@@ -15,11 +15,14 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AppLayout } from '../components/AppLayout';
 import { paymentsApi, type Payment, type CreatePaymentPayload, type PaymentAllocationRequest, type PaymentAllocation } from '../api/payments';
-import { salesApi, type SalesInvoice } from '../api/sales';
+import { type SalesInvoice } from '../api/sales';
 import { apiClient } from '../api/client';
 import { todayLocalDateInputValue } from '../utils/date';
 import { showError, showSuccess, confirmWithToast } from '../utils/toastHelper';
 import { usePermissions } from '../hooks/usePermissions';
+import { usePagination } from '../hooks/usePagination';
+import { PaginationControls } from '../components/PaginationControls';
+import { fetchAllPages } from '../utils/fetchAllPages';
 
 interface CustomerOption { id: string; company_name: string; }
 
@@ -59,8 +62,13 @@ const ReceivablesPage = () => {
   const fetchPayments = async () => {
     try {
       setLoading(true);
-      const res = await paymentsApi.listPayments({ party_type: 'customer', archived_only: archiveView === 'archived' });
-      setPayments(res.data.items || []);
+      // Fetch ALL receipts for the tenant (chunked) so the standardized pagination
+      // pages through every record, not just the first API page.
+      const { items } = await fetchAllPages<Payment>(async (p, size) => {
+        const res = await paymentsApi.listPayments({ party_type: 'customer', archived_only: archiveView === 'archived', page: p, page_size: size });
+        return { items: res.data.items || [], total: res.data.total ?? 0 };
+      });
+      setPayments(items);
     } catch {
       /* */
     } finally {
@@ -68,25 +76,27 @@ const ReceivablesPage = () => {
     }
   };
   const fetchCustomers = async () => {
-    try { const res = await apiClient.get('/api/v2/customers', { params: { page_size: 100 } }); setCustomers(res.data.items || []); } catch { /* */ }
+    try { const res = await apiClient.get('/api/v2/customers', { params: { page_size: 500 } }); setCustomers(res.data.items || []); } catch { /* */ }
   };
 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchPayments should run when archiveView changes
   useEffect(() => { fetchPayments(); }, [archiveView]);
   useEffect(() => { fetchCustomers(); }, []);
 
-  // When customer changes, fetch their outstanding invoices
+  // When customer changes, fetch ALL their outstanding invoices directly from the
+  // database (MCN-BUG-03/05): every open invoice from any month or financial year,
+  // not a client-side filter of the first page of the global invoice list.
   useEffect(() => {
     if (!customerId) { setOutstandingInvoices([]); return; }
     (async () => {
       try {
-        const res = await salesApi.listInvoices('issued');
-        const partialRes = await salesApi.listInvoices('partial_paid');
-        const all = [...(res.data.items || []), ...(partialRes.data.items || [])];
-        setOutstandingInvoices(all.filter(inv => inv.customer_id === customerId && inv.amount_due > 0));
+        // When editing, pass the payment id so the invoice(s) this payment already
+        // settled are included and remain selectable (fixes "No Open Invoice" on edit).
+        const res = await paymentsApi.getCustomerOpenInvoices(customerId, editingPayment?.id);
+        setOutstandingInvoices((res.data.items || []) as unknown as SalesInvoice[]);
       } catch { setOutstandingInvoices([]); }
     })();
-  }, [customerId]);
+  }, [customerId, editingPayment?.id]);
 
   const resetForm = () => { setCustomerId(''); setPaymentDate(todayLocalDateInputValue()); setAmount(0); setPaymentMode('bank_transfer'); setReferenceNumber(''); setNotes(''); setAllocations({}); setError(''); setEditingPayment(null); };
   const paiseToRupees = (paise: number) => (Number.isFinite(paise) ? paise / 100 : 0);
@@ -152,6 +162,13 @@ const ReceivablesPage = () => {
     return matchesSearch && matchesStatus && matchesMode && matchesFrom && matchesTo;
   });
 
+  // Standardized pagination (client-side slice of the filtered, tenant-scoped list).
+  // Resets to page 1 whenever any filter/search/view changes.
+  const pagination = usePagination(
+    JSON.stringify([searchQuery, statusFilter, modeFilter, dateFrom, dateTo, archiveView]),
+  );
+  const pagedPayments = pagination.paginate(filteredPayments);
+
   const handleSubmit = async () => {
     if (!customerId || amount <= 0) { setError('Select customer and enter amount'); return; }
 
@@ -200,8 +217,13 @@ const ReceivablesPage = () => {
         notes: notes || undefined,
         allocations: allocationList,
       };
-      await paymentsApi.createPayment(payload);
-      showSuccess('Payment recorded successfully');
+      if (editingPayment) {
+        await paymentsApi.updatePayment(editingPayment.id, payload);
+        showSuccess('Payment updated successfully');
+      } else {
+        await paymentsApi.createPayment(payload);
+        showSuccess('Payment recorded successfully');
+      }
       setShowForm(false); resetForm(); fetchPayments();
     } catch (err: unknown) { const m = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail; setError(typeof m === 'string' ? m : 'Failed'); } finally { setSubmitting(false); }
   };
@@ -252,7 +274,13 @@ const ReceivablesPage = () => {
     setPaymentMode(p.payment_mode);
     setReferenceNumber(p.reference_number || '');
     setNotes('');
-    setAllocations({});
+    // Pre-fill the existing allocations so the edit form shows how the payment is
+    // currently split across invoices.
+    const preAlloc: Record<string, number> = {};
+    (p.allocations || []).forEach((a) => {
+      if (a.invoice_id) preAlloc[a.invoice_id] = (preAlloc[a.invoice_id] || 0) + (a.allocated_amount || 0);
+    });
+    setAllocations(preAlloc);
     setShowForm(true);
   };
 
@@ -334,7 +362,7 @@ const ReceivablesPage = () => {
               <tbody>
                 {loading ? <tr><td colSpan={7} className="px-4 py-8 text-center text-neutral-500">Loading...</td></tr>
                 : filteredPayments.length === 0 ? <tr><td colSpan={7} className="px-4 py-8 text-center text-neutral-500">No payments recorded</td></tr>
-                : filteredPayments.map(p => (
+                : pagedPayments.map(p => (
                   <tr key={p.id} className="border-b border-neutral-100 hover:bg-neutral-50">
                     <td className="px-4 py-3 font-medium">
                       {p.allocations?.map((a) => a.invoice_number).filter(Boolean).join(', ') || (
@@ -373,7 +401,16 @@ const ReceivablesPage = () => {
               </tbody>
             </table>
           </div>
-          {!loading && <p className="border-t border-neutral-200 px-4 py-3 text-xs text-neutral-500">Showing {filteredPayments.length} of {payments.length}</p>}
+          {!loading && (
+            <PaginationControls
+              page={pagination.page}
+              pageSize={pagination.pageSize}
+              total={filteredPayments.length}
+              onPageChange={pagination.setPage}
+              onPageSizeChange={pagination.setPageSize}
+              entityLabel="payments"
+            />
+          )}
         </div>
 
         {showForm && createPortal(

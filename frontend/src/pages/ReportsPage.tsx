@@ -5,7 +5,8 @@
  */
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { AppLayout } from '../components/AppLayout';
-import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { SalesTrendChart } from '../components/SalesTrendChart';
+import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { apiClient, type ApiRequestConfig } from '../api/client';
 import { downloadGSTR1Export, downloadGSTR2Export, downloadGSTReconciliationExport, getGstAuditTrail, getGSTR1Report, getGSTR2Report, getGSTReconciliationReport, type GSTAuditTrailResponse, type GSTR1ReportDetailRow, type GSTR1ReportResponse, type GSTR2ReportDetailRow, type GSTR2ReportResponse, type GSTReconciliationResponse } from '../api/reports';
 import { toLocalDateInputValue } from '../utils/date';
@@ -566,7 +567,6 @@ const ReportsPage = () => {
     activeTab,
   ]);
 
-  const salesTrend = (dashboard as Record<string, unknown>)?.sales_trend as { date: string; amount: number }[] || [];
   const topProducts = (dashboard as Record<string, unknown>)?.top_products as { product_name: string; quantity_sold: number; amount: number }[] || [];
 
   const stockSummary = [
@@ -661,19 +661,8 @@ const ReportsPage = () => {
 
             {/* Charts Row */}
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-              {/* Sales Trend */}
-              <div className="hms-card p-6">
-                <h3 className="mb-4 text-sm font-bold text-neutral-700">Sales Trend (Last 7 Days)</h3>
-                <ResponsiveContainer width="100%" height={250}>
-                  <LineChart data={salesTrend}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} tickFormatter={v => `₹${(v/100).toFixed(0)}`} />
-                    <Tooltip formatter={(v) => formatAmount(Number(v ?? 0))} />
-                    <Line type="monotone" dataKey="amount" stroke="#1E3A5F" strokeWidth={2} dot={{ fill: '#1E3A5F' }} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
+              {/* Sales Trend — Financial Year (MCN-BUG-01) */}
+              <SalesTrendChart />
 
               {/* Stock Distribution */}
               <div className="hms-card p-6">

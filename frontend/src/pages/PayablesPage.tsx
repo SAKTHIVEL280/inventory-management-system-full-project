@@ -20,6 +20,9 @@ import { apiClient } from '../api/client';
 import { todayLocalDateInputValue } from '../utils/date';
 import { showError, showSuccess, confirmWithToast } from '../utils/toastHelper';
 import { usePermissions } from '../hooks/usePermissions';
+import { usePagination } from '../hooks/usePagination';
+import { PaginationControls } from '../components/PaginationControls';
+import { fetchAllPages } from '../utils/fetchAllPages';
 
 interface SupplierOption { id: string; company_name: string; }
 
@@ -71,8 +74,13 @@ const PayablesPage = () => {
   const fetchPayments = async () => {
     try {
       setLoading(true);
-      const res = await paymentsApi.listPayments({ party_type: 'supplier', archived_only: archiveView === 'archived' });
-      setPayments(res.data.items || []);
+      // Fetch ALL supplier payments for the tenant (chunked) so the standardized
+      // pagination pages through every record, not just the first API page.
+      const { items } = await fetchAllPages<Payment>(async (p, size) => {
+        const res = await paymentsApi.listPayments({ party_type: 'supplier', archived_only: archiveView === 'archived', page: p, page_size: size });
+        return { items: res.data.items || [], total: res.data.total ?? 0 };
+      });
+      setPayments(items);
     } catch {
       /* */
     } finally {
@@ -230,6 +238,12 @@ const PayablesPage = () => {
     const matchesTo = !dateTo || p.payment_date <= dateTo;
     return matchesSearch && matchesStatus && matchesMode && matchesFrom && matchesTo;
   });
+
+  // Standardized pagination (client-side slice of the filtered, tenant-scoped list).
+  const pagination = usePagination(
+    JSON.stringify([searchQuery, statusFilter, modeFilter, dateFrom, dateTo, archiveView]),
+  );
+  const pagedPayments = pagination.paginate(filteredPayments);
 
   const remainingByGRN = useMemo(() => {
     const directPaidByGRN: Record<string, number> = {};
@@ -538,7 +552,7 @@ const PayablesPage = () => {
               <tbody>
                 {loading ? <tr><td colSpan={9} className="px-4 py-8 text-center text-neutral-500">Loading...</td></tr>
                 : filteredPayments.length === 0 ? <tr><td colSpan={9} className="px-4 py-8 text-center text-neutral-500">No payments recorded</td></tr>
-                : filteredPayments.map(p => (
+                : pagedPayments.map(p => (
                   <tr key={p.id} className="border-b border-neutral-100 hover:bg-neutral-50">
                     {/* PAY-001: GRN Number */}
                     <td className="px-4 py-3 font-medium text-xs">
@@ -582,7 +596,16 @@ const PayablesPage = () => {
               </tbody>
             </table>
           </div>
-          {!loading && <p className="border-t border-neutral-200 px-4 py-3 text-xs text-neutral-500">Showing {filteredPayments.length} of {payments.length}</p>}
+          {!loading && (
+            <PaginationControls
+              page={pagination.page}
+              pageSize={pagination.pageSize}
+              total={filteredPayments.length}
+              onPageChange={pagination.setPage}
+              onPageSizeChange={pagination.setPageSize}
+              entityLabel="payments"
+            />
+          )}
         </div>
 
         {showForm && createPortal(

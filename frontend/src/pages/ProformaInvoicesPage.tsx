@@ -7,6 +7,9 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AppLayout } from '../components/AppLayout';
+import { PaginationControls } from '../components/PaginationControls';
+import { usePagination } from '../hooks/usePagination';
+import { fetchAllPages } from '../utils/fetchAllPages';
 import { proformaApi, type ProformaInvoice, type CreateProformaInvoicePayload } from '../api/proforma';
 import type { SalesLineItem } from '../api/sales';
 import { apiClient } from '../api/client';
@@ -58,10 +61,14 @@ const ProformaInvoicesPage = () => {
   const fetchProformaInvoices = async () => {
     try {
       setLoading(true);
-      const res = await proformaApi.listProformaInvoices(statusFilter || undefined, 1, 20, {
-        archived_only: archiveView === 'archived',
+      // Fetch the complete tenant dataset (chunked) for full client-side filtering + pagination.
+      const { items } = await fetchAllPages<ProformaInvoice>(async (p, size) => {
+        const res = await proformaApi.listProformaInvoices(statusFilter || undefined, p, size, {
+          archived_only: archiveView === 'archived',
+        });
+        return { items: res.data.items || [], total: res.data.total ?? 0 };
       });
-      setProformaInvoices(res.data.items || []);
+      setProformaInvoices(items);
     } catch {
       setError('Failed to load proforma invoices');
     } finally {
@@ -299,6 +306,10 @@ const ProformaInvoicesPage = () => {
     return matchesSearch && matchesFrom && matchesTo;
   });
 
+  // Standardized pagination (client-side slice of the filtered, tenant-scoped list).
+  const pagination = usePagination(JSON.stringify([searchQuery, statusFilter, dateFrom, dateTo]));
+  const pagedProformaInvoices = pagination.paginate(filteredProformaInvoices);
+
   return (
     <AppLayout title="Proforma Invoices">
       <div className="space-y-6">
@@ -384,7 +395,7 @@ const ProformaInvoicesPage = () => {
                   <tr><td colSpan={7} className="px-4 py-8 text-center text-neutral-500">Loading...</td></tr>
                 ) : filteredProformaInvoices.length === 0 ? (
                   <tr><td colSpan={7} className="px-4 py-8 text-center text-neutral-500">No proforma invoices found</td></tr>
-                ) : filteredProformaInvoices.map(p => (
+                ) : pagedProformaInvoices.map(p => (
                   <tr key={p.id} className="border-b border-neutral-100 hover:bg-neutral-50">
                     <td className="px-4 py-3 font-medium">{p.proforma_number}</td>
                     <td className="px-4 py-3">{customerNameById(p.customer_id)}</td>
@@ -437,7 +448,16 @@ const ProformaInvoicesPage = () => {
               </tbody>
             </table>
           </div>
-          {!loading && <p className="border-t border-neutral-200 px-4 py-3 text-xs text-neutral-500">Showing {filteredProformaInvoices.length} of {proformaInvoices.length} record(s)</p>}
+          {!loading && (
+            <PaginationControls
+              page={pagination.page}
+              pageSize={pagination.pageSize}
+              total={filteredProformaInvoices.length}
+              onPageChange={pagination.setPage}
+              onPageSizeChange={pagination.setPageSize}
+              entityLabel="proforma invoices"
+            />
+          )}
         </div>
 
         {/* Create/Edit Modal */}

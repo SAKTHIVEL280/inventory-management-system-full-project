@@ -15,6 +15,9 @@ import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { useSearchParams } from 'react-router-dom';
 import { AppLayout } from '../components/AppLayout';
+import { PaginationControls } from '../components/PaginationControls';
+import { usePagination } from '../hooks/usePagination';
+import { fetchAllPages } from '../utils/fetchAllPages';
 import { purchaseApi, type GoodsReceiptNote, type CreateGRNPayload, type PurchaseOrder, type GRNItemResponse, type ConfirmedGRNEditPayload } from '../api/purchase';
 import { apiClient } from '../api/client';
 import { toast } from 'sonner';
@@ -142,8 +145,12 @@ const GRNPage = () => {
   const fetchGRNs = async () => {
     try {
       setLoading(true);
-      const res = await purchaseApi.listGRNs(statusFilter || undefined, 1, 20, { archived_only: archiveView === 'archived' });
-      setGRNs(res.data.items || []);
+      // Fetch the complete tenant dataset (chunked) for full client-side filtering + pagination.
+      const { items } = await fetchAllPages<GoodsReceiptNote>(async (p, size) => {
+        const res = await purchaseApi.listGRNs(statusFilter || undefined, p, size, { archived_only: archiveView === 'archived' });
+        return { items: res.data.items || [], total: res.data.total ?? 0 };
+      });
+      setGRNs(items);
     } catch {
       setError('Failed to load GRNs');
     } finally {
@@ -818,6 +825,10 @@ const GRNPage = () => {
     return matchesSearch && matchesFrom && matchesTo;
   });
 
+  // Standardized pagination (client-side slice of the filtered, tenant-scoped list).
+  const pagination = usePagination(JSON.stringify([searchQuery, statusFilter, dateFrom, dateTo]));
+  const pagedGRNs = pagination.paginate(filteredGRNs);
+
   // Products available for selection — filtered to PO products when linked
   const availableProducts = selectedPO
     ? products.filter(p => items.some(i => i.product_id === p.id))
@@ -918,7 +929,7 @@ const GRNPage = () => {
               <tbody>
                 {loading ? <tr><td colSpan={9} className="px-4 py-8 text-center text-neutral-500">Loading...</td></tr>
                 : filteredGRNs.length === 0 ? <tr><td colSpan={9} className="px-4 py-8 text-center text-neutral-500">No GRNs found</td></tr>
-                : filteredGRNs.map(g => (
+                : pagedGRNs.map(g => (
                   <tr key={g.id} className="border-b border-neutral-100 hover:bg-neutral-50 cursor-pointer" onClick={() => handleOpenDetail(g)}>
                     <td className="px-4 py-3 font-medium">{g.grn_number}</td>
                     <td className="px-4 py-3">{supplierNameById(g.supplier_id)}</td>
@@ -958,7 +969,16 @@ const GRNPage = () => {
               </tbody>
             </table>
           </div>
-          {!loading && <p className="border-t border-neutral-200 px-4 py-3 text-xs text-neutral-500">Showing {filteredGRNs.length} of {grns.length}</p>}
+          {!loading && (
+            <PaginationControls
+              page={pagination.page}
+              pageSize={pagination.pageSize}
+              total={filteredGRNs.length}
+              onPageChange={pagination.setPage}
+              onPageSizeChange={pagination.setPageSize}
+              entityLabel="GRNs"
+            />
+          )}
         </div>
 
         {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• GRN Detail Modal â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}

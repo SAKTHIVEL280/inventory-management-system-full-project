@@ -222,7 +222,7 @@ $RECYCLE.BIN/
 **/.nuxt/
 **/.vercel/
 **/.netlify/
-
+docs/understanding/
 # ============================================
 # CACHE FILES
 # ============================================
@@ -234,7 +234,7 @@ $RECYCLE.BIN/
 .stylelintcache
 .tsbuildinfo
 .nx/
-
+docs\understanding
 # ============================================
 # TESTING & COVERAGE
 # ============================================
@@ -308,7 +308,7 @@ docs/_build/
 docs/build/
 site/
 public/
-
+ docs/understanding/
 # ============================================
 # UPLOADS & USER GENERATED CONTENT
 # ============================================
