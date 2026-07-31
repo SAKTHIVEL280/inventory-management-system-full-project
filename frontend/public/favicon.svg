@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Mecandria ERP">
+  <defs>
+    <linearGradient id="mcnBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1E3A5F"/>
+      <stop offset="1" stop-color="#2C5282"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="512" height="512" rx="113" fill="url(#mcnBg)"/>
+  <!-- chart baseline -->
+  <rect x="143" y="358" width="226" height="11" rx="5.5" fill="#ffffff"/>
+  <!-- ascending analytics bars -->
+  <rect x="148" y="271" width="54" height="86" rx="23" fill="#ffffff"/>
+  <rect x="233" y="215" width="54" height="142" rx="23" fill="#ffffff"/>
+  <rect x="318" y="153" width="54" height="204" rx="23" fill="#ffffff"/>
+</svg>

@@ -330,3 +330,8 @@ ims_backup_pre_mt.dump
 *.orig
 *.save
 Mecandria ERP_test_CASES.csv
+
+# Vite frontend static assets (favicon, web manifest) — MUST be committed so the
+# build/deploy includes them (overrides the generic "public/" rule above).
+!frontend/public/
+!frontend/public/**
