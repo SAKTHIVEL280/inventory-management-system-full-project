@@ -116,6 +116,7 @@ jobs:
 
             echo "── Installing backend deps ──"
             source backend/venv/bin/activate
+            export PATH="$HOME/.local/bin:$PATH"
             uv pip install -r backend/requirements.txt
 
             echo "── Fixing permissions ──"
