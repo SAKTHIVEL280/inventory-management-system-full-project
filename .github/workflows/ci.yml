@@ -38,6 +38,17 @@ jobs:
           uv pip install -r requirements.txt --system
           uv pip install pytest pytest-asyncio httpx safety --system
 
+      # ----debug step before running tests------------
+      - name: Debug Python import
+        working-directory: backend
+        run: |
+          pwd
+          ls -la
+          ls -la app
+          python -c "import os; print(os.getcwd())"
+          python -c "import sys; print(sys.path)"
+          python -c "import app; print(app)"
+
       # ── Step 4: Backend tests ──────────────────────
       - name: Run backend tests
         working-directory: backend
