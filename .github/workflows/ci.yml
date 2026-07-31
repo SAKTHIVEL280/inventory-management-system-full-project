@@ -1,0 +1,114 @@
+name: CI — Test & Scan
+
+on:
+  push:
+    branches: ["*"]
+  pull_request:
+    branches: ["version-1", "stage"]
+
+jobs:
+  ci:
+    name: Test & Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Step 1: Checkout ───────────────────────────
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ── Step 2: Scan for secrets ───────────────────
+      - name: Scan for secrets (Gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Step 3: Python setup ───────────────────────
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          pip install uv
+          uv pip install -r requirements.txt --system
+          uv pip install pytest pytest-asyncio httpx safety --system
+
+      # ── Step 4: Backend tests ──────────────────────
+      - name: Run backend tests
+        working-directory: backend
+        run: |
+          pytest tests/ -v --tb=short
+        env:
+          DATABASE_URL: sqlite:///./test.db
+          SECRET_KEY: test-secret-key-for-ci
+          ENVIRONMENT: test
+
+      # ── Step 5: Backend security scan ─────────────
+      - name: Scan Python dependencies (Safety)
+        working-directory: backend
+        run: safety check -r requirements.txt
+        continue-on-error: true
+
+      # ── Step 6: Node setup ─────────────────────────
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # ── Step 7: Frontend tests ─────────────────────
+      - name: Run frontend tests
+        working-directory: frontend
+        run: npm run test --if-present
+
+      # ── Step 8: Frontend security scan ────────────
+      - name: Scan frontend dependencies
+        working-directory: frontend
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      # ── Step 9: TypeScript check ───────────────────
+      - name: TypeScript type check
+        working-directory: frontend
+        run: npx tsc --noEmit
+        continue-on-error: true
+
+      # ── Step 10: Build check ───────────────────────
+      - name: Build frontend (verify it compiles)
+        working-directory: frontend
+        run: npm run build
+        env:
+          VITE_API_BASE_URL: http://localhost:8001
+
+      # ── Step 11: Notify on failure ─────────────────
+      - name: Send failure email
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 587
+          secure: false
+          username: ${{ secrets.NOTIFY_EMAIL_FROM }}
+          password: ${{ secrets.NOTIFY_EMAIL_PASSWORD }}
+          subject: "❌ CI Failed — ${{ github.repository }} (${{ github.ref_name }})"
+          to: ${{ secrets.NOTIFY_EMAIL }}
+          from: ${{ secrets.NOTIFY_EMAIL_FROM }}
+          body: |
+            CI pipeline failed for ${{ github.repository }}
+
+            Branch: ${{ github.ref_name }}
+            Commit: ${{ github.sha }}
+            Author: ${{ github.actor }}
+            Message: ${{ github.event.head_commit.message }}
+
+            View logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

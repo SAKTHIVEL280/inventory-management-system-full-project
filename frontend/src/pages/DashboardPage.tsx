@@ -13,11 +13,15 @@ import {
 import { useEffect, useState } from 'react';
 import { getDashboardStats, type DashboardStats as APIDashboardStats, type RevenueGeneration } from '../api/reports';
 import { SubscriptionCard } from '../components/SubscriptionCard';
-import { SalesTrendChart } from '../components/SalesTrendChart';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { FileQuestion } from 'lucide-react';
 
 const formatAmount = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+// Short daily label for the 7-day trend, e.g. "2026-07-31" -> "31 Jul".
+const fmtDayLabel = (iso: string) => {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+};
 const formatAmountShort = (paise: number) => {
   const val = paise / 100;
   if (val >= 100000) return `₹${(val / 100000).toFixed(1)}L`;
@@ -140,6 +144,7 @@ const DashboardPage = () => {
     fetchStats();
   }, []);
 
+  const salesTrend = stats?.sales_trend || [];
   const cashInFlowRows = stats?.cash_in_flow?.[cashInFlowView] || [];
   const cashInFlowSummary = stats?.cash_in_flow_summary?.[cashInFlowView] || {
     total_received_amount: 0,
@@ -242,7 +247,24 @@ const DashboardPage = () => {
 
         {/* Charts Row */}
         <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <SalesTrendChart />
+          {/* Dashboard shows the last 7 days (daily). The Financial-Year trend with
+              FY/Month filters lives on Reports → Sales Trend and is independent. */}
+          <div className="hms-card p-6">
+            <h3 className="mb-4 text-sm font-bold text-neutral-700">Sales Trend (Last 7 Days)</h3>
+            {!loading && salesTrend.length > 0 ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={salesTrend}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={fmtDayLabel} />
+                  <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => formatAmountShort(Number(v ?? 0))} />
+                  <Tooltip formatter={(v) => formatAmount(Number(v ?? 0))} labelFormatter={(l) => fmtDayLabel(String(l))} labelStyle={{ fontWeight: 600 }} />
+                  <Line type="monotone" dataKey="amount" stroke="#1E3A5F" strokeWidth={2.5} dot={{ fill: '#1E3A5F', r: 4 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <NoDataPlaceholder message="No sales trend data available yet. Start creating invoices to see growth." />
+            )}
+          </div>
 
           <div className="hms-card overflow-hidden p-6">
             <div className="mb-4 flex items-center justify-between gap-3">
