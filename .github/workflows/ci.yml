@@ -41,12 +41,12 @@ jobs:
       # ── Step 4: Backend tests ──────────────────────
       - name: Run backend tests
         working-directory: backend
-        run: |
-          pytest tests/ -v --tb=short
         env:
+          PYTHONPATH: ${{ github.workspace }}/backend
           DATABASE_URL: sqlite:///./test.db
           SECRET_KEY: test-secret-key-for-ci
           ENVIRONMENT: test
+          run: python -m pytest tests/ -v --tb=short
 
       # ── Step 5: Backend security scan ─────────────
       - name: Scan Python dependencies (Safety)
