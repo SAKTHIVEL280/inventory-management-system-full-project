@@ -21,6 +21,7 @@ from app.utils.state_mappings import (
     state_abbreviation_from_code,
     validate_and_autofill_state_fields,
 )
+from app.utils.location_validation import validate_country, validate_state
 from app.schemas.supplier import (
     SupplierCreateRequest,
     SupplierCustomizationOptionsResponse,
@@ -202,6 +203,16 @@ def _normalize_country(value: str | None) -> str | None:
 def _normalize_state(value: str | None) -> str | None:
     cleaned = (value or "").strip()
     return cleaned or None
+
+
+def _validate_supplier_locations(payload: SupplierCreateRequest | SupplierUpdateRequest) -> None:
+    """Country must be a real country (not a continent); state must not be a
+    country/continent name. Normalises the country to its canonical form."""
+    try:
+        payload.billing_country = validate_country(payload.billing_country, field_label="Country")
+        payload.state = validate_state(payload.state, field_label="State")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def _validate_and_autofill_supplier_state(payload: SupplierCreateRequest | SupplierUpdateRequest) -> None:
@@ -447,6 +458,7 @@ async def create_supplier(
 ):
     _apply_gstin_policy(payload)
     _normalize_supplier_currency(payload)
+    _validate_supplier_locations(payload)
     _validate_and_autofill_supplier_state(payload)
 
     # Per-tenant name uniqueness (scoped to company_id only).
@@ -511,6 +523,7 @@ async def update_supplier(
 
     _apply_gstin_policy(payload)
     _normalize_supplier_currency(payload)
+    _validate_supplier_locations(payload)
     _validate_and_autofill_supplier_state(payload)
 
     if payload.gstin:

@@ -24,6 +24,7 @@ import { toast } from 'sonner';
 import { confirmWithToast } from '../utils/toastHelper';
 import { addDaysToDateInputValue, todayLocalDateInputValue } from '../utils/date';
 import { emptyWhenZero } from '../utils/numberInput';
+import { parseWholeQuantity } from '../utils/quantityValidation';
 import { usePermissions } from '../hooks/usePermissions';
 
 interface ProductOption { id: string; name: string; product_code: string; purchase_price: number; gst_rate: number; }
@@ -1094,10 +1095,10 @@ const GRNPage = () => {
                                   </td>
                                   <td className="px-3 py-2 font-medium">{product?.name || 'Unknown'}</td>
                                   <td className="px-3 py-2 text-right">
-                                    <input type="number" min="0" step="0.01" value={emptyWhenZero(row.quantity)} onChange={(e) => updateEditRow(row.id, { quantity: Number(e.target.value) })} className="w-20 rounded border border-neutral-300 px-2 py-1 text-right text-sm" />
+                                    <input type="number" min="0" step="1" value={emptyWhenZero(row.quantity)} onChange={(e) => updateEditRow(row.id, { quantity: parseWholeQuantity(e.target.value) })} onKeyDown={(e) => { if (e.key === '.' || e.key === 'e') e.preventDefault(); }} className="w-20 rounded border border-neutral-300 px-2 py-1 text-right text-sm" />
                                   </td>
                                   <td className="px-3 py-2 text-right">
-                                    <input type="number" min="0" step="0.01" value={emptyWhenZero(row.free_quantity)} onChange={(e) => updateEditRow(row.id, { free_quantity: Number(e.target.value) })} className="w-16 rounded border border-neutral-300 px-2 py-1 text-right text-sm" />
+                                    <input type="number" min="0" step="1" value={emptyWhenZero(row.free_quantity)} onChange={(e) => updateEditRow(row.id, { free_quantity: parseWholeQuantity(e.target.value) })} onKeyDown={(e) => { if (e.key === '.' || e.key === 'e') e.preventDefault(); }} className="w-16 rounded border border-neutral-300 px-2 py-1 text-right text-sm" />
                                   </td>
                                   <td className="px-3 py-2">
                                     <input type="text" value={row.batch_no} onChange={(e) => updateEditRow(row.id, { batch_no: e.target.value })} className="w-24 rounded border border-neutral-300 px-2 py-1 text-sm" />
@@ -1382,11 +1383,12 @@ const GRNPage = () => {
                                 </div>
                                 <input
                                   type="number"
-                                  min="0.01"
-                                  step="0.01"
+                                  min="1"
+                                  step="1"
                                   className={`h-9 w-full rounded border px-2 py-1.5 text-right text-sm ${toleranceErrorItemIndex === idx ? 'border-red-400 bg-red-50 ring-1 ring-red-200' : ''}`}
                                   value={item.quantity}
-                                  onChange={e => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)}
+                                  onChange={e => updateItem(idx, 'quantity', parseWholeQuantity(e.target.value))}
+                                  onKeyDown={e => { if (e.key === '.' || e.key === 'e') e.preventDefault(); }}
                                   title={`Ordered: ${item.po_ordered_qty ?? 0}, Previously received: ${item.po_received_qty ?? 0}`}
                                 />
                                 <div className="text-[10px] text-neutral-500 whitespace-nowrap shrink-0">
@@ -1394,21 +1396,22 @@ const GRNPage = () => {
                                 </div>
                               </div>
                             ) : (
-                              <input type="number" min="0.01" step="0.01" className="h-9 w-full rounded border px-2 py-1.5 text-right text-sm" value={emptyWhenZero(item.quantity)}
-                                onChange={e => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)} placeholder="Qty" />
+                              <input type="number" min="1" step="1" className="h-9 w-full rounded border px-2 py-1.5 text-right text-sm" value={emptyWhenZero(item.quantity)}
+                                onChange={e => updateItem(idx, 'quantity', parseWholeQuantity(e.target.value))} onKeyDown={e => { if (e.key === '.' || e.key === 'e') e.preventDefault(); }} placeholder="Qty" />
                             )}
                           </td>
                           <td className="px-3 py-2">
                             <input
                               type="number"
                               min="0"
-                              step="0.01"
+                              step="1"
                               className="h-9 w-full rounded border px-2 py-1.5 text-right text-sm"
                               value={emptyWhenZero(item.free_quantity)}
                               onChange={e => {
                                 const val = e.target.value;
-                                updateItem(idx, 'free_quantity', val === '' ? 0 : (parseFloat(val) || 0));
+                                updateItem(idx, 'free_quantity', val === '' ? 0 : parseWholeQuantity(val));
                               }}
+                              onKeyDown={e => { if (e.key === '.' || e.key === 'e') e.preventDefault(); }}
                               placeholder="0"
                             />
                           </td>

@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import { confirmWithToast } from '../utils/toastHelper';
 import { addDaysToDateInputValue, todayLocalDateInputValue } from '../utils/date';
 import { emptyWhenZero } from '../utils/numberInput';
+import { parseWholeQuantity } from '../utils/quantityValidation';
 import { usePermissions } from '../hooks/usePermissions';
 import { useSubscription } from '../hooks/useSubscription';
 import type { Stockist, SalesManager } from '../types';
@@ -460,7 +461,9 @@ const InvoicesPage = () => {
   const fetchMasterData = async () => {
     try {
       const [c, p, comp, uom] = await Promise.all([
-        apiClient.get('/api/v2/customers', { params: { page_size: 100 } }),
+        // Only active customers are selectable for new invoices; inactive
+        // (soft-deleted / deactivated) customers are excluded from the dropdown.
+        apiClient.get('/api/v2/customers', { params: { page_size: 100, is_active: true } }),
         apiClient.get('/api/v2/products', { params: { page_size: 100 } }),
         apiClient.get('/api/v2/company'),
         apiClient.get('/api/v2/products/uom'),
@@ -959,7 +962,7 @@ const InvoicesPage = () => {
       const rupees = (paise: number) => (Number(paise || 0) / 100).toFixed(2);
       const rows = collected.map((inv) => [
         inv.invoice_number,
-        customerNameById(inv.customer_id),
+        invoiceCustomerName(inv),
         invoiceTypeLabel(inv.invoice_type),
         inv.invoice_date,
         inv.due_date || '',
@@ -990,7 +993,12 @@ const InvoicesPage = () => {
   const handleViewInvoice = async (inv: SalesInvoice) => {
     try {
       const { data } = await salesApi.getInvoice(inv.id);
-      setSelectedInvoice(data.invoice || inv);
+      // Carry the resolved customer name/code onto the detail object so a
+      // soft-deleted customer's invoice still displays the original customer.
+      const detailInvoice = data.invoice
+        ? { ...data.invoice, customer_name: inv.customer_name ?? data.invoice.customer_name, customer_code: inv.customer_code ?? data.invoice.customer_code }
+        : inv;
+      setSelectedInvoice(detailInvoice);
       setSelectedInvoiceItems(data.items || []);
       setShowInvoiceDetail(true);
     } catch {
@@ -1035,6 +1043,10 @@ const InvoicesPage = () => {
   const customerNameById = (customerId: string) => {
     return customers.find((c) => c.id === customerId)?.company_name || 'Unknown customer';
   };
+  // Prefer the API-provided customer_name so historical invoices of soft-deleted
+  // customers (which are not in the active customers list) still show the name.
+  const invoiceCustomerName = (inv: { customer_id: string; customer_name?: string | null }) =>
+    inv.customer_name || customerNameById(inv.customer_id);
   const productNameById = (productId: string) => {
     return products.find((p) => p.id === productId)?.name || productId;
   };
@@ -1126,7 +1138,7 @@ const InvoicesPage = () => {
                 : invoices.map(inv => (
                   <tr key={inv.id} className="border-b border-neutral-100 hover:bg-neutral-50">
                     <td className="px-4 py-3 font-medium">{inv.invoice_number}</td>
-                    <td className="px-4 py-3">{customerNameById(inv.customer_id)}</td>
+                    <td className="px-4 py-3">{invoiceCustomerName(inv)}</td>
                     <td className="px-4 py-3">{invoiceTypeLabel(inv.invoice_type)}</td>
                     <td className="px-4 py-3">{inv.invoice_date}</td>
                     <td className="px-4 py-3">{inv.due_date || '-'}</td>
@@ -1347,16 +1359,17 @@ const InvoicesPage = () => {
                           <td className="px-3 py-2">
                             <input
                               type="number"
-                              min="0.01"
-                              step="0.01"
+                              min="1"
+                              step="1"
                               className={`${lineItemInputClass} text-right ${batchQtyError ? 'border-red-300' : ''}`}
                               value={emptyWhenZero(item.quantity)}
-                              onChange={e => updateItem(idx, 'quantity', parseFloat(e.target.value) || 0)}
+                              onChange={e => updateItem(idx, 'quantity', parseWholeQuantity(e.target.value))}
+                              onKeyDown={e => { if (e.key === '.' || e.key === 'e') e.preventDefault(); }}
                               placeholder="Qty"
                             />
                           </td>
                           <td className="px-3 py-2">
-                            <input type="number" min="0" step="0.01" className={`${lineItemInputClass} text-right`} value={emptyWhenZero(item.free_quantity)} onChange={e => updateItem(idx, 'free_quantity', parseFloat(e.target.value) || 0)} />
+                            <input type="number" min="0" step="1" className={`${lineItemInputClass} text-right`} value={emptyWhenZero(item.free_quantity)} onChange={e => updateItem(idx, 'free_quantity', parseWholeQuantity(e.target.value))} onKeyDown={e => { if (e.key === '.' || e.key === 'e') e.preventDefault(); }} />
                           </td>
                           {/* SAL-020: MRP auto-fills from Product Master */}
                           <td className="px-3 py-2">
@@ -1427,7 +1440,7 @@ const InvoicesPage = () => {
               <div className="flex items-start justify-between">
                 <div>
                   <h2 className="font-display text-xl font-bold">Invoice: {selectedInvoice.invoice_number}</h2>
-                  <p className="mt-1 text-sm text-neutral-600">Customer: {customers.find(c => c.id === selectedInvoice.customer_id)?.company_name || '-'}</p>
+                  <p className="mt-1 text-sm text-neutral-600">Customer: {invoiceCustomerName(selectedInvoice)}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   {/* SAL-027: Edit button in Invoice View for draft invoices */}

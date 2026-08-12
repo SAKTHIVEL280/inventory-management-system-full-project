@@ -2,7 +2,9 @@
 from typing import List, Optional
 from uuid import UUID
 from datetime import date
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from app.utils.quantity_validation import validate_whole_quantity
 
 
 class PurchaseLineItemRequest(BaseModel):
@@ -17,6 +19,16 @@ class PurchaseLineItemRequest(BaseModel):
     discount_percent: float = 0
     gst_rate: int
     purchase_order_item_id: Optional[UUID] = None
+
+    @field_validator("quantity")
+    @classmethod
+    def _validate_quantity(cls, value):
+        return validate_whole_quantity(value, "Quantity")
+
+    @field_validator("free_quantity")
+    @classmethod
+    def _validate_free_quantity(cls, value):
+        return validate_whole_quantity(value, "Free quantity")
 
 
 class PurchaseOrderCreateRequest(BaseModel):
@@ -89,6 +101,16 @@ class GRNConfirmedEditItem(BaseModel):
     free_quantity: float = 0
     unit_price: int
 
+    @field_validator("quantity")
+    @classmethod
+    def _validate_quantity(cls, value):
+        return validate_whole_quantity(value, "Quantity")
+
+    @field_validator("free_quantity")
+    @classmethod
+    def _validate_free_quantity(cls, value):
+        return validate_whole_quantity(value, "Free quantity")
+
 
 class GRNConfirmedEditRequest(BaseModel):
     """MCN-BUG-004-ii: edit detail fields of an already-confirmed GRN.
@@ -105,6 +127,11 @@ class PurchaseReturnLineItemRequest(BaseModel):
     quantity: float
     unit_price: int
     gst_rate: int
+
+    @field_validator("quantity")
+    @classmethod
+    def _validate_quantity(cls, value):
+        return validate_whole_quantity(value, "Return quantity")
 
 
 class PurchaseReturnCreateRequest(BaseModel):

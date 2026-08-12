@@ -182,14 +182,14 @@ const UsersPage = () => {
             </div>
             <div>
               <label htmlFor="password" className="hms-label">
-                {editingUser ? 'New password (leave blank to keep)' : 'Temporary password'}
+                {editingUser ? 'New password (leave blank to keep)' : 'Set Password'}
               </label>
               <div className="relative">
                 <input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
                   className="hms-input pr-10"
-                  placeholder={editingUser ? 'Leave blank to keep current' : 'Temporary password'}
+                  placeholder={editingUser ? 'Leave blank to keep current' : 'Set password'}
                   autoComplete="new-password"
                   {...register('password')}
                 />
@@ -244,34 +244,34 @@ const UsersPage = () => {
           {!isLoading && !isError && items.length === 0 && <PageEmpty message="No users found" />}
           {!isLoading && !isError && items.length > 0 && (
             <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[640px] text-sm">
               <caption className="sr-only">User accounts list</caption>
               <thead className="bg-neutral-50">
                 <tr className="text-left border-y border-neutral-200">
-                  <th scope="col" className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">Name</th>
-                  <th scope="col" className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">Email</th>
-                  <th scope="col" className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">Role</th>
-                  <th scope="col" className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">Status</th>
-                  <th scope="col" className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">Actions</th>
+                  <th scope="col" className="whitespace-nowrap px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">Name</th>
+                  <th scope="col" className="whitespace-nowrap px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">Email</th>
+                  <th scope="col" className="whitespace-nowrap px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">Role</th>
+                  <th scope="col" className="whitespace-nowrap px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">Status</th>
+                  <th scope="col" className="whitespace-nowrap px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-neutral-100">
                 {items.map((user) => (
                   <tr key={user.id} className="hover:bg-neutral-50/80">
-                    <td className="px-4 py-3 font-medium">{user.full_name}</td>
-                    <td className="px-4 py-3">{user.email}</td>
-                    <td className="px-4 py-3">
-                      <span className={`rounded-full px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-white ${ROLE_BADGE_CLASS[user.role] ?? 'bg-primary'}`}>
+                    <td className="px-4 py-3 align-middle font-medium">{user.full_name}</td>
+                    <td className="px-4 py-3 align-middle break-all">{user.email}</td>
+                    <td className="px-4 py-3 align-middle">
+                      <span className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold uppercase tracking-wide text-white ${ROLE_BADGE_CLASS[user.role] ?? 'bg-primary'}`}>
                         {ROLE_LABELS[user.role] ?? user.role}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
-                      <span className={`rounded-full px-2.5 py-1 text-xs font-bold uppercase tracking-wide ${user.is_active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>
+                    <td className="px-4 py-3 align-middle">
+                      <span className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-bold uppercase tracking-wide ${user.is_active ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>
                         {user.is_active ? 'Active' : 'Inactive'}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
+                    <td className="px-4 py-3 align-middle">
+                      <div className="flex items-center gap-2 whitespace-nowrap">
                         <button
                           type="button"
                           onClick={() => startEdit(user)}

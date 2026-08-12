@@ -2,7 +2,9 @@
 from datetime import date, datetime
 from typing import List, Optional, Literal
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
+
+from app.utils.quantity_validation import validate_whole_quantity
 
 
 InvoiceTypeLiteral = Literal[
@@ -25,6 +27,16 @@ class SalesLineItemRequest(BaseModel):
     unit_price: int
     discount_percent: float = 0
     gst_rate: int
+
+    @field_validator("quantity")
+    @classmethod
+    def _validate_quantity(cls, value):
+        return validate_whole_quantity(value, "Quantity")
+
+    @field_validator("free_quantity")
+    @classmethod
+    def _validate_free_quantity(cls, value):
+        return validate_whole_quantity(value, "Free quantity")
 
 
 class QuotationCreateRequest(BaseModel):
@@ -146,6 +158,11 @@ class SalesInvoiceResponse(BaseModel):
     id: UUID
     invoice_number: str
     customer_id: UUID
+    # Snapshot of the customer name/code resolved at read time. Populated even when
+    # the customer has since been soft-deleted, so historical invoices always show
+    # the original customer instead of "Unknown customer".
+    customer_name: Optional[str] = None
+    customer_code: Optional[str] = None
     invoice_date: Optional[date]
     due_date: Optional[date]
     invoice_type: InvoiceTypeLiteral
@@ -174,6 +191,11 @@ class SalesReturnLineItemRequest(BaseModel):
     quantity: float
     unit_price: int
     gst_rate: int
+
+    @field_validator("quantity")
+    @classmethod
+    def _validate_quantity(cls, value):
+        return validate_whole_quantity(value, "Return quantity")
 
 
 class SalesReturnCreateRequest(BaseModel):

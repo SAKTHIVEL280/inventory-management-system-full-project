@@ -2,7 +2,9 @@
 from datetime import date, datetime
 from typing import List, Optional
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
+
+from app.utils.quantity_validation import validate_whole_quantity
 
 
 class RDNLineItemRequest(BaseModel):
@@ -13,6 +15,11 @@ class RDNLineItemRequest(BaseModel):
     expiry_date: date
     return_quantity: float
     reason_code: str
+
+    @field_validator("return_quantity")
+    @classmethod
+    def _validate_return_quantity(cls, value):
+        return validate_whole_quantity(value, "Return quantity")
 
 
 class RDNCreateRequest(BaseModel):

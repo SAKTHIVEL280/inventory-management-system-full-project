@@ -118,6 +118,10 @@ export interface SalesInvoice {
   sales_order_id?: string;
   quotation_id?: string;
   customer_id: string;
+  // Customer name/code resolved by the API (present even for soft-deleted
+  // customers, so historical invoices always show the original customer).
+  customer_name?: string | null;
+  customer_code?: string | null;
   invoice_date: string;
   due_date?: string;
   status: string;

@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { confirmToast } from '../utils/toast';
 import { todayLocalDateInputValue } from '../utils/date';
 import { emptyWhenZero } from '../utils/numberInput';
+import { parseWholeQuantity } from '../utils/quantityValidation';
 import { usePermissions } from '../hooks/usePermissions';
 
 const poSchema = z.object({
@@ -603,9 +604,10 @@ const PurchaseOrderPage = () => {
                         type="number"
                         className="hms-input"
                         value={newItem.quantity || ''}
-                        onChange={(e) => setNewItem({ ...newItem, quantity: parseFloat(e.target.value) || 0 })}
-                        min="0.01"
-                        step="0.01"
+                        onChange={(e) => setNewItem({ ...newItem, quantity: parseWholeQuantity(e.target.value) })}
+                        onKeyDown={(e) => { if (e.key === '.' || e.key === 'e') e.preventDefault(); }}
+                        min="1"
+                        step="1"
                       />
                     </div>
 

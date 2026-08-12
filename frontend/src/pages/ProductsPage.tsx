@@ -530,7 +530,7 @@ const ProductsPage = () => {
                 </div>
                 <div>
                   <label htmlFor="safety_stock" className="hms-label">Min Safety Stock</label>
-                  <input id="safety_stock" type="number" className="hms-input" placeholder="0" {...registerNumericField('safety_stock')} />
+                  <input id="safety_stock" type="number" min="0" step="1" className="hms-input" placeholder="0" onKeyDown={(e) => { if (e.key === '.' || e.key === 'e') e.preventDefault(); }} {...registerNumericField('safety_stock')} />
                   {getFieldError('safety_stock') && <p className="mt-1 text-xs text-danger">{getFieldError('safety_stock')}</p>}
                 </div>
                 <div>

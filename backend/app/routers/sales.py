@@ -1531,8 +1531,24 @@ async def list_invoices(
     total = query.count()
     rows = query.order_by(SalesInvoice.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
 
+    # Resolve customer name/code for display. Deliberately NOT filtered by
+    # is_deleted so historical invoices of soft-deleted customers still render the
+    # original customer. Scoped to the tenant for isolation.
+    customer_ids = {inv.customer_id for inv in rows if inv.customer_id}
+    customer_map: dict = {}
+    if customer_ids:
+        for cid, cname, ccode in (
+            db.query(Customer.id, Customer.company_name, Customer.customer_code)
+            .filter(Customer.id.in_(customer_ids), Customer.company_id == current_user.company_id)
+            .all()
+        ):
+            customer_map[cid] = (cname, ccode)
+
     for inv in rows:
         inv.status = _derive_invoice_status(inv.status, int(inv.amount_paid or 0), int(inv.total_amount or 0))
+        resolved = customer_map.get(inv.customer_id)
+        inv.customer_name = resolved[0] if resolved else None
+        inv.customer_code = resolved[1] if resolved else None
 
     return SalesInvoicesListResponse(
         items=[SalesInvoiceResponse.model_validate(inv) for inv in rows],
@@ -1582,6 +1598,10 @@ async def create_invoice(
     customer = db.query(Customer).filter(Customer.id == payload.customer_id, Customer.is_deleted == False).first()
     if not customer:
         raise HTTPException(status_code=400, detail="Invalid customer")
+    # Inactive (soft-deleted / deactivated) customers cannot be used for new/draft
+    # invoices. Already-issued invoices keep their customer; only draft save is gated.
+    if not customer.is_active:
+        raise HTTPException(status_code=400, detail="This customer is inactive and cannot be used for new invoices")
     _enforce_owner(customer, current_user)
 
     _validate_shipping_address_for_invoice(customer)
@@ -1764,7 +1784,20 @@ async def get_invoice(
             payload["net_total_amount"] = max(0, int(item.total_amount or 0) - int(returned.get("total", 0)))
         items_payload.append(payload)
 
-    return {"invoice": invoice, "items": items_payload}
+    # Resolve customer name/code (not filtered by is_deleted) so a soft-deleted
+    # customer's historical invoice still shows the original details.
+    customer_row = (
+        db.query(Customer.company_name, Customer.customer_code)
+        .filter(Customer.id == invoice.customer_id, Customer.company_id == current_user.company_id)
+        .first()
+    )
+
+    return {
+        "invoice": invoice,
+        "items": items_payload,
+        "customer_name": customer_row[0] if customer_row else None,
+        "customer_code": customer_row[1] if customer_row else None,
+    }
 
 
 @router.put("/api/v1/invoices/{invoice_id}")
@@ -1815,6 +1848,10 @@ async def update_invoice(
     customer = db.query(Customer).filter(Customer.id == payload.customer_id, Customer.is_deleted == False).first()
     if not customer:
         raise HTTPException(status_code=400, detail="Invalid customer")
+    # Inactive (soft-deleted / deactivated) customers cannot be used for new/draft
+    # invoices. Already-issued invoices keep their customer; only draft save is gated.
+    if not customer.is_active:
+        raise HTTPException(status_code=400, detail="This customer is inactive and cannot be used for new invoices")
     _enforce_owner(customer, current_user)
 
     _validate_shipping_address_for_invoice(customer)

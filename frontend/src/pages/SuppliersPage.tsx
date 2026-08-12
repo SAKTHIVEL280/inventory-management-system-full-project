@@ -13,6 +13,7 @@ import { PageEmpty, PageError, PageLoading } from '../components/PageState';
 import { getApiDetail, getApiDetailMessage } from '../utils/apiError';
 import { showError, showSuccess } from '../utils/toastHelper';
 import { COUNTRY_MASTER } from '../constants/countries';
+import { validateCountryValue, validateStateValue } from '../utils/locationValidation';
 
 const GSTIN_REGEX = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/i;
 
@@ -452,6 +453,16 @@ const SuppliersPage = () => {
     const stateMismatch = stateMismatchMessage(parsed.data.state, parsed.data.state_code);
     if (stateMismatch) {
       showError(stateMismatch);
+      return;
+    }
+
+    // Country must be a real country (not a continent); state must not be a
+    // country/continent name. Mirrors the backend validation.
+    const locationError =
+      validateCountryValue(parsed.data.billing_country, COUNTRY_MASTER, 'Country') ||
+      validateStateValue(parsed.data.state, COUNTRY_MASTER, 'State');
+    if (locationError) {
+      showError(locationError);
       return;
     }
 

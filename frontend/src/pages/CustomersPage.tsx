@@ -13,6 +13,7 @@ import { PageEmpty, PageError, PageLoading } from '../components/PageState';
 import { showError, showSuccess, confirmWithToast } from '../utils/toastHelper';
 import { getApiDetail, getApiDetailMessage } from '../utils/apiError';
 import { COUNTRY_MASTER } from '../constants/countries';
+import { validateCountryValue, validateStateValue } from '../utils/locationValidation';
 
 const GSTIN_REGEX = /^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/i;
 
@@ -533,6 +534,20 @@ const CustomersPage = () => {
         showError(shippingMismatch);
         return;
       }
+    }
+
+    // Country must be a real country (not a continent); state must not be a
+    // country/continent name. Mirrors the backend validation.
+    const locationError =
+      validateCountryValue(parsed.data.billing_country, COUNTRY_MASTER, 'Billing country') ||
+      validateStateValue(parsed.data.billing_state, COUNTRY_MASTER, 'Billing state') ||
+      (parsed.data.same_as_billing
+        ? null
+        : validateCountryValue(parsed.data.shipping_country, COUNTRY_MASTER, 'Shipping country') ||
+          validateStateValue(parsed.data.shipping_state, COUNTRY_MASTER, 'Shipping state'));
+    if (locationError) {
+      showError(locationError);
+      return;
     }
 
     const billingStateResolved = normalizeOptional(parsed.data.billing_state) || stateNameFromStateCode(parsed.data.billing_state_code);

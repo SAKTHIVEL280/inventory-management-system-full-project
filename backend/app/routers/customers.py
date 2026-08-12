@@ -19,6 +19,7 @@ from app.services.data_masking import DataMasker, should_mask_sensitive_fields
 from app.utils.input_validation import normalize_search_query
 from app.utils.state_mappings import validate_and_autofill_state_fields
 from app.utils.countries import COUNTRY_MASTER
+from app.utils.location_validation import validate_country, validate_state
 from app.schemas.customer import (
     CustomerCreateRequest,
     CustomerUpdateRequest,
@@ -209,6 +210,21 @@ def _validate_and_autofill_customer_states(payload: CustomerCreateRequest | Cust
             payload.shipping_state_code,
             field_label="Shipping state",
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _validate_customer_locations(payload: CustomerCreateRequest | CustomerUpdateRequest) -> None:
+    """Validate country/state fields: countries must be real countries (not
+    continents); states must not be country/continent names. Normalises the
+    country name to its canonical form. Runs before shipping is copied from
+    billing so both address blocks are checked."""
+    try:
+        payload.billing_country = validate_country(payload.billing_country, field_label="Billing country")
+        payload.billing_state = validate_state(payload.billing_state, field_label="Billing state")
+        if not payload.same_as_billing:
+            payload.shipping_country = validate_country(payload.shipping_country, field_label="Shipping country")
+            payload.shipping_state = validate_state(payload.shipping_state, field_label="Shipping state")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -520,6 +536,7 @@ async def create_customer(
             )
 
     _apply_gstin_state_code(payload)
+    _validate_customer_locations(payload)
     _validate_and_autofill_customer_states(payload)
     _normalize_shipping(payload)
     _validate_and_autofill_customer_states(payload)
@@ -624,6 +641,7 @@ async def update_customer(
             )
 
     _apply_gstin_state_code(payload)
+    _validate_customer_locations(payload)
     _validate_and_autofill_customer_states(payload)
     _normalize_shipping(payload)
     _validate_and_autofill_customer_states(payload)
@@ -689,7 +707,13 @@ async def delete_customer(
             detail={"error_code": "OUTSTANDING_EXISTS", "message": "Customer has outstanding balance"},
         )
 
+    # Soft delete / deactivate: the row is never physically removed so historical
+    # Sales Invoices (and every other FK reference) keep pointing at it and continue
+    # to display the original customer details. is_active=False marks it inactive so
+    # it is excluded from new Sales Invoice selection; is_deleted=True hides it from
+    # the customer master list.
     customer.is_deleted = True
+    customer.is_active = False
     customer.deleted_at = datetime.utcnow()
     db.commit()
 
