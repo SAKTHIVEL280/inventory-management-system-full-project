@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -14,6 +14,7 @@ import { confirmToast } from '../utils/toast';
 import { todayLocalDateInputValue } from '../utils/date';
 import { emptyWhenZero } from '../utils/numberInput';
 import { parseWholeQuantity } from '../utils/quantityValidation';
+import { SearchableSelect as EntitySelect, type SearchableOption } from '../components/SearchableSelect';
 import { usePermissions } from '../hooks/usePermissions';
 
 const poSchema = z.object({
@@ -390,6 +391,25 @@ const PurchaseOrderPage = () => {
   const suppliers = suppliersQuery.data?.items ?? [];
   const products = productsQuery.data?.items ?? [];
 
+  const supplierOptions: SearchableOption[] = useMemo(
+    () => suppliers.map((s) => ({
+      value: s.id,
+      label: s.company_name,
+      sublabel: [s.supplier_code, s.phone].filter(Boolean).join(' · '),
+      keywords: [s.supplier_code, s.phone, s.gstin].filter(Boolean).join(' '),
+    })),
+    [suppliers],
+  );
+  const productOptions: SearchableOption[] = useMemo(
+    () => products.map((p) => ({
+      value: p.id,
+      label: p.name,
+      sublabel: [p.product_code, `₹${(p.purchase_price / 100).toFixed(2)}`, `GST ${p.gst_rate}%`].filter(Boolean).join(' · '),
+      keywords: [p.product_code].filter(Boolean).join(' '),
+    })),
+    [products],
+  );
+
   const supplierNameById = (supplierId: string) => {
     const supplier = suppliers.find((s) => s.id === supplierId);
     return supplier ? supplier.company_name : `Invalid supplier (${supplierId.slice(0, 8)}...)`;
@@ -468,20 +488,20 @@ const PurchaseOrderPage = () => {
                   <label htmlFor="supplier_id" className="hms-label">
                     Supplier
                   </label>
-                  <select id="supplier_id" className="hms-input" {...form.register('supplier_id')} onChange={(e) => {
-                    form.setValue('supplier_id', e.target.value, { shouldDirty: true });
-                    const selectedSupplier = suppliers.find(s => s.id === e.target.value);
-                    if (selectedSupplier?.email) {
-                      form.setValue('email', selectedSupplier.email, { shouldDirty: true });
-                    }
-                  }}>
-                    <option value="">Select supplier</option>
-                    {suppliers.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.company_name}
-                      </option>
-                    ))}
-                  </select>
+                  <EntitySelect
+                    id="supplier_id"
+                    value={form.watch('supplier_id')}
+                    options={supplierOptions}
+                    onChange={(val) => {
+                      form.setValue('supplier_id', val, { shouldDirty: true, shouldValidate: true });
+                      const selectedSupplier = suppliers.find((s) => s.id === val);
+                      if (selectedSupplier?.email) {
+                        form.setValue('email', selectedSupplier.email, { shouldDirty: true });
+                      }
+                    }}
+                    placeholder="Search supplier by name, code…"
+                    emptyMessage="No matching supplier"
+                  />
                 </div>
 
                 <div className="xl:col-span-2">
@@ -581,21 +601,13 @@ const PurchaseOrderPage = () => {
                   <div className="grid min-w-[980px] grid-cols-[minmax(260px,2fr)_110px_150px_110px_110px_160px] items-end gap-3">
                     <div>
                       <label className="mb-1 block text-sm font-semibold text-neutral-700">Product *</label>
-                      <select
-                        className="hms-input"
+                      <EntitySelect
                         value={newItem.product_id || ''}
-                        onChange={(e) => handleProductSelect(e.target.value)}
-                      >
-                        <option value="">Select product</option>
-                        {products
-                          .slice()
-                          .sort((a, b) => a.name.localeCompare(b.name))
-                          .map((p) => (
-                            <option key={p.id} value={p.id}>
-                              {p.name} (₹{(p.purchase_price / 100).toFixed(2)} | GST: {p.gst_rate}%)
-                            </option>
-                          ))}
-                      </select>
+                        options={productOptions}
+                        onChange={(val) => handleProductSelect(val)}
+                        placeholder="Search product by name, code…"
+                        emptyMessage="No matching product"
+                      />
                     </div>
 
                     <div>

@@ -388,12 +388,18 @@ def _get_customer_open_invoices(
     (`amount_due > 0`) and status issued/partial_paid are returned; paid, cancelled,
     deleted and rejected invoices are excluded. `company_id` scoping enforces
     multi-tenant isolation (no cross-tenant invoices).
+
+    Eligibility is `amount_due`-based (the cleared-only outstanding), which is the
+    SAME definition the Sales Invoices page uses — so both areas list identical
+    invoices. A pending (uncleared) receipt does NOT hide an invoice here, because
+    it does not reduce `amount_due`. Status matching is trim/lower-robust so stray
+    casing/whitespace never silently drops a valid invoice.
     """
     query = db.query(SalesInvoice).filter(
         SalesInvoice.customer_id == customer_id,
         SalesInvoice.is_deleted == False,
         SalesInvoice.amount_due > 0,
-        SalesInvoice.status.in_(["issued", "partial_paid"]),
+        func.lower(func.trim(SalesInvoice.status)).in_(("issued", "partial_paid")),
     )
     if company_id is not None:
         query = query.filter(SalesInvoice.company_id == company_id)
@@ -487,6 +493,28 @@ async def list_payments(
         total = query.count()
         items = query.order_by(Payment.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
     
+    # Resolve party (customer / supplier) names for display. Deliberately NOT
+    # filtered by is_deleted, so historical receipts/payments keep showing the
+    # original customer/supplier even after a soft delete (previously the frontend
+    # derived the name from the active list only, so deleted parties showed "-").
+    # Tenant-scoped to prevent any cross-company name leakage.
+    cust_ids = {p.customer_id for p in items if p.customer_id}
+    supp_ids = {p.supplier_id for p in items if p.supplier_id}
+    customer_names: dict = {}
+    supplier_names: dict = {}
+    if cust_ids:
+        cust_q = db.query(Customer.id, Customer.company_name, Customer.customer_code).filter(Customer.id.in_(cust_ids))
+        if current_user.company_id is not None:
+            cust_q = cust_q.filter(Customer.company_id == current_user.company_id)
+        for cid, cname, ccode in cust_q.all():
+            customer_names[cid] = (cname, ccode)
+    if supp_ids:
+        supp_q = db.query(Supplier.id, Supplier.company_name, Supplier.supplier_code).filter(Supplier.id.in_(supp_ids))
+        if current_user.company_id is not None:
+            supp_q = supp_q.filter(Supplier.company_id == current_user.company_id)
+        for sid, sname, scode in supp_q.all():
+            supplier_names[sid] = (sname, scode)
+
     # Serialize with allocations for frontend display
     items_out = []
     for p in items:
@@ -516,6 +544,12 @@ async def list_payments(
             "party_type": p.party_type,
             "customer_id": str(p.customer_id) if p.customer_id else None,
             "supplier_id": str(p.supplier_id) if p.supplier_id else None,
+            # Party name/code resolved above (present even for soft-deleted parties)
+            # so historical Receivables/Payables always show the original party.
+            "customer_name": customer_names.get(p.customer_id, (None, None))[0],
+            "customer_code": customer_names.get(p.customer_id, (None, None))[1],
+            "supplier_name": supplier_names.get(p.supplier_id, (None, None))[0],
+            "supplier_code": supplier_names.get(p.supplier_id, (None, None))[1],
             "payment_date": str(p.payment_date),
             "amount": p.amount,
             "payment_mode": p.payment_mode,
@@ -595,11 +629,13 @@ async def create_payment(
             raise HTTPException(status_code=400, detail="Invalid customer")
         _enforce_owner(customer, current_user)
 
-        # Candidate invoices + remaining allocation capacity (pending allocations
-        # reserve capacity so an invoice cannot be over-allocated).
-        candidates = _customer_candidate_invoices(db, payload.customer_id, current_user.company_id)
-        capacity = {inv.id: _invoice_alloc_capacity(db, inv.id) for inv in candidates}
-        allocatable_ids = {inv.id for inv in candidates if capacity[inv.id] > 0}
+        # Eligible invoices = the SAME set the allocation modal / Sales Invoices page
+        # show: approved invoices with an outstanding balance (amount_due > 0). The
+        # per-invoice cap is the invoice's real outstanding, so the modal and the save
+        # validation agree exactly (no "shown but rejected" mismatch).
+        open_invoices = _get_customer_open_invoices(db, payload.customer_id, current_user.company_id)
+        due_by_invoice = {inv.id: int(inv.amount_due or 0) for inv in open_invoices}
+        allocatable_ids = set(due_by_invoice.keys())
         if not allocatable_ids:
             raise HTTPException(status_code=400, detail="No Open Invoice")
 
@@ -625,7 +661,7 @@ async def create_payment(
                     status_code=400,
                     detail="Selected invoice is not an open invoice for this customer",
                 )
-            if _to_minor_units(allocation.allocated_amount) > capacity.get(allocation.invoice_id, 0):
+            if _to_minor_units(allocation.allocated_amount) > due_by_invoice.get(allocation.invoice_id, 0):
                 raise HTTPException(status_code=400, detail="Allocated amount exceeds invoice due")
 
     selected_po = None
@@ -821,9 +857,12 @@ async def update_payment(
         if not customer:
             raise HTTPException(status_code=400, detail="Invalid customer")
         _enforce_owner(customer, current_user)
-        candidates = _customer_candidate_invoices(db, cust_id, current_user.company_id)
-        capacity = {inv.id: _invoice_alloc_capacity(db, inv.id, exclude_payment_id=payment.id) for inv in candidates}
-        allocatable_ids = {iid for iid, cap in capacity.items() if cap > 0}
+        # Same amount_due-based eligibility as create_payment. Because this payment is
+        # pending, it never reduced amount_due, so its own invoices are naturally
+        # included and remain re-allocatable during the edit.
+        open_invoices = _get_customer_open_invoices(db, cust_id, current_user.company_id)
+        due_by_invoice = {inv.id: int(inv.amount_due or 0) for inv in open_invoices}
+        allocatable_ids = set(due_by_invoice.keys())
         invoice_allocs = [a for a in payload.allocations if a.invoice_id and _to_minor_units(a.allocated_amount) > 0]
         if not invoice_allocs:
             raise HTTPException(status_code=400, detail="Please allocate the payment against at least one invoice before saving.")
@@ -834,7 +873,7 @@ async def update_payment(
                 raise HTTPException(status_code=400, detail="invoice_id is required for customer payment allocations")
             if a.invoice_id not in allocatable_ids:
                 raise HTTPException(status_code=400, detail="Selected invoice is not an open invoice for this customer")
-            if _to_minor_units(a.allocated_amount) > capacity.get(a.invoice_id, 0):
+            if _to_minor_units(a.allocated_amount) > due_by_invoice.get(a.invoice_id, 0):
                 raise HTTPException(status_code=400, detail="Allocated amount exceeds invoice due")
 
     # 3) Update the payment fields.
@@ -912,17 +951,16 @@ async def get_customer_open_invoices(
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
 
-    # Selectable amount per invoice = remaining allocation capacity (total minus
-    # what active pending/cleared payments already reserve). When editing a payment
-    # (`payment_id`), that payment's own reservation is excluded, so its invoices
-    # remain selectable and show the amount it can re-allocate. This replaces the
-    # old "gross-up" and is consistent with the cleared-only settlement model.
-    exclude_id = payment_id if payment_id is not None else None
+    # Eligible invoices = every approved invoice with an outstanding balance
+    # (`amount_due > 0`, status issued/partial_paid), IDENTICAL to what the Sales
+    # Invoices page treats as outstanding. The outstanding amount shown is the
+    # invoice's real `amount_due` (cleared-only settlement). A pending receipt on
+    # an invoice no longer hides it here (previously a capacity filter did, causing
+    # the "Sales shows 4 / allocation shows 2" mismatch). `payment_id` is accepted
+    # for backward compatibility but is not needed: a pending payment never reduces
+    # `amount_due`, so the invoices it targets remain listed while it is edited.
     items = []
-    for inv in _customer_candidate_invoices(db, customer_id, current_user.company_id):
-        capacity = _invoice_alloc_capacity(db, inv.id, exclude_payment_id=exclude_id)
-        if capacity <= 0:
-            continue
+    for inv in _get_customer_open_invoices(db, customer_id, current_user.company_id):
         items.append({
             "id": str(inv.id),
             "invoice_number": inv.invoice_number,
@@ -931,8 +969,7 @@ async def get_customer_open_invoices(
             "customer_id": str(inv.customer_id),
             "total_amount": int(inv.total_amount or 0),
             "amount_paid": int(inv.amount_paid or 0),
-            # amount_due here is the allocatable capacity for this receipt.
-            "amount_due": int(capacity),
+            "amount_due": int(inv.amount_due or 0),
             "actual_amount_due": int(inv.amount_due or 0),
             "status": inv.status,
         })

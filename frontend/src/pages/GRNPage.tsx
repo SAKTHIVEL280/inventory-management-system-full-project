@@ -10,7 +10,7 @@
  * - Link uses new route /masters/suppliers
  * - Better validation and error messaging
  */
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { useSearchParams } from 'react-router-dom';
@@ -25,6 +25,7 @@ import { confirmWithToast } from '../utils/toastHelper';
 import { addDaysToDateInputValue, todayLocalDateInputValue } from '../utils/date';
 import { emptyWhenZero } from '../utils/numberInput';
 import { parseWholeQuantity } from '../utils/quantityValidation';
+import { SearchableSelect as EntitySelect, type SearchableOption } from '../components/SearchableSelect';
 import { usePermissions } from '../hooks/usePermissions';
 
 interface ProductOption { id: string; name: string; product_code: string; purchase_price: number; gst_rate: number; }
@@ -162,14 +163,19 @@ const GRNPage = () => {
   /* eslint-disable react-hooks/exhaustive-deps -- loadPOData is intentionally referenced after master data load to resolve pending PO deep-link */
   const fetchMaster = useCallback(async () => {
     try {
-      const s = await apiClient.get('/api/v2/suppliers', { params: { page_size: 100 } });
-      setSuppliers(Array.isArray(s.data?.items) ? s.data.items : []);
+      // Load ALL suppliers (chunked) so none are hidden by a page-size cap.
+      const { items } = await fetchAllPages<SupplierOption>(async (pageNo, size) => {
+        const res = await apiClient.get('/api/v2/suppliers', { params: { page: pageNo, page_size: size } });
+        return { items: Array.isArray(res.data?.items) ? res.data.items : [], total: res.data?.total ?? 0 };
+      });
+      setSuppliers(items);
     } catch (err) {
       console.error('Failed to fetch suppliers:', err);
       setSuppliers([]);
     }
     try {
-      const p = await apiClient.get('/api/v2/products', { params: { page_size: 100 } });
+      // all_products=true returns the complete catalogue (no page cap).
+      const p = await apiClient.get('/api/v2/products', { params: { all_products: true } });
       setProducts(Array.isArray(p.data?.items) ? p.data.items : []);
     } catch (err) {
       console.error('Failed to fetch products:', err);
@@ -834,6 +840,24 @@ const GRNPage = () => {
   const availableProducts = selectedPO
     ? products.filter(p => items.some(i => i.product_id === p.id))
     : products;
+  const supplierOptions: SearchableOption[] = useMemo(
+    () => suppliers.map((s) => ({
+      value: s.id,
+      label: s.company_name,
+      sublabel: s.supplier_code,
+      keywords: s.supplier_code,
+    })),
+    [suppliers],
+  );
+  const productSelectOptions: SearchableOption[] = useMemo(
+    () => availableProducts.map((p) => ({
+      value: p.id,
+      label: p.name,
+      sublabel: p.product_code,
+      keywords: p.product_code,
+    })),
+    [availableProducts],
+  );
   const todayDateInputMax = todayLocalDateInputValue();
   const mfgDateInputMax = addDaysToDateInputValue(todayDateInputMax, -1);
   const expiryDateInputMin = addDaysToDateInputValue(todayDateInputMax, 1);
@@ -1223,25 +1247,19 @@ const GRNPage = () => {
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
                 <div>
                   <label className="mb-1 block text-sm font-semibold text-neutral-700">Supplier *</label>
-                  <select
-                    className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm"
+                  <EntitySelect
                     value={supplierId}
-                    onChange={e => {
-                      setSupplierId(e.target.value);
-                      const selectedSupplier = suppliers.find(s => s.id === e.target.value);
-                      if (selectedSupplier) {
-                        setPaymentTermsDays(selectedSupplier.payment_terms_days ?? 30);
-                      } else {
-                        setPaymentTermsDays(30);
-                      }
+                    options={supplierOptions}
+                    onChange={(val) => {
+                      setSupplierId(val);
+                      const selectedSupplier = suppliers.find(s => s.id === val);
+                      setPaymentTermsDays(selectedSupplier ? (selectedSupplier.payment_terms_days ?? 30) : 30);
                     }}
                     disabled={!!selectedPO || suppliers.length === 0}
-                  >
-                    <option value="">Select</option>
-                    {suppliers.map(s => (
-                      <option key={s.id} value={s.id}>{s.company_name}</option>
-                    ))}
-                  </select>
+                    className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-primary"
+                    placeholder="Search supplier by name, code…"
+                    emptyMessage="No matching supplier"
+                  />
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-semibold text-neutral-700">Linked PO</label>
@@ -1369,10 +1387,14 @@ const GRNPage = () => {
                                 ))}
                               </select>
                             ) : (
-                              <select className="h-9 w-full rounded border px-2 py-1.5 text-sm" value={item.product_id} onChange={e => updateItem(idx, 'product_id', e.target.value)}>
-                                <option value="">Select</option>
-                                {availableProducts.map(p => <option key={p.id} value={p.id}>{p.name} ({p.product_code})</option>)}
-                              </select>
+                              <EntitySelect
+                                value={item.product_id}
+                                options={productSelectOptions}
+                                onChange={(val) => updateItem(idx, 'product_id', val)}
+                                className="h-9 w-full rounded border border-neutral-200 px-2 py-1.5 text-sm outline-none focus:border-primary"
+                                placeholder="Search product…"
+                                emptyMessage="No matching product"
+                              />
                             )}
                           </td>
                           <td className="px-3 py-2">

@@ -63,6 +63,9 @@ _FINANCIAL_MODULES = {
     "sales-returns",
     "purchase-returns",
     "rdn",
+    # Master-data modules whose create/update actions are tracked in Action Logs.
+    "customers",
+    "suppliers",
 }
 
 
@@ -113,7 +116,9 @@ def _ensure_audit_logs_table(db: Session) -> None:
 # Modules whose edits are version-tracked in the audit log (MCN-BUG-006).
 # The Sales Order module was retired and replaced by Sales Invoices (the "/sales-orders"
 # route redirects to "/sales/invoices"), so the business "Sales Order" maps to "invoices".
-_VERSIONED_EDIT_MODULES = {"invoices"}
+# Customers/Suppliers: each master's update gets a permanent sequential version
+# (Version I, II, III…) keyed on its immutable code.
+_VERSIONED_EDIT_MODULES = {"invoices", "customers", "suppliers"}
 
 # Sub-actions on a version-tracked record that still count as a content edit and so
 # share the same version sequence. The post-issue editor
@@ -943,11 +948,14 @@ def _maybe_cleanup_old_audit_logs(db: Session) -> None:
     if retention_days <= 0:
         return
 
+    # Use interval multiplication (:n * INTERVAL '1 day') instead of building a
+    # string like ":n::text || ' days'" — the latter collides the bind param with
+    # PostgreSQL's "::" cast and raises a syntax error on every run.
     db.execute(
         text(
             """
             DELETE FROM audit_logs
-            WHERE created_at < NOW() - (:retention_days::text || ' days')::interval
+            WHERE created_at < NOW() - (:retention_days * INTERVAL '1 day')
             """
         ),
         {"retention_days": retention_days},
@@ -1072,7 +1080,15 @@ def log_audit_event(
                     "version": version,
                 },
             )
-            _maybe_cleanup_old_audit_logs(db)
+        # Retention maintenance runs in its OWN savepoint so a cleanup failure can
+        # never roll back the audit row we just inserted (previously the cleanup ran
+        # inside the insert's savepoint, so its error silently discarded the row —
+        # this dropped the first audit write per process/hour).
+        try:
+            with db.begin_nested():
+                _maybe_cleanup_old_audit_logs(db)
+        except Exception:
+            pass
         logger.info(
             "AUDIT action=%s action_type=%s module=%s status=%s user_id=%s reference=%s",
             action,

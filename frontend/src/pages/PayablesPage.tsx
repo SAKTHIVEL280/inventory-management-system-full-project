@@ -23,8 +23,10 @@ import { usePermissions } from '../hooks/usePermissions';
 import { usePagination } from '../hooks/usePagination';
 import { PaginationControls } from '../components/PaginationControls';
 import { fetchAllPages } from '../utils/fetchAllPages';
+import { exportToCsv, csvDateStamp } from '../utils/csvExport';
+import { SearchableSelect as EntitySelect, type SearchableOption } from '../components/SearchableSelect';
 
-interface SupplierOption { id: string; company_name: string; }
+interface SupplierOption { id: string; company_name: string; supplier_code?: string; phone?: string; }
 
 const CLEARED_STATUSES = new Set(['cleared', 'advance_payment_cleared', 'advance_cleared', 'full_payment_cleared']);
 
@@ -54,7 +56,6 @@ const PayablesPage = () => {
   const [supplierPOs, setSupplierPOs] = useState<PurchaseOrder[]>([]);
   const [selectedPOId, setSelectedPOId] = useState('');
   const [selectedGRNId, setSelectedGRNId] = useState('');
-  const [poSearch, setPoSearch] = useState('');
 
   // PAY-004: Advance payment mode
   const [isAdvancePayment, setIsAdvancePayment] = useState(false);
@@ -88,7 +89,14 @@ const PayablesPage = () => {
     }
   };
   const fetchSuppliers = async () => {
-    try { const res = await apiClient.get('/api/v2/suppliers', { params: { page_size: 100 } }); setSuppliers(res.data.items || []); } catch { /* */ }
+    try {
+      // Load ALL suppliers (chunked) so the searchable picker covers the full list.
+      const { items } = await fetchAllPages<SupplierOption>(async (p, size) => {
+        const res = await apiClient.get('/api/v2/suppliers', { params: { page: p, page_size: size } });
+        return { items: res.data.items || [], total: res.data.total ?? 0 };
+      });
+      setSuppliers(items);
+    } catch { /* */ }
   };
 
   const fetchPOsForSupplier = async (nextSupplierId: string) => {
@@ -166,7 +174,6 @@ const PayablesPage = () => {
     setSupplierPOs([]);
     setSelectedPOId('');
     setSelectedGRNId('');
-    setPoSearch('');
     setPaymentDate(todayLocalDateInputValue());
     setAmount(0);
     setPaymentMode('bank_transfer');
@@ -202,6 +209,20 @@ const PayablesPage = () => {
       .join(' ');
   };
   const supplierNameById = (id?: string | null) => suppliers.find((s) => s.id === id)?.company_name || '-';
+  // Prefer the API-provided name so historical payments to a soft-deleted supplier
+  // still show the original supplier instead of "-".
+  const paymentSupplierName = (p: { supplier_id?: string | null; supplier_name?: string | null }) =>
+    p.supplier_name || supplierNameById(p.supplier_id);
+
+  const supplierOptions: SearchableOption[] = useMemo(
+    () => suppliers.map((s) => ({
+      value: s.id,
+      label: s.company_name,
+      sublabel: [s.supplier_code, s.phone].filter(Boolean).join(' · '),
+      keywords: [s.supplier_code, s.phone].filter(Boolean).join(' '),
+    })),
+    [suppliers],
+  );
 
   const handleDateFromChange = (value: string) => {
     setDateFrom(value);
@@ -223,7 +244,7 @@ const PayablesPage = () => {
     const statusLabel = (p.status_display || p.status || '').toLowerCase();
     const matchesSearch =
       !term ||
-      supplierNameById(p.supplier_id).toLowerCase().includes(term) ||
+      paymentSupplierName(p).toLowerCase().includes(term) ||
       p.payment_date.toLowerCase().includes(term) ||
       statusLabel.includes(term) ||
       p.payment_mode.toLowerCase().includes(term) ||
@@ -293,14 +314,10 @@ const PayablesPage = () => {
     return remaining;
   }, [outstandingGRNs, settlementPayments]);
 
-  const filteredPOs = useMemo(() => {
-    const q = poSearch.trim().toLowerCase();
-    if (!q) return supplierPOs;
-    return supplierPOs.filter((po) =>
-      po.po_number.toLowerCase().includes(q) ||
-      po.status.toLowerCase().includes(q)
-    );
-  }, [poSearch, supplierPOs]);
+  const poOptions: SearchableOption[] = useMemo(
+    () => supplierPOs.map((po) => ({ value: po.id, label: po.po_number, sublabel: po.status, keywords: po.status })),
+    [supplierPOs],
+  );
 
   const poScopedGRNs = useMemo(() => {
     if (!selectedPOId) return [];
@@ -337,6 +354,28 @@ const PayablesPage = () => {
     setAllocations({ [selectedGRNId]: remaining });
     setAmount(remaining);
   }, [isAdvancePayment, remainingByGRN, selectedGRNId]);
+
+  // Task 11: export the CURRENT view — filteredPayments already reflects the
+  // active search, status/mode/archive filters and date range.
+  const handleExport = () => {
+    if (filteredPayments.length === 0) { showError('Nothing to export for the current filters'); return; }
+    const headers = ['Payment #', 'GRN #', 'PO #', 'Supplier', 'Date', 'Mode', 'GRN Value (₹)', 'Paid Amount (₹)', 'Status', 'Reference #', 'Notes'];
+    const rows = filteredPayments.map((p) => [
+      p.payment_number || '',
+      p.allocations?.map((a) => a.grn_number).filter(Boolean).join(' | ') || '',
+      p.po_number || p.allocations?.map((a) => a.po_number).filter(Boolean).join(' | ') || '',
+      paymentSupplierName(p),
+      p.payment_date,
+      formatModeLabel(p.payment_mode),
+      p.allocations?.map((a) => (a.grn_total_amount ? (a.grn_total_amount / 100).toFixed(2) : '')).filter(Boolean).join(' | ') || '',
+      (Number(p.amount || 0) / 100).toFixed(2),
+      formatStatusLabel(p.status, p.status_display),
+      p.reference_number || '',
+      cleanNotes(p.notes_display || p.notes),
+    ]);
+    exportToCsv(`payables_${archiveView}_${csvDateStamp()}.csv`, headers, rows);
+    showSuccess(`Exported ${rows.length} payment${rows.length !== 1 ? 's' : ''}`);
+  };
 
   const handleSubmit = async () => {
     if (!supplierId || amount <= 0) { setError('Select supplier and enter amount'); return; }
@@ -528,6 +567,10 @@ const PayablesPage = () => {
           </div>
           {/* PAY-005: Advance Payment â†’ Record Payment â†’ Cancel order */}
           <div className="flex items-center gap-2">
+            <button onClick={handleExport} className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50">
+              <span className="material-icons text-base" aria-hidden="true">download</span>
+              Export
+            </button>
             <button onClick={() => { resetForm(); setIsAdvancePayment(true); setShowForm(true); }} className="rounded-lg border-2 border-amber-400 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-700 hover:bg-amber-100">Advance Payment</button>
             <button onClick={() => { resetForm(); setShowForm(true); }} className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/20 hover:bg-primary/90">+ Record Payment</button>
           </div>
@@ -562,7 +605,7 @@ const PayablesPage = () => {
                     <td className="px-4 py-3 text-xs">
                       {p.po_number || p.allocations?.map((a) => a.po_number).filter(Boolean).join(', ') || '—'}
                     </td>
-                    <td className="px-4 py-3">{supplierNameById(p.supplier_id)}</td>
+                    <td className="px-4 py-3">{paymentSupplierName(p)}</td>
                     <td className="px-4 py-3">{p.payment_date}</td>
                     <td className="px-4 py-3 capitalize">{p.payment_mode.replace('_', ' ')}</td>
                     {/* PAY-002: GRN Value */}
@@ -621,20 +664,27 @@ const PayablesPage = () => {
               )}
               {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>}
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Supplier *</label><select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={supplierId} onChange={e => { setSupplierId(e.target.value); setSelectedPOId(''); setSelectedGRNId(''); }}><option value="">Select</option>{suppliers.map(s => <option key={s.id} value={s.id}>{s.company_name}</option>)}</select></div>
+                <div>
+                  <label className="mb-1 block text-sm font-semibold text-neutral-700">Supplier *</label>
+                  <EntitySelect
+                    value={supplierId}
+                    options={supplierOptions}
+                    onChange={(val) => { setSupplierId(val); setSelectedPOId(''); setSelectedGRNId(''); }}
+                    className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-primary"
+                    placeholder="Search supplier by name, code…"
+                    emptyMessage="No matching supplier"
+                  />
+                </div>
                 <div>
                   <label className="mb-1 block text-sm font-semibold text-neutral-700">PO Number *</label>
-                  <input
-                    type="text"
-                    className="mb-2 w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm"
-                    placeholder="Search PO number"
-                    value={poSearch}
-                    onChange={(e) => setPoSearch(e.target.value)}
+                  <EntitySelect
+                    value={selectedPOId}
+                    options={poOptions}
+                    onChange={(val) => { setSelectedPOId(val); setSelectedGRNId(''); }}
+                    className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-primary"
+                    placeholder="Search PO number…"
+                    emptyMessage={supplierId ? 'No purchase orders for this supplier' : 'Select a supplier first'}
                   />
-                  <select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={selectedPOId} onChange={e => { setSelectedPOId(e.target.value); setSelectedGRNId(''); }}>
-                    <option value="">Select PO Number</option>
-                    {filteredPOs.map(po => <option key={po.id} value={po.id}>{po.po_number} ({po.status})</option>)}
-                  </select>
                 </div>
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Date *</label><input type="date" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} /></div>
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Amount (₹) *</label><input type="number" step="0.01" min="0.01" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={amount > 0 ? paiseToRupees(amount) : ''} onChange={e => setAmount(rupeesToPaise(e.target.value))} /></div>
@@ -716,7 +766,7 @@ const PayablesPage = () => {
               ) : (
                 <>
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <div><p className="text-xs text-neutral-600">Supplier</p><p className="font-medium">{supplierNameById(viewPayment.supplier_id)}</p></div>
+                    <div><p className="text-xs text-neutral-600">Supplier</p><p className="font-medium">{paymentSupplierName(viewPayment)}</p></div>
                     <div><p className="text-xs text-neutral-600">Date</p><p className="font-medium">{viewPayment.payment_date}</p></div>
                     <div><p className="text-xs text-neutral-600">Mode</p><p className="font-medium">{formatModeLabel(viewPayment.payment_mode)}</p></div>
                     <div><p className="text-xs text-neutral-600">Amount</p><p className="font-medium">{formatAmount(viewPayment.amount)}</p></div>

@@ -58,6 +58,12 @@ export interface Payment {
   party_type: 'customer' | 'supplier';
   customer_id?: string;
   supplier_id?: string;
+  // Party name/code resolved by the API (present even for soft-deleted parties),
+  // so historical Receivables/Payables always show the original party.
+  customer_name?: string | null;
+  customer_code?: string | null;
+  supplier_name?: string | null;
+  supplier_code?: string | null;
   payment_date: string;
   amount: number;
   payment_mode: string;

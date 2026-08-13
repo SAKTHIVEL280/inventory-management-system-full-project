@@ -561,11 +561,11 @@ const ProductsPage = () => {
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <h2 className="font-display text-lg font-bold text-neutral-900">Products</h2>
               <div className="flex items-center gap-3">
-                <div className="relative">
+                <div className="relative w-full sm:w-64">
                   <span className="material-icons absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 text-[20px]" aria-hidden="true">search</span>
                   <input
                     type="text"
-                    className="w-64 rounded-lg border border-neutral-200 bg-white pl-10 pr-3 py-2 text-sm outline-none focus:border-primary"
+                    className="w-full rounded-lg border border-neutral-200 bg-white pl-10 pr-3 py-2 text-sm outline-none focus:border-primary"
                     placeholder="Search by name, code, SKU..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
@@ -582,17 +582,17 @@ const ProductsPage = () => {
           )}
           {!productsQuery.isLoading && !productsQuery.isError && filteredProducts.length > 0 && (
             <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[560px] text-sm">
               <caption className="sr-only">Products list with tax and stock status</caption>
               <thead className="bg-neutral-50">
                 <tr className="text-left border-y border-neutral-200">
-                  <th scope="col" className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">Code</th>
+                  <th scope="col" className="hidden px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500 lg:table-cell">Code</th>
                   <th scope="col" className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">Name</th>
-                  <th scope="col" className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">Category</th>
-                  <th scope="col" className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">GST</th>
-                  <th scope="col" className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">Purchase ₹</th>
+                  <th scope="col" className="hidden px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500 xl:table-cell">Category</th>
+                  <th scope="col" className="hidden px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500 sm:table-cell">GST</th>
+                  <th scope="col" className="hidden px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500 lg:table-cell">Purchase ₹</th>
                   <th scope="col" className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">Selling ₹</th>
-                  <th scope="col" className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">MRP ₹</th>
+                  <th scope="col" className="hidden px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500 xl:table-cell">MRP ₹</th>
                   <th scope="col" className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">Stock</th>
                   <th scope="col" className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">Status</th>
                   <th scope="col" className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">Actions</th>
@@ -601,16 +601,18 @@ const ProductsPage = () => {
               <tbody className="divide-y divide-neutral-100">
                 {paginatedProducts.map((item) => (
                   <tr key={item.id} className={`hover:bg-neutral-50/80 ${!item.is_active ? 'opacity-50' : ''}`}>
-                    <td className="px-4 py-3 font-mono text-xs">{item.product_code}</td>
+                    <td className="hidden px-4 py-3 font-mono text-xs lg:table-cell">{item.product_code}</td>
                     <td className="px-4 py-3">
                       <div className="font-medium">{item.name}</div>
                       {item.sku && <div className="text-xs text-neutral-400">Base Unit: {item.sku}</div>}
+                      {/* Compact meta shown only on small screens where columns are hidden */}
+                      <div className="mt-0.5 text-xs text-neutral-400 sm:hidden">{item.product_code} · GST {item.gst_rate}%</div>
                     </td>
-                    <td className="px-4 py-3 text-xs">{categoryNameById(item.category_id)}</td>
-                    <td className="px-4 py-3">{item.gst_rate}%</td>
-                    <td className="px-4 py-3">₹{(item.purchase_price / 100).toFixed(2)}</td>
+                    <td className="hidden px-4 py-3 text-xs xl:table-cell">{categoryNameById(item.category_id)}</td>
+                    <td className="hidden px-4 py-3 sm:table-cell">{item.gst_rate}%</td>
+                    <td className="hidden px-4 py-3 lg:table-cell">₹{(item.purchase_price / 100).toFixed(2)}</td>
                     <td className="px-4 py-3">₹{(item.selling_price / 100).toFixed(2)}</td>
-                    <td className="px-4 py-3">₹{(item.mrp / 100).toFixed(2)}</td>
+                    <td className="hidden px-4 py-3 xl:table-cell">₹{(item.mrp / 100).toFixed(2)}</td>
                     <td className="px-4 py-3">{item.current_stock ?? 0}</td>
                     <td className="px-4 py-3">
                       {item.status === 'flagged_for_deletion' ? (
@@ -638,7 +640,7 @@ const ProductsPage = () => {
           
           {/* Pagination Controls */}
           {!productsQuery.isLoading && !productsQuery.isError && filteredProducts.length > 0 && (
-            <div className="flex items-center justify-between border-t border-neutral-200 px-5 py-4">
+            <div className="flex flex-col gap-3 border-t border-neutral-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-sm text-neutral-600">
                 Showing {startIndex + 1} to {Math.min(endIndex, totalItems)} of {totalItems} product{totalItems !== 1 ? 's' : ''}
                 {searchQuery && ` (filtered from ${products.length} total)`}

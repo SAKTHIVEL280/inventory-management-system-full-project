@@ -11,9 +11,10 @@
  * - REC-008: Edit option after Recording payment (before Clear/Bounce)
  * - REC-009: Invoice number correctly linked
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { AppLayout } from '../components/AppLayout';
+import { SearchableSelect as EntitySelect, type SearchableOption } from '../components/SearchableSelect';
 import { paymentsApi, type Payment, type CreatePaymentPayload, type PaymentAllocationRequest, type PaymentAllocation } from '../api/payments';
 import { type SalesInvoice } from '../api/sales';
 import { apiClient } from '../api/client';
@@ -23,8 +24,9 @@ import { usePermissions } from '../hooks/usePermissions';
 import { usePagination } from '../hooks/usePagination';
 import { PaginationControls } from '../components/PaginationControls';
 import { fetchAllPages } from '../utils/fetchAllPages';
+import { exportToCsv, csvDateStamp } from '../utils/csvExport';
 
-interface CustomerOption { id: string; company_name: string; }
+interface CustomerOption { id: string; company_name: string; customer_code?: string; phone?: string; }
 
 const ReceivablesPage = () => {
   const { isAdmin } = usePermissions();
@@ -76,8 +78,27 @@ const ReceivablesPage = () => {
     }
   };
   const fetchCustomers = async () => {
-    try { const res = await apiClient.get('/api/v2/customers', { params: { page_size: 500 } }); setCustomers(res.data.items || []); } catch { /* */ }
+    try {
+      // Load ALL active customers (chunked) so the searchable picker covers the full
+      // directory. Inactive/soft-deleted customers are excluded from new receipts;
+      // historical receipts still show their original name via the API (customer_name).
+      const { items } = await fetchAllPages<CustomerOption>(async (p, size) => {
+        const res = await apiClient.get('/api/v2/customers', { params: { page: p, page_size: size, is_active: true } });
+        return { items: res.data.items || [], total: res.data.total ?? 0 };
+      });
+      setCustomers(items);
+    } catch { /* */ }
   };
+
+  const customerOptions: SearchableOption[] = useMemo(
+    () => customers.map((c) => ({
+      value: c.id,
+      label: c.company_name,
+      sublabel: [c.customer_code, c.phone].filter(Boolean).join(' · '),
+      keywords: [c.customer_code, c.phone].filter(Boolean).join(' '),
+    })),
+    [customers],
+  );
 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchPayments should run when archiveView changes
   useEffect(() => { fetchPayments(); }, [archiveView]);
@@ -115,6 +136,10 @@ const ReceivablesPage = () => {
     return notes.replace(/\[PO_ID:[^\]]+\]/g, '').trim();
   };
   const customerNameById = (id?: string | null) => customers.find((c) => c.id === id)?.company_name || '-';
+  // Prefer the API-provided name so historical receipts of a soft-deleted customer
+  // still show the original customer instead of "-".
+  const paymentCustomerName = (p: { customer_id?: string | null; customer_name?: string | null }) =>
+    p.customer_name || customerNameById(p.customer_id);
 
   const handleDateFromChange = (value: string) => {
     setDateFrom(value);
@@ -149,7 +174,7 @@ const ReceivablesPage = () => {
     const invoiceRefs = p.allocations?.map((a) => a.invoice_number).filter(Boolean).join(' ') || '';
     const matchesSearch =
       !term ||
-      customerNameById(p.customer_id).toLowerCase().includes(term) ||
+      paymentCustomerName(p).toLowerCase().includes(term) ||
       p.payment_date.toLowerCase().includes(term) ||
       p.status.toLowerCase().includes(term) ||
       p.payment_mode.toLowerCase().includes(term) ||
@@ -168,6 +193,26 @@ const ReceivablesPage = () => {
     JSON.stringify([searchQuery, statusFilter, modeFilter, dateFrom, dateTo, archiveView]),
   );
   const pagedPayments = pagination.paginate(filteredPayments);
+
+  // Task 11: export the CURRENT view — filteredPayments already reflects the
+  // active search, status/mode/archive filters and date range.
+  const handleExport = () => {
+    if (filteredPayments.length === 0) { showError('Nothing to export for the current filters'); return; }
+    const headers = ['Receipt #', 'Invoice #', 'Customer', 'Date', 'Mode', 'Amount (₹)', 'Status', 'Reference #', 'Notes'];
+    const rows = filteredPayments.map((p) => [
+      p.payment_number || '',
+      p.allocations?.map((a) => a.invoice_number).filter(Boolean).join(' | ') || '',
+      paymentCustomerName(p),
+      p.payment_date,
+      formatModeLabel(p.payment_mode),
+      (Number(p.amount || 0) / 100).toFixed(2),
+      statusDisplayLabel(p.status, p.status_display),
+      p.reference_number || '',
+      cleanNotes(p.notes_display || p.notes),
+    ]);
+    exportToCsv(`receivables_${archiveView}_${csvDateStamp()}.csv`, headers, rows);
+    showSuccess(`Exported ${rows.length} receipt${rows.length !== 1 ? 's' : ''}`);
+  };
 
   const handleSubmit = async () => {
     if (!customerId || amount <= 0) { setError('Select customer and enter amount'); return; }
@@ -344,7 +389,13 @@ const ReceivablesPage = () => {
               <input type="date" className="bg-transparent text-sm outline-none" value={dateTo} min={dateFrom || undefined} onChange={(e) => handleDateToChange(e.target.value)} title="Payment date to" />
             </div>
           </div>
-          <button onClick={() => { resetForm(); setShowForm(true); }} className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/20 hover:bg-primary/90">+ Record Payment</button>
+          <div className="flex items-center gap-3">
+            <button onClick={handleExport} className="inline-flex items-center gap-1 rounded-lg border border-neutral-200 bg-white px-4 py-2.5 text-sm font-semibold text-neutral-700 hover:bg-neutral-50">
+              <span className="material-icons text-base" aria-hidden="true">download</span>
+              Export
+            </button>
+            <button onClick={() => { resetForm(); setShowForm(true); }} className="rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary/20 hover:bg-primary/90">+ Record Payment</button>
+          </div>
         </div>
 
         <div className="hms-card overflow-hidden">
@@ -373,7 +424,7 @@ const ReceivablesPage = () => {
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3">{customerNameById(p.customer_id)}</td>
+                    <td className="px-4 py-3">{paymentCustomerName(p)}</td>
                     <td className="px-4 py-3">{p.payment_date}</td>
                     <td className="px-4 py-3 capitalize">{p.payment_mode.replace('_', ' ')}</td>
                     <td className="px-4 py-3 text-right font-medium">{formatAmount(p.amount)}</td>
@@ -419,7 +470,17 @@ const ReceivablesPage = () => {
               <h2 className="font-display text-xl font-bold">{editingPayment ? 'Edit Customer Payment' : 'Record Customer Payment'}</h2>
               {error && <div className="rounded-lg bg-red-50 p-3 text-sm text-red-600">{error}</div>}
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Customer *</label><select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={customerId} onChange={e => setCustomerId(e.target.value)}><option value="">Select</option>{customers.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}</select></div>
+                <div>
+                  <label className="mb-1 block text-sm font-semibold text-neutral-700">Customer *</label>
+                  <EntitySelect
+                    value={customerId}
+                    options={customerOptions}
+                    onChange={setCustomerId}
+                    className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-primary"
+                    placeholder="Search customer by name, code, phone…"
+                    emptyMessage="No matching customer"
+                  />
+                </div>
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Date *</label><input type="date" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} /></div>
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Amount (₹) *</label><input type="number" step="0.01" min="0.01" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={amount > 0 ? paiseToRupees(amount) : ''} onChange={e => setAmount(rupeesToPaise(e.target.value))} /></div>
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Mode</label><select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={paymentMode} onChange={e => setPaymentMode(e.target.value)}><option value="cash">Cash</option><option value="bank_transfer">Bank Transfer</option><option value="cheque">Cheque</option><option value="upi">UPI</option><option value="card">Card</option></select></div>
@@ -490,7 +551,7 @@ const ReceivablesPage = () => {
               ) : (
                 <>
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                    <div><p className="text-xs text-neutral-600">Customer</p><p className="font-medium">{customerNameById(viewPayment.customer_id)}</p></div>
+                    <div><p className="text-xs text-neutral-600">Customer</p><p className="font-medium">{paymentCustomerName(viewPayment)}</p></div>
                     <div><p className="text-xs text-neutral-600">Date</p><p className="font-medium">{viewPayment.payment_date}</p></div>
                     <div><p className="text-xs text-neutral-600">Mode</p><p className="font-medium">{formatModeLabel(viewPayment.payment_mode)}</p></div>
                     <div><p className="text-xs text-neutral-600">Amount</p><p className="font-medium">{formatAmount(viewPayment.amount)}</p></div>

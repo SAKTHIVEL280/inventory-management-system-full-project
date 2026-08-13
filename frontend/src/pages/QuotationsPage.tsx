@@ -13,7 +13,7 @@
  * SAL-011: Quotation output format same as Tax Invoice
  * SAL-012: Edit option after creation
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { AppLayout } from '../components/AppLayout';
 import { PaginationControls } from '../components/PaginationControls';
@@ -25,6 +25,7 @@ import { toast } from 'sonner';
 import { dateInputValueAfterDays, todayLocalDateInputValue } from '../utils/date';
 import { emptyWhenZero } from '../utils/numberInput';
 import { parseWholeQuantity } from '../utils/quantityValidation';
+import { SearchableSelect as EntitySelect, type SearchableOption } from '../components/SearchableSelect';
 import { usePermissions } from '../hooks/usePermissions';
 
 interface ProductOption {
@@ -60,6 +61,25 @@ const QuotationsPage = () => {
   const [error, setError] = useState('');
   const { isAdmin } = usePermissions();
 
+  const customerOptions: SearchableOption[] = useMemo(
+    () => customers.map((c) => ({
+      value: c.id,
+      label: c.company_name,
+      sublabel: c.customer_code,
+      keywords: c.customer_code,
+    })),
+    [customers],
+  );
+  const productOptions: SearchableOption[] = useMemo(
+    () => products.map((p) => ({
+      value: p.id,
+      label: p.name,
+      sublabel: p.product_code,
+      keywords: p.product_code,
+    })),
+    [products],
+  );
+
   // Form state
   const [customerId, setCustomerId] = useState('');
   const [quotationDate, setQuotationDate] = useState(todayLocalDateInputValue());
@@ -88,11 +108,16 @@ const QuotationsPage = () => {
 
   const fetchMasterData = async () => {
     try {
-      const [custRes, prodRes] = await Promise.all([
-        apiClient.get('/api/v2/customers', { params: { page_size: 100 } }),
-        apiClient.get('/api/v2/products', { params: { page_size: 100 } }),
+      const [custList, prodRes] = await Promise.all([
+        // Load ALL customers (chunked) so the searchable picker covers the full directory.
+        fetchAllPages<CustomerOption>(async (pageNo, size) => {
+          const res = await apiClient.get('/api/v2/customers', { params: { page: pageNo, page_size: size } });
+          return { items: res.data.items || [], total: res.data.total ?? 0 };
+        }),
+        // all_products=true returns the complete catalogue (no page cap).
+        apiClient.get('/api/v2/products', { params: { all_products: true } }),
       ]);
-      setCustomers(custRes.data.items || []);
+      setCustomers(custList.items);
       setProducts(prodRes.data.items || []);
     } catch {
       /* ignore */
@@ -489,10 +514,14 @@ const QuotationsPage = () => {
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div>
                   <label className="mb-1 block text-sm font-semibold text-neutral-700">Customer *</label>
-                  <select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={customerId} onChange={e => setCustomerId(e.target.value)}>
-                    <option value="">Select Customer</option>
-                    {customers.map(c => <option key={c.id} value={c.id}>{c.company_name} ({c.customer_code})</option>)}
-                  </select>
+                  <EntitySelect
+                    value={customerId}
+                    options={customerOptions}
+                    onChange={setCustomerId}
+                    className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-primary"
+                    placeholder="Search customer by name, code…"
+                    emptyMessage="No matching customer"
+                  />
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-semibold text-neutral-700">Quotation Date *</label>
@@ -538,10 +567,14 @@ const QuotationsPage = () => {
                         return (
                           <tr key={idx} className="border-t border-neutral-100">
                             <td className="px-3 py-2">
-                              <select className="w-full rounded border border-neutral-200 px-2 py-1.5 text-sm" value={item.product_id} onChange={e => updateItem(idx, 'product_id', e.target.value)}>
-                                <option value="">Select</option>
-                                {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.product_code})</option>)}
-                              </select>
+                              <EntitySelect
+                                value={item.product_id}
+                                options={productOptions}
+                                onChange={(val) => updateItem(idx, 'product_id', val)}
+                                className="w-full rounded border border-neutral-200 px-2 py-1.5 text-sm outline-none focus:border-primary"
+                                placeholder="Search product…"
+                                emptyMessage="No matching product"
+                              />
                             </td>
                             {/* SAL-004: Product Code column */}
                             <td className="px-3 py-2 text-xs text-neutral-500 font-mono">{prod?.product_code || '-'}</td>

@@ -562,6 +562,9 @@ FINANCIAL_ACTION_LOG_MODULES = (
     "sales-returns",
     "purchase-returns",
     "rdn",
+    # Master-data modules surfaced in Action Logs (create/update tracked + versioned).
+    "customers",
+    "suppliers",
 )
 FINANCIAL_ACTION_LOG_MODULES_SQL = "', '".join(FINANCIAL_ACTION_LOG_MODULES)
 

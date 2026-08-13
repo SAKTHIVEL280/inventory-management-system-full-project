@@ -13,7 +13,7 @@ from app.dependencies import enforce_resource_ownership, require_permissions
 from app.models.customer import Customer
 from app.models.customization_option import CustomizationOption
 from app.models.user import User
-from app.services.audit_service import log_audit_event
+from app.services.audit_service import build_audit_changes
 from app.services.auth_service import normalize_role, PRIVILEGED_ROLES
 from app.services.data_masking import DataMasker, should_mask_sensitive_fields
 from app.utils.input_validation import normalize_search_query
@@ -553,20 +553,9 @@ async def create_customer(
     db.refresh(customer)
 
     correlation_id = getattr(request.state, "correlation_id", getattr(request.state, "request_id", None))
-    log_audit_event(
-        db,
-        action="CUSTOMER_CREATE",
-        resource_type="customers",
-        status="success",
-        user_id=current_user.id,
-        resource_id=customer.id,
-        details={
-            "company_id": str(current_user.company_id),
-            "customer_code": customer.customer_code,
-            "correlation_id": correlation_id,
-        },
-    )
-    db.commit()
+    # Action Logs: the AuditTrailMiddleware records this POST as a "Customer created"
+    # entry; expose the customer code as the record reference so the log is readable.
+    request.state.audit_reference = customer.customer_code
     logger.info(
         "User created customer",
         extra={
@@ -647,6 +636,15 @@ async def update_customer(
     _validate_and_autofill_customer_states(payload)
     _persist_customer_customization_values(db, payload, current_user.id, current_user.company_id)
 
+    # Snapshot key fields before the update so the Action Log can show old -> new.
+    _audit_fields = [
+        "company_name", "contact_person", "email", "phone", "alternate_phone",
+        "gstin", "gstin_status", "customer_type", "business_type",
+        "billing_city", "billing_state", "billing_country", "billing_pincode",
+        "currency_code", "payment_terms_days",
+    ]
+    old_values = {f: getattr(customer, f, None) for f in _audit_fields}
+
     for field, value in payload.model_dump(exclude={"customer_code"}).items():
         setattr(customer, field, value)
 
@@ -654,20 +652,15 @@ async def update_customer(
     db.refresh(customer)
 
     correlation_id = getattr(request.state, "correlation_id", getattr(request.state, "request_id", None))
-    log_audit_event(
-        db,
-        action="CUSTOMER_UPDATE",
-        resource_type="customers",
-        status="success",
-        user_id=current_user.id,
-        resource_id=customer.id,
-        details={
-            "company_id": str(current_user.company_id) if current_user.company_id else None,
-            "customer_code": customer.customer_code,
-            "correlation_id": correlation_id,
-        },
+    # Action Logs: the AuditTrailMiddleware records this PUT as a versioned
+    # "Customer updated" entry; expose the code as the reference and the exact
+    # field-level changes so the description reads "<Field> changed from X to Y".
+    request.state.audit_reference = customer.customer_code
+    customer_audit_changes = build_audit_changes(
+        [(f, old_values[f], getattr(customer, f, None)) for f in _audit_fields]
     )
-    db.commit()
+    if customer_audit_changes:
+        request.state.audit_changes = customer_audit_changes
     logger.info(
         "User updated customer",
         extra={
@@ -718,20 +711,9 @@ async def delete_customer(
     db.commit()
 
     correlation_id = getattr(request.state, "correlation_id", getattr(request.state, "request_id", None))
-    log_audit_event(
-        db,
-        action="CUSTOMER_DELETE",
-        resource_type="customers",
-        status="success",
-        user_id=current_user.id,
-        resource_id=customer.id,
-        details={
-            "company_id": str(current_user.company_id) if current_user.company_id else None,
-            "customer_code": customer.customer_code,
-            "correlation_id": correlation_id,
-        },
-    )
-    db.commit()
+    # Action Logs: the AuditTrailMiddleware records this DELETE as a "Customer deleted"
+    # entry; expose the customer code as the record reference.
+    request.state.audit_reference = customer.customer_code
     logger.info(
         "User deleted customer",
         extra={

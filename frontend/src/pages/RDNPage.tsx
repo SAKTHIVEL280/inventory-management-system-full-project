@@ -7,6 +7,7 @@ import { RDNDetailModal } from '../components/rdn/RDNDetailModal';
 import { RDNOverviewTable } from '../components/rdn/RDNOverviewTable';
 import { confirmWithToast, showError, showSuccess } from '../utils/toastHelper';
 import { usePermissions } from '../hooks/usePermissions';
+import { fetchAllPages } from '../utils/fetchAllPages';
 import type { RDNDetailResponse } from '../types';
 
 const RDNPage = () => {
@@ -21,12 +22,14 @@ const RDNPage = () => {
 
   const listQuery = useQuery({
     queryKey: ['rdn-list', search, statusFilter],
-    queryFn: () => rdnApi.list({
-      search: search || undefined,
-      status: statusFilter || undefined,
-      page: 1,
-      page_size: 200,
-    }),
+    // Load ALL matching RDNs (chunked) so none are hidden by a page-size cap.
+    queryFn: async () => {
+      const { items, total } = await fetchAllPages(async (pageNo, size) => {
+        const res = await rdnApi.list({ search: search || undefined, status: statusFilter || undefined, page: pageNo, page_size: size });
+        return { items: res.items || [], total: res.total ?? 0 };
+      });
+      return { items, total, page: 1, page_size: items.length, has_more: false };
+    },
   });
 
   const detailQuery = useQuery({

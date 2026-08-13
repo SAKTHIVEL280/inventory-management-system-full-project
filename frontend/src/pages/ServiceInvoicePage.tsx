@@ -142,7 +142,28 @@ const ServiceInvoicePage = () => {
               <div><label className="hms-label">Customer Name *</label><input className="hms-input" {...form.register('customer_name', { required: true })} /></div>
               <div><label className="hms-label">Customer GSTIN</label><input className="hms-input" placeholder="29ABCDE1234F1Z5 (if registered)" {...form.register('customer_gstin')} /></div>
               <div><label className="hms-label">Email *</label><input type="email" className="hms-input" {...form.register('customer_email', { required: true })} /></div>
-              <div><label className="hms-label">Contact * (10-digit)</label><input className="hms-input" {...form.register('customer_contact', { required: true })} /></div>
+              <div>
+                <label className="hms-label">Contact * (10-digit mobile)</label>
+                <input
+                  className="hms-input"
+                  inputMode="numeric"
+                  maxLength={14}
+                  placeholder="e.g. 9876543210"
+                  {...form.register('customer_contact', {
+                    required: 'Contact number is required',
+                    validate: (v) => {
+                      let d = String(v || '').replace(/[\s\-()]/g, '').replace(/^\+/, '');
+                      if (d.length === 12 && d.startsWith('91')) d = d.slice(2);
+                      else if (d.length === 11 && d.startsWith('0')) d = d.slice(1);
+                      return /^[6-9]\d{9}$/.test(d)
+                        || 'Enter a valid 10-digit mobile number starting with 6-9 (numbers starting with 0-5 are not allowed).';
+                    },
+                  })}
+                />
+                {form.formState.errors.customer_contact && (
+                  <p className="mt-1 text-xs text-danger">{form.formState.errors.customer_contact.message as string}</p>
+                )}
+              </div>
               <div>
                 <label className="hms-label">Supply Type</label>
                 <select className="hms-input" {...form.register('supply_type')}>

@@ -78,11 +78,16 @@ const ProformaInvoicesPage = () => {
 
   const fetchMasterData = async () => {
     try {
-      const [custRes, prodRes] = await Promise.all([
-        apiClient.get('/api/v2/customers', { params: { page_size: 100 } }),
-        apiClient.get('/api/v2/products', { params: { page_size: 100 } }),
+      const [custList, prodRes] = await Promise.all([
+        // Load ALL customers (chunked) so none are hidden by a page-size cap.
+        fetchAllPages<CustomerOption>(async (pageNo, size) => {
+          const res = await apiClient.get('/api/v2/customers', { params: { page: pageNo, page_size: size } });
+          return { items: res.data.items || [], total: res.data.total ?? 0 };
+        }),
+        // all_products=true returns the complete catalogue (no page cap).
+        apiClient.get('/api/v2/products', { params: { all_products: true } }),
       ]);
-      setCustomers(custRes.data.items || []);
+      setCustomers(custList.items);
       setProducts(prodRes.data.items || []);
     } catch {
       /* ignore */

@@ -44,7 +44,9 @@ router = APIRouter(
 # Validation per BRD §8.1 / §8.2.
 _GSTIN_RE = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$")
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-_CONTACT_RE = re.compile(r"^[0-9]{10}$")
+# A valid Indian mobile number is 10 digits starting 6-9. Numbers starting with
+# 0-5 (e.g. a leading 1) are invalid prefixes and rejected.
+_CONTACT_RE = re.compile(r"^[6-9][0-9]{9}$")
 _ALLOWED_GST_RATES = {0, 5, 12, 18, 28}
 
 
@@ -105,10 +107,22 @@ class ServiceInvoiceIn(BaseModel):
     @field_validator("customer_contact")
     @classmethod
     def _check_contact(cls, v: str) -> str:
-        v = (v or "").strip()
-        if not _CONTACT_RE.match(v):
-            raise ValueError("Customer contact must be a 10-digit number.")
-        return v
+        raw = (v or "").strip()
+        # Normalise: drop spaces/dashes/parentheses and a leading +91 / 91 / 0 so
+        # numbers entered with a country code still validate on the 10-digit core.
+        digits = re.sub(r"[\s\-()]", "", raw)
+        if digits.startswith("+"):
+            digits = digits[1:]
+        if len(digits) == 12 and digits.startswith("91"):
+            digits = digits[2:]
+        elif len(digits) == 11 and digits.startswith("0"):
+            digits = digits[1:]
+        if not _CONTACT_RE.match(digits):
+            raise ValueError(
+                "Customer contact must be a valid 10-digit mobile number starting with 6-9 "
+                "(numbers starting with 0-5 are not allowed)."
+            )
+        return digits
 
 
 class CancelRequest(BaseModel):

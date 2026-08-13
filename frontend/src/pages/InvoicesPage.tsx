@@ -16,6 +16,7 @@ import { confirmWithToast } from '../utils/toastHelper';
 import { addDaysToDateInputValue, todayLocalDateInputValue } from '../utils/date';
 import { emptyWhenZero } from '../utils/numberInput';
 import { parseWholeQuantity } from '../utils/quantityValidation';
+import { SearchableSelect as EntitySelect, type SearchableOption } from '../components/SearchableSelect';
 import { usePermissions } from '../hooks/usePermissions';
 import { useSubscription } from '../hooks/useSubscription';
 import type { Stockist, SalesManager } from '../types';
@@ -25,6 +26,9 @@ interface CustomerOption {
   id: string;
   company_name: string;
   customer_code: string;
+  phone?: string;
+  contact_person?: string;
+  gstin?: string;
   payment_terms_days?: number;
   billing_state?: string;
   billing_state_code?: string;
@@ -460,16 +464,23 @@ const InvoicesPage = () => {
   }, [statusFilter, page, pageSize, debouncedSearch, dateFrom, dateTo, stockistFilter, salesManagerFilter]);
   const fetchMasterData = async () => {
     try {
-      const [c, p, comp, uom] = await Promise.all([
-        // Only active customers are selectable for new invoices; inactive
-        // (soft-deleted / deactivated) customers are excluded from the dropdown.
-        apiClient.get('/api/v2/customers', { params: { page_size: 100, is_active: true } }),
-        apiClient.get('/api/v2/products', { params: { page_size: 100 } }),
+      // Load ALL active customers and ALL products (chunked) so the searchable
+      // pickers show the complete Customer Directory / catalogue, not just the
+      // first page. Only active customers are selectable for new invoices.
+      const [customerList, productList, comp, uom] = await Promise.all([
+        fetchAllPages<CustomerOption>(async (pageNo, size) => {
+          const res = await apiClient.get('/api/v2/customers', { params: { page: pageNo, page_size: size, is_active: true } });
+          return { items: res.data.items || [], total: res.data.total ?? 0 };
+        }),
+        fetchAllPages<ProductOption>(async (pageNo, size) => {
+          const res = await apiClient.get('/api/v2/products', { params: { page: pageNo, page_size: size } });
+          return { items: res.data.items || [], total: res.data.total ?? 0 };
+        }),
         apiClient.get('/api/v2/company'),
         apiClient.get('/api/v2/products/uom'),
       ]);
-      setCustomers(c.data.items || []);
-      setProducts(p.data.items || []);
+      setCustomers(customerList.items);
+      setProducts(productList.items);
       setCompanyLocation({ state: comp.data?.state || '', state_code: comp.data?.state_code || '' });
       setUomOptions(uom.data || []);
     } catch {
@@ -1047,6 +1058,20 @@ const InvoicesPage = () => {
   // customers (which are not in the active customers list) still show the name.
   const invoiceCustomerName = (inv: { customer_id: string; customer_name?: string | null }) =>
     inv.customer_name || customerNameById(inv.customer_id);
+
+  // Options for the searchable customer picker — searchable by name, code, phone,
+  // contact person and GSTIN (Search → Type → Choose).
+  const customerOptions: SearchableOption[] = useMemo(
+    () => customers.map((c) => ({
+      value: c.id,
+      label: c.company_name,
+      sublabel: [c.customer_code, c.phone].filter(Boolean).join(' · '),
+      keywords: [c.customer_code, c.phone, c.contact_person, c.gstin, c.billing_state, c.billing_country]
+        .filter(Boolean)
+        .join(' '),
+    })),
+    [customers],
+  );
   const productNameById = (productId: string) => {
     return products.find((p) => p.id === productId)?.name || productId;
   };
@@ -1196,7 +1221,17 @@ const InvoicesPage = () => {
 
               <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
                 {/* SAL-025: Customer select triggers due date auto-calc */}
-                <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Customer *</label><select className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={customerId} onChange={e => handleCustomerChange(e.target.value)}><option value="">Select</option>{customers.map(c => <option key={c.id} value={c.id}>{c.company_name} ({c.customer_code})</option>)}</select></div>
+                <div>
+                  <label className="mb-1 block text-sm font-semibold text-neutral-700">Customer *</label>
+                  <EntitySelect
+                    value={customerId}
+                    options={customerOptions}
+                    onChange={handleCustomerChange}
+                    className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-primary"
+                    placeholder="Search customer by name, code, phone…"
+                    emptyMessage="No matching customer"
+                  />
+                </div>
                 <div>
                   <label className="mb-1 block text-sm font-semibold text-neutral-700">Invoice Type *</label>
                   <select

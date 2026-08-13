@@ -255,13 +255,13 @@ const OptionsManager = () => {
           <div className="mb-4 flex flex-wrap gap-3">
             <input
               type="text"
-              className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm"
+              className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary sm:w-56"
               placeholder="Search options"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
             <select
-              className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm"
+              className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary sm:w-56"
               value={moduleFilter}
               onChange={(event) => {
                 setModuleFilter(event.target.value);
@@ -274,7 +274,7 @@ const OptionsManager = () => {
               ))}
             </select>
             <select
-              className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm"
+              className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary sm:w-56"
               value={fieldFilter}
               onChange={(event) => setFieldFilter(event.target.value)}
               disabled={!moduleFilter}
@@ -302,7 +302,7 @@ const OptionsManager = () => {
           )}
           {!listQuery.isLoading && !listQuery.isError && items.length > 0 && (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full min-w-[560px] text-sm">
                 <thead className="bg-neutral-50">
                   <tr className="text-left border-y border-neutral-200">
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">Module</th>
@@ -505,7 +505,7 @@ const StockistsManager = () => {
           <div className="mb-4 flex flex-wrap gap-3">
             <input
               type="text"
-              className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm"
+              className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary sm:w-56"
               placeholder="Search stockists"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
@@ -528,7 +528,7 @@ const StockistsManager = () => {
           )}
           {!listQuery.isLoading && !listQuery.isError && items.length > 0 && (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full min-w-[560px] text-sm">
                 <thead className="bg-neutral-50">
                   <tr className="text-left border-y border-neutral-200">
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">Name</th>
@@ -743,7 +743,7 @@ const SalesManagersManager = () => {
           <div className="mb-4 flex flex-wrap gap-3">
             <input
               type="text"
-              className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm"
+              className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary sm:w-56"
               placeholder="Search sales managers"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
@@ -766,7 +766,7 @@ const SalesManagersManager = () => {
           )}
           {!listQuery.isLoading && !listQuery.isError && items.length > 0 && (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full min-w-[560px] text-sm">
                 <thead className="bg-neutral-50">
                   <tr className="text-left border-y border-neutral-200">
                     <th className="px-4 py-3 text-xs font-bold uppercase tracking-wider text-neutral-500">Name</th>

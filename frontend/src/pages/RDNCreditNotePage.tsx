@@ -4,6 +4,7 @@ import { AppLayout } from '../components/AppLayout';
 import { rdnApi } from '../api/rdn';
 import { RDNCreditNoteOverviewTable } from '../components/rdn/RDNCreditNoteOverviewTable';
 import { RDNCreditNoteDetailModal } from '../components/rdn/RDNCreditNoteDetailModal';
+import { fetchAllPages } from '../utils/fetchAllPages';
 import type { RDNCreditNoteDetailResponse } from '../types';
 
 const RDNCreditNotePage = () => {
@@ -14,12 +15,14 @@ const RDNCreditNotePage = () => {
 
   const listQuery = useQuery({
     queryKey: ['rdn-credit-notes', search, statusFilter],
-    queryFn: () => rdnApi.listCreditNotes({
-      search: search || undefined,
-      status: statusFilter || undefined,
-      page: 1,
-      page_size: 200,
-    }),
+    // Load ALL matching credit notes (chunked) so none are hidden by a page cap.
+    queryFn: async () => {
+      const { items, total } = await fetchAllPages(async (pageNo, size) => {
+        const res = await rdnApi.listCreditNotes({ search: search || undefined, status: statusFilter || undefined, page: pageNo, page_size: size });
+        return { items: res.items || [], total: res.total ?? 0 };
+      });
+      return { items, total, page: 1, page_size: items.length, has_more: false };
+    },
   });
 
   const detailQuery = useQuery({

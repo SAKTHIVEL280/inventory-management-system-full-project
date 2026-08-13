@@ -2,7 +2,7 @@
 import re
 from datetime import datetime
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -14,6 +14,7 @@ from app.models.supplier import Supplier
 from app.models.user import User
 from app.services.auth_service import normalize_role, PRIVILEGED_ROLES
 from app.services.data_masking import DataMasker, should_mask_sensitive_fields
+from app.services.audit_service import build_audit_changes
 from app.utils.input_validation import normalize_search_query
 from app.utils.countries import COUNTRY_MASTER
 from app.utils.state_mappings import (
@@ -453,6 +454,7 @@ async def get_supplier_customization_options(
 @router.post("", response_model=SupplierResponse, status_code=201)
 async def create_supplier(
     payload: SupplierCreateRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("suppliers_write")),
 ):
@@ -493,6 +495,9 @@ async def create_supplier(
     db.add(supplier)
     db.commit()
     db.refresh(supplier)
+    # Action Logs: the AuditTrailMiddleware records this POST as a "Supplier created"
+    # entry; expose the supplier code as the record reference.
+    request.state.audit_reference = supplier.supplier_code
     return SupplierResponse.model_validate(supplier)
 
 
@@ -513,6 +518,7 @@ async def get_supplier(
 async def update_supplier(
     supplier_id: UUID,
     payload: SupplierUpdateRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("suppliers_write")),
 ):
@@ -545,12 +551,29 @@ async def update_supplier(
 
     _persist_supplier_customization_values(db, payload, current_user.id, current_user.company_id)
 
+    # Snapshot key fields before the update so the Action Log can show old -> new.
+    _audit_fields = [
+        "company_name", "contact_person", "email", "phone", "alternate_phone",
+        "gstin", "gstin_status", "business_type", "city", "state",
+        "billing_country", "pincode", "payment_terms_days", "currency_code",
+        "bank_name", "bank_ifsc",
+    ]
+    old_values = {f: getattr(supplier, f, None) for f in _audit_fields}
+
     for field, value in payload.model_dump(exclude={"supplier_code"}).items():
         setattr(supplier, field, value)
     supplier.state_code = _state_code_from_payload(payload)
 
     db.commit()
     db.refresh(supplier)
+
+    # Action Logs: versioned "Supplier updated" entry with field-level changes.
+    request.state.audit_reference = supplier.supplier_code
+    supplier_audit_changes = build_audit_changes(
+        [(f, old_values[f], getattr(supplier, f, None)) for f in _audit_fields]
+    )
+    if supplier_audit_changes:
+        request.state.audit_changes = supplier_audit_changes
     return SupplierResponse.model_validate(supplier)
 
 
