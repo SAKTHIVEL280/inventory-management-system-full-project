@@ -830,6 +830,10 @@ CREATE TABLE sales_invoices (
   total_amount INTEGER NOT NULL DEFAULT 0,
   amount_paid INTEGER NOT NULL DEFAULT 0,
   amount_due INTEGER NOT NULL DEFAULT 0,
+  -- Multi-currency: transaction currency + exchange rate to base (INR), per invoice.
+  -- Monetary columns are in currency_code minor units; base(INR) = amount*exchange_rate.
+  currency_code VARCHAR(3) NOT NULL DEFAULT 'INR',
+  exchange_rate NUMERIC(12,6) NOT NULL DEFAULT 1,
   -- Enhancement 3: internal operational fields (not printed on the PDF invoice)
   stockist_name VARCHAR(150),
   stockist_city VARCHAR(120),

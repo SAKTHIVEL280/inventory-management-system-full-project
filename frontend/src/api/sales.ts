@@ -67,6 +67,10 @@ export interface CreateInvoicePayload {
   sales_manager_name?: string;
   notes?: string;
   terms_conditions?: string;
+  // Multi-currency: exchange rate to base (INR) for foreign-currency invoices.
+  // currency_code is authoritative from the customer server-side; sent for clarity.
+  currency_code?: string;
+  exchange_rate?: number;
   items: SalesLineItem[];
 }
 
@@ -146,6 +150,12 @@ export interface SalesInvoice {
   total_amount: number;
   amount_paid: number;
   amount_due: number;
+  // Multi-currency: transaction currency + rate to base (INR). base_currency_total
+  // is the INR equivalent of total_amount.
+  currency_code?: string;
+  exchange_rate?: number;
+  base_currency?: string;
+  base_currency_total?: number;
   pdf_url?: string;
   notes?: string;
   terms_conditions?: string;

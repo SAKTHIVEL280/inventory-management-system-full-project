@@ -142,6 +142,13 @@ class SalesInvoice(Base):
     total_amount = Column(Integer, nullable=False, default=0)
     amount_paid = Column(Integer, nullable=False, default=0)
     amount_due = Column(Integer, nullable=False, default=0)
+    # Multi-currency: the invoice's transaction currency and the exchange rate to the
+    # tenant's base currency (INR), captured PER INVOICE so historical invoices keep
+    # their original rate. All monetary columns above are stored in currency_code's
+    # minor units; the INR (base) equivalent = amount * exchange_rate. For base-currency
+    # (INR) invoices currency_code='INR' and exchange_rate=1.0 (no conversion applied).
+    currency_code = Column(String(3), nullable=False, default="INR")
+    exchange_rate = Column(Numeric(12, 6), nullable=False, default=1)
     # Enhancement 3: internal operational fields (NOT rendered on the PDF invoice)
     stockist_name = Column(String(150), nullable=True)
     stockist_city = Column(String(120), nullable=True)

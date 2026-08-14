@@ -255,13 +255,13 @@ const OptionsManager = () => {
           <div className="mb-4 flex flex-wrap gap-3">
             <input
               type="text"
-              className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary sm:w-56"
+              className="hms-input sm:w-56"
               placeholder="Search options"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
             <select
-              className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary sm:w-56"
+              className="hms-input sm:w-56"
               value={moduleFilter}
               onChange={(event) => {
                 setModuleFilter(event.target.value);
@@ -274,7 +274,7 @@ const OptionsManager = () => {
               ))}
             </select>
             <select
-              className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary sm:w-56"
+              className="hms-input sm:w-56"
               value={fieldFilter}
               onChange={(event) => setFieldFilter(event.target.value)}
               disabled={!moduleFilter}
@@ -505,7 +505,7 @@ const StockistsManager = () => {
           <div className="mb-4 flex flex-wrap gap-3">
             <input
               type="text"
-              className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary sm:w-56"
+              className="hms-input sm:w-56"
               placeholder="Search stockists"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
@@ -743,7 +743,7 @@ const SalesManagersManager = () => {
           <div className="mb-4 flex flex-wrap gap-3">
             <input
               type="text"
-              className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm outline-none focus:border-primary sm:w-56"
+              className="hms-input sm:w-56"
               placeholder="Search sales managers"
               value={search}
               onChange={(event) => setSearch(event.target.value)}

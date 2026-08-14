@@ -1456,7 +1456,7 @@ async def convert_so_to_invoice(
     invoice.total_igst = total_igst
     invoice.total_gst = total_cgst + total_sgst + total_igst
     exact_total = total_taxable + invoice.total_gst
-    invoice.total_amount = round_paise_to_nearest_5(exact_total)
+    invoice.total_amount = _round_invoice_total(exact_total, invoice.currency_code)
     invoice.amount_due = invoice.total_amount
 
     db.commit()
@@ -1589,6 +1589,39 @@ async def get_invoice_batch_options(
     }
 
 
+# The tenant's base/home currency. All GST and base-currency reporting is in INR.
+BASE_CURRENCY = "INR"
+
+
+def _resolve_invoice_currency(customer, payload) -> tuple[str, float]:
+    """Determine the invoice's transaction currency + exchange rate to base (INR).
+
+    Currency is authoritative from the Customer Directory (customer.currency_code).
+    Base-currency (INR) invoices never carry a rate (forced to 1.0). Foreign-currency
+    invoices REQUIRE an exchange rate > 0 (captured per invoice, so historical
+    invoices keep their original rate).
+    """
+    code = (getattr(customer, "currency_code", None) or BASE_CURRENCY).strip().upper() or BASE_CURRENCY
+    if code == BASE_CURRENCY:
+        return BASE_CURRENCY, 1.0
+    rate = payload.exchange_rate
+    if rate is None or float(rate) <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Exchange rate is required and must be greater than zero for {code} invoices.",
+        )
+    return code, float(rate)
+
+
+def _round_invoice_total(exact_total: int, currency_code: str | None) -> int:
+    """Round the invoice grand total. The 'nearest ₹5 (down)' rule is a base-currency
+    (INR) cash convention and would badly distort a foreign total (e.g. $18.00 -> $15.00),
+    so it is applied ONLY to INR invoices; foreign invoices keep the exact total."""
+    if (currency_code or BASE_CURRENCY).strip().upper() != BASE_CURRENCY:
+        return int(round(float(exact_total or 0)))
+    return round_paise_to_nearest_5(exact_total)
+
+
 @router.post("/api/v1/invoices", response_model=SalesInvoiceResponse)
 async def create_invoice(
     payload: SalesInvoiceCreateRequest,
@@ -1640,6 +1673,9 @@ async def create_invoice(
         gst_applicable=gst_applicable,
     )
 
+    # Transaction currency + exchange rate (per-invoice; INR invoices => rate 1.0).
+    currency_code, exchange_rate = _resolve_invoice_currency(customer, payload)
+
     invoice = SalesInvoice(
         invoice_number=generate_invoice_number(db, current_user.company_id),
         sales_order_id=None,
@@ -1656,6 +1692,8 @@ async def create_invoice(
         invoice_type=invoice_type,
         import_export_code=payload.import_export_code,
         is_igst=is_igst,
+        currency_code=currency_code,
+        exchange_rate=exchange_rate,
         stockist_name=stockist_name,
         stockist_city=stockist_city,
         sales_manager_name=sales_manager_name,
@@ -1714,7 +1752,7 @@ async def create_invoice(
     invoice.total_igst = total_igst
     invoice.total_gst = total_cgst + total_sgst + total_igst
     exact_total = total_taxable + invoice.total_gst
-    invoice.total_amount = round_paise_to_nearest_5(exact_total)
+    invoice.total_amount = _round_invoice_total(exact_total, invoice.currency_code)
     invoice.amount_due = invoice.total_amount
 
     db.commit()
@@ -1792,11 +1830,17 @@ async def get_invoice(
         .first()
     )
 
+    _rate = float(invoice.exchange_rate or 1) or 1.0
     return {
         "invoice": invoice,
         "items": items_payload,
         "customer_name": customer_row[0] if customer_row else None,
         "customer_code": customer_row[1] if customer_row else None,
+        # Currency display for the detail view / PDF (INR = base).
+        "currency_code": invoice.currency_code or BASE_CURRENCY,
+        "exchange_rate": _rate,
+        "base_currency": BASE_CURRENCY,
+        "base_currency_total": int(round(int(invoice.total_amount or 0) * _rate)),
     }
 
 
@@ -1882,6 +1926,9 @@ async def update_invoice(
             detail="Sales Order module has been removed. Create invoice directly.",
         )
 
+    # Re-resolve transaction currency + exchange rate for the draft (the customer,
+    # and therefore the currency, may have changed). Foreign invoices require a rate > 0.
+    invoice.currency_code, invoice.exchange_rate = _resolve_invoice_currency(customer, payload)
     invoice.customer_id = payload.customer_id
     invoice.sales_order_id = None
     invoice.quotation_id = payload.quotation_id
@@ -1951,7 +1998,7 @@ async def update_invoice(
     invoice.total_igst = total_igst
     invoice.total_gst = total_cgst + total_sgst + total_igst
     exact_total = total_taxable + invoice.total_gst
-    invoice.total_amount = round_paise_to_nearest_5(exact_total)
+    invoice.total_amount = _round_invoice_total(exact_total, invoice.currency_code)
     invoice.amount_due = max(0, invoice.total_amount - invoice.amount_paid)
 
     # Record exact field-level changes for the audit trail (rendered as
@@ -2305,7 +2352,7 @@ async def update_issued_invoice(
     invoice.total_igst = total_igst
     invoice.total_gst = total_cgst + total_sgst + total_igst
     exact_total = total_taxable + invoice.total_gst
-    invoice.total_amount = round_paise_to_nearest_5(exact_total)
+    invoice.total_amount = _round_invoice_total(exact_total, invoice.currency_code)
     invoice.amount_due = max(0, invoice.total_amount - invoice.amount_paid)
     # Recompute the payment status from the corrected total (amount_paid is unchanged).
     invoice.status = _compute_invoice_status(invoice.amount_paid, invoice.total_amount)

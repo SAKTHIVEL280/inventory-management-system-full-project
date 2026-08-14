@@ -29,6 +29,7 @@ interface CustomerOption {
   phone?: string;
   contact_person?: string;
   gstin?: string;
+  currency_code?: string;
   payment_terms_days?: number;
   billing_state?: string;
   billing_state_code?: string;
@@ -354,6 +355,9 @@ const InvoicesPage = () => {
   const [customerId, setCustomerId] = useState('');
   const [invoiceType, setInvoiceType] = useState<InvoiceTypeValue>('within_state');
   const [importExportCode, setImportExportCode] = useState('');
+  // Exchange rate to base (INR) for foreign-currency invoices (kept as a string
+  // for the input; parsed on submit). Only used when the customer's currency != INR.
+  const [exchangeRate, setExchangeRate] = useState('');
   const [invoiceDate, setInvoiceDate] = useState(todayLocalDateInputValue());
   const [dueDate, setDueDate] = useState('');
   const [isDueDateManuallyEdited, setIsDueDateManuallyEdited] = useState(false);
@@ -411,6 +415,17 @@ const InvoicesPage = () => {
   }, [customers, companyLocation]);
 
   const selectedCustomer = customers.find((c) => c.id === customerId);
+  // Invoice currency is the customer's currency (base = INR). The Exchange Rate
+  // field only appears when the currency differs from base.
+  const invoiceCurrency = (selectedCustomer?.currency_code || 'INR').toUpperCase();
+  const isForeignCurrency = invoiceCurrency !== 'INR';
+  // Exchange rate (1 foreign unit = fxRate INR). Product master prices are in INR,
+  // so the line price in the invoice currency = INR_price / rate (converted ONCE).
+  const fxRate = isForeignCurrency ? (parseFloat(exchangeRate) || 0) : 1;
+  // Convert an INR minor-unit amount (paise) to the invoice currency's minor units.
+  // INR invoices (rate 1) are unchanged; foreign invoices divide by the rate.
+  const toInvoiceCcyMinor = (inrMinor: number): number =>
+    isForeignCurrency && fxRate > 0 ? Math.round((Number(inrMinor) || 0) / fxRate) : (Number(inrMinor) || 0);
   const expectedInvoiceType = selectedCustomer
     ? deriveDefaultInvoiceType(selectedCustomer.id)
     : null;
@@ -513,7 +528,7 @@ const InvoicesPage = () => {
   // MCN-BUG-001: any filter/page-size change returns to the first page
   useEffect(() => { setPage(1); }, [statusFilter, debouncedSearch, dateFrom, dateTo, pageSize, stockistFilter, salesManagerFilter]);
 
-  const resetForm = () => { setCustomerId(''); setInvoiceType('within_state'); setImportExportCode(''); setInvoiceDate(todayLocalDateInputValue()); setDueDate(''); setIsDueDateManuallyEdited(false); setNotes(''); setItems([]); setBatchOptionsByRow({}); setStockistName(''); setStockistCity(''); setSalesManagerName(''); setEditingId(null); setEditingIssued(false); setError(''); };
+  const resetForm = () => { setCustomerId(''); setInvoiceType('within_state'); setImportExportCode(''); setExchangeRate(''); setInvoiceDate(todayLocalDateInputValue()); setDueDate(''); setIsDueDateManuallyEdited(false); setNotes(''); setItems([]); setBatchOptionsByRow({}); setStockistName(''); setStockistCity(''); setSalesManagerName(''); setEditingId(null); setEditingIssued(false); setError(''); };
 
   // FR-18: Stockist City auto-fills from the selected Stockist (user may override).
   const handleStockistChange = (name: string) => {
@@ -596,7 +611,9 @@ const InvoicesPage = () => {
       const productId = String(value || '');
       const p = products.find(x => x.id === productId);
       if (p) {
-        updated[idx].unit_price = p.mrp || p.selling_price;
+        // Product prices are in INR; convert to the invoice currency (÷ rate) so a
+        // foreign invoice's line price is the correct foreign amount, not the raw INR.
+        updated[idx].unit_price = toInvoiceCcyMinor(p.mrp || p.selling_price);
         updated[idx].gst_rate = p.gst_rate;
         updated[idx].order_unit = resolvePackingUnit(p);
       } else {
@@ -625,6 +642,21 @@ const InvoicesPage = () => {
     }
 
     setItems(updated);
+  };
+  // Changing the exchange rate re-derives each NEW-invoice line's price from its
+  // product's INR master price (÷ new rate), so foreign amounts stay correct no
+  // matter whether the rate or the items were entered first. Existing (edited)
+  // invoices keep their stored line prices (historical accuracy).
+  const handleExchangeRateChange = (value: string) => {
+    setExchangeRate(value);
+    if (editingId || !isForeignCurrency) return;
+    const r = parseFloat(value) || 0;
+    if (r <= 0) return;
+    setItems((prev) => prev.map((it) => {
+      const p = products.find((x) => x.id === it.product_id);
+      if (!p) return it;
+      return { ...it, unit_price: Math.round((p.mrp || p.selling_price) / r) };
+    }));
   };
   const removeItem = (idx: number) => {
     setItems(items.filter((_, i) => i !== idx));
@@ -860,6 +892,15 @@ const InvoicesPage = () => {
       return;
     }
 
+    // Foreign-currency invoices require a positive exchange rate to base (INR).
+    if (isForeignCurrency) {
+      const rateNum = parseFloat(exchangeRate);
+      if (!Number.isFinite(rateNum) || rateNum <= 0) {
+        setError(`Enter a valid exchange rate (greater than 0) for ${invoiceCurrency} invoices.`);
+        return;
+      }
+    }
+
     setSubmitting(true); setError('');
     try {
       const payload: CreateInvoicePayload = {
@@ -872,6 +913,8 @@ const InvoicesPage = () => {
         stockist_city: stockistCity.trim(),
         sales_manager_name: salesManagerName.trim(),
         notes: notes || undefined,
+        currency_code: invoiceCurrency,
+        exchange_rate: isForeignCurrency ? parseFloat(exchangeRate) : 1,
         items: items.map(i => ({
           product_id: i.product_id,
           order_unit: i.order_unit || undefined,
@@ -1029,6 +1072,14 @@ const InvoicesPage = () => {
     setCustomerId(selectedInvoice.customer_id);
     setInvoiceType((selectedInvoice.invoice_type as InvoiceTypeValue) || deriveDefaultInvoiceType(selectedInvoice.customer_id));
     setImportExportCode(selectedInvoice.import_export_code || '');
+    // Preserve the invoice's captured exchange rate when editing (historical rate).
+    setExchangeRate(
+      selectedInvoice.exchange_rate && Number(selectedInvoice.exchange_rate) !== 1
+        ? String(selectedInvoice.exchange_rate)
+        : (selectedInvoice.currency_code && selectedInvoice.currency_code.toUpperCase() !== 'INR'
+            ? String(selectedInvoice.exchange_rate ?? '')
+            : ''),
+    );
     setInvoiceDate(selectedInvoice.invoice_date);
     setDueDate(selectedInvoice.due_date || '');
     setIsDueDateManuallyEdited(true);
@@ -1251,6 +1302,27 @@ const InvoicesPage = () => {
                   <label className="mb-1 block text-sm font-semibold text-neutral-700">Import &amp; Export Code</label>
                   <input type="text" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={importExportCode} onChange={e => setImportExportCode(e.target.value)} placeholder="Optional" />
                 </div>
+                {/* Exchange Rate — only for foreign-currency invoices (currency != base INR) */}
+                {isForeignCurrency && (
+                  <div>
+                    <label className="mb-1 block text-sm font-semibold text-neutral-700">
+                      Exchange Rate * <span className="font-normal text-neutral-500">(1 {invoiceCurrency} → INR)</span>
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.0001"
+                      inputMode="decimal"
+                      className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm"
+                      value={exchangeRate}
+                      onChange={e => handleExchangeRateChange(e.target.value)}
+                      placeholder="e.g. 83.50"
+                    />
+                    <p className="mt-1 text-xs text-neutral-500">
+                      Invoice is in <strong>{invoiceCurrency}</strong>; the rate is stored with this invoice (base currency: INR).
+                    </p>
+                  </div>
+                )}
                 <div><label className="mb-1 block text-sm font-semibold text-neutral-700">Invoice Date *</label><input type="date" className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm" value={invoiceDate} onChange={e => setInvoiceDate(e.target.value)} /></div>
                 {/* SAL-029: Due Date is fully auto-calculated for invoices */}
                 <div>
@@ -1327,7 +1399,7 @@ const InvoicesPage = () => {
                         <th className="w-[5%] px-3 py-2 text-left">HSN</th>
                         <th className="w-16 px-3 py-2 text-right">Qty</th>
                         <th className="w-16 px-3 py-2 text-right">Free</th>
-                        <th className="w-28 px-3 py-2 text-right">MRP (Rs.)</th>
+                        <th className="w-28 px-3 py-2 text-right">MRP ({isForeignCurrency ? invoiceCurrency : 'Rs.'})</th>
                         <th className="w-16 px-3 py-2 text-right">Disc %</th>
                         {!isExportInvoice && <th className="w-28 px-3 py-2 text-right">{gstColumnLabel(invoiceType)}</th>}
                         <th className="w-28 px-3 py-2 text-right">Total</th>
@@ -1476,6 +1548,14 @@ const InvoicesPage = () => {
                 <div>
                   <h2 className="font-display text-xl font-bold">Invoice: {selectedInvoice.invoice_number}</h2>
                   <p className="mt-1 text-sm text-neutral-600">Customer: {invoiceCustomerName(selectedInvoice)}</p>
+                  {selectedInvoice.currency_code && selectedInvoice.currency_code.toUpperCase() !== 'INR' && (
+                    <p className="mt-1 text-xs text-neutral-500">
+                      Currency: <strong>{selectedInvoice.currency_code}</strong> · Exchange Rate: 1 {selectedInvoice.currency_code} = ₹{Number(selectedInvoice.exchange_rate || 1).toLocaleString('en-IN', { maximumFractionDigits: 4 })}
+                      {typeof selectedInvoice.base_currency_total === 'number' && (
+                        <> · Grand Total (INR): {formatAmount(selectedInvoice.base_currency_total)}</>
+                      )}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   {/* SAL-027: Edit button in Invoice View for draft invoices */}

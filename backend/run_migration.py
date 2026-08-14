@@ -219,6 +219,13 @@ def main() -> int:
         "ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS sales_manager_name VARCHAR(150)",
         "CREATE INDEX IF NOT EXISTS ix_sales_invoices_stockist_name ON sales_invoices (stockist_name)",
         "CREATE INDEX IF NOT EXISTS ix_sales_invoices_sales_manager_name ON sales_invoices (sales_manager_name)",
+        # 0029: per-invoice transaction currency + exchange rate to base (INR).
+        # Existing rows default to INR @ 1.0 so historical/base-currency invoices are
+        # unaffected (base = amount * exchange_rate). See migration 0029.
+        "ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS currency_code VARCHAR(3) NOT NULL DEFAULT 'INR'",
+        "ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS exchange_rate NUMERIC(12,6) NOT NULL DEFAULT 1",
+        "UPDATE sales_invoices SET currency_code = 'INR' WHERE currency_code IS NULL OR TRIM(currency_code) = ''",
+        "UPDATE sales_invoices SET exchange_rate = 1 WHERE exchange_rate IS NULL OR exchange_rate <= 0",
         # Enhancement 3: Stockist & Sales Manager master tables (Customization)
         """
         CREATE TABLE IF NOT EXISTS stockists (
@@ -1194,36 +1201,6 @@ def main() -> int:
                  '["admin","accounts","inventory","management","hr"]'::jsonb,
                  NULL, TRUE, 4)
             ON CONFLICT (plan_key) DO NOTHING
-            """,
-
-            # BE-261: settle invoices from CLEARED receipts only. Re-derive every
-            # invoice's amount_paid/amount_due/status from its cleared allocations
-            # (pending receipts reserve capacity but no longer settle). Idempotent.
-            """
-            UPDATE sales_invoices si
-            SET amount_paid = sub.paid,
-                amount_due  = si.total_amount - sub.paid,
-                status = CASE
-                    WHEN lower(trim(si.status)) NOT IN ('issued','partial_paid','paid') THEN si.status
-                    WHEN si.total_amount > 0 AND si.total_amount - sub.paid = 0 THEN 'paid'
-                    WHEN sub.paid > 0 THEN 'partial_paid'
-                    ELSE 'issued'
-                END
-            FROM (
-                SELECT si2.id,
-                       LEAST(si2.total_amount, COALESCE((
-                           SELECT SUM(pa.allocated_amount)
-                           FROM payment_allocations pa
-                           JOIN payments p ON p.id = pa.payment_id
-                           WHERE pa.invoice_id = si2.id
-                             AND pa.is_deleted = false
-                             AND p.is_deleted = false
-                             AND lower(trim(p.status)) IN ('cleared','advance_payment_cleared','advance_cleared','full_payment_cleared')
-                       ), 0)) AS paid
-                FROM sales_invoices si2
-                WHERE si2.is_deleted = false
-            ) sub
-            WHERE si.id = sub.id AND si.is_deleted = false
             """,
     ]
 

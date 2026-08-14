@@ -72,6 +72,19 @@ def _svc_revenue_sum(db, company_id, column, *extra_filters):
     return int(q.scalar() or 0)
 
 
+def _base_amount(column):
+    """SQL expression converting a Sales-Invoice money column to the tenant's base
+    currency (INR) using the invoice's per-invoice exchange_rate, rounded to whole
+    minor units. Base-currency (INR) invoices store exchange_rate=1.0, so existing
+    data is numerically unchanged — this only affects foreign-currency invoices."""
+    return func.round(column * SalesInvoice.exchange_rate)
+
+
+def _to_base(amount_minor, exchange_rate) -> int:
+    """Python-side equivalent of _base_amount for ORM-row aggregation."""
+    return int(round(int(amount_minor or 0) * float(exchange_rate or 1)))
+
+
 GSTIN_REGEX = re.compile(r"^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$")
 GST_REPORT_FREQUENCY_LABELS: dict[str, str] = {
     "monthly": "Monthly",
@@ -775,7 +788,7 @@ async def dashboard_report(
     pending_so_count = 0
 
     # Today sales
-    today_sales_q = db.query(func.coalesce(func.sum(SalesInvoice.total_amount), 0)).filter(
+    today_sales_q = db.query(func.coalesce(func.sum(_base_amount(SalesInvoice.total_amount)), 0)).filter(
         SalesInvoice.company_id == current_user.company_id,
         SalesInvoice.invoice_date == today,
         SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
@@ -790,7 +803,7 @@ async def dashboard_report(
     )
 
     # Month sales
-    month_sales_q = db.query(func.coalesce(func.sum(SalesInvoice.total_amount), 0)).filter(
+    month_sales_q = db.query(func.coalesce(func.sum(_base_amount(SalesInvoice.total_amount)), 0)).filter(
         SalesInvoice.company_id == current_user.company_id,
         SalesInvoice.invoice_date >= month_start,
         SalesInvoice.invoice_date <= today,
@@ -847,7 +860,7 @@ async def dashboard_report(
     sales_trend = []
     for i in range(6, -1, -1):
         day = today - timedelta(days=i)
-        trend_q = db.query(func.coalesce(func.sum(SalesInvoice.total_amount), 0)).filter(
+        trend_q = db.query(func.coalesce(func.sum(_base_amount(SalesInvoice.total_amount)), 0)).filter(
             SalesInvoice.company_id == current_user.company_id,
             SalesInvoice.invoice_date == day,
             func.lower(func.trim(SalesInvoice.status)).in_(["issued", "partial_paid", "paid", "returned"]),
@@ -1042,7 +1055,7 @@ async def dashboard_report(
         sales_manager_query = (
             db.query(
                 SalesInvoice.sales_manager_name.label("name"),
-                func.coalesce(func.sum(SalesInvoice.total_amount), 0).label("revenue"),
+                func.coalesce(func.sum(_base_amount(SalesInvoice.total_amount)), 0).label("revenue"),
             )
             .filter(*revenue_filter)
         )
@@ -1064,7 +1077,7 @@ async def dashboard_report(
             db.query(
                 SalesInvoice.customer_id.label("cust_id"),
                 Customer.company_name.label("name"),
-                func.coalesce(func.sum(SalesInvoice.total_amount), 0).label("revenue"),
+                func.coalesce(func.sum(_base_amount(SalesInvoice.total_amount)), 0).label("revenue"),
             )
             .join(Customer, SalesInvoice.customer_id == Customer.id)
             .filter(*revenue_filter)
@@ -1162,7 +1175,7 @@ async def sales_trend_report(
     fy_label = f"{fy_start}-{str(fy_start + 1)[-2:]}"  # e.g. 2025-26
 
     def _sales_sum(d_from: date, d_to: date) -> int:
-        q = db.query(func.coalesce(func.sum(SalesInvoice.total_amount), 0)).filter(
+        q = db.query(func.coalesce(func.sum(_base_amount(SalesInvoice.total_amount)), 0)).filter(
             SalesInvoice.company_id == cid,
             SalesInvoice.invoice_date >= d_from,
             SalesInvoice.invoice_date <= d_to,
@@ -1594,7 +1607,8 @@ async def sales_report(
     items = sales_items + service_items
     items.sort(key=lambda it: it["invoice_date"] or "", reverse=True)
 
-    sales_total = int(sum(row.SalesInvoice.total_amount for row in rows))
+    # Convert each foreign-currency invoice to base (INR) with its stored rate.
+    sales_total = int(sum(_to_base(row.SalesInvoice.total_amount, row.SalesInvoice.exchange_rate) for row in rows))
     service_total = int(sum(int(s.grand_total or 0) for s in svc_rows))
     return {
         "count": len(items),
@@ -1647,13 +1661,17 @@ async def outstanding_receivables(
         SalesInvoice.is_deleted == False,
     ).all()
     return {
-        "total_outstanding": int(sum(row.amount_due for row in rows)),
+        # Base-currency (INR) total: foreign invoices converted via their stored rate.
+        "total_outstanding": int(sum(_to_base(row.amount_due, row.exchange_rate) for row in rows)),
         "items": [
             {
                 "invoice_number": row.invoice_number,
                 "invoice_date": row.invoice_date.isoformat() if row.invoice_date else None,
                 "due_date": row.due_date.isoformat() if row.due_date else None,
-                "balance_due": row.amount_due,
+                "balance_due": row.amount_due,             # in the invoice's currency
+                "currency_code": row.currency_code or "INR",
+                "exchange_rate": float(row.exchange_rate or 1),
+                "balance_due_base": _to_base(row.amount_due, row.exchange_rate),  # INR
             }
             for row in rows
         ],
@@ -4864,7 +4882,8 @@ async def profit_and_loss_report(
         ServiceInvoice.invoice_date >= from_date,
         ServiceInvoice.invoice_date <= to_date,
     )
-    net_sales = int(sum(row.total_taxable_amount for row in sales_rows)) + svc_taxable
+    # Sales invoices converted to base (INR) via each invoice's stored exchange rate.
+    net_sales = int(sum(_to_base(row.total_taxable_amount, row.exchange_rate) for row in sales_rows)) + svc_taxable
     purchases = int(sum(row.total_taxable_amount for row in purchase_rows))
     gross_profit = net_sales - purchases
 

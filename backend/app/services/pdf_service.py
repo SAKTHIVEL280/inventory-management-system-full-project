@@ -679,6 +679,16 @@ INVOICE_TEMPLATE = """<!DOCTYPE html>
                     <td style="padding: 4px 6px; font-size: 10px; font-weight: bold; border-bottom: 1px solid #000;">Balance Due</td>
                     <td style="padding: 4px 6px; font-size: 10px; font-weight: bold; text-align: right; border-bottom: 1px solid #000;">{{ balance_due_rupee }}</td>
                 </tr>
+                {% if exchange_rate_display %}
+                <tr>
+                    <td style="padding: 3px 6px; font-size: 9px; border-bottom: 1px solid #000;">Exchange Rate</td>
+                    <td style="padding: 3px 6px; font-size: 9px; text-align: right; border-bottom: 1px solid #000;">{{ exchange_rate_display }}</td>
+                </tr>
+                <tr>
+                    <td style="padding: 3px 6px; font-size: 9px; border-bottom: 1px solid #000;">Grand Total (INR)</td>
+                    <td style="padding: 3px 6px; font-size: 9px; text-align: right; border-bottom: 1px solid #000;">{{ base_currency_total }}</td>
+                </tr>
+                {% endif %}
             </table>
             <table style="width: 100%; border-collapse: collapse;">
                 <tr>
@@ -1349,12 +1359,19 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
     )
 
     rows: list[dict[str, str]] = []
-    # Get currency from customer or sales order — never hardcode
-    currency = "INR"
-    if sales_order and hasattr(sales_order, "currency_code") and sales_order.currency_code:
-        currency = sales_order.currency_code
-    elif customer and hasattr(customer, "currency_code") and customer.currency_code:
-        currency = customer.currency_code
+    # Currency is the invoice's OWN stored transaction currency (captured at
+    # creation), so historical PDFs are unaffected by later changes to the
+    # customer's currency. Fall back to legacy sources for pre-feature invoices.
+    currency = (getattr(invoice, "currency_code", None) or "").strip().upper()
+    if not currency:
+        if sales_order and getattr(sales_order, "currency_code", None):
+            currency = sales_order.currency_code
+        elif customer and getattr(customer, "currency_code", None):
+            currency = customer.currency_code
+        else:
+            currency = "INR"
+    exchange_rate = float(getattr(invoice, "exchange_rate", None) or 1) or 1.0
+    is_foreign_currency = currency != "INR"
     currency_symbols = {"INR": "Rs.", "USD": "$", "EUR": "€", "GBP": "£"}
     cs = currency_symbols.get(currency, currency)
 
@@ -1542,6 +1559,15 @@ def generate_invoice_pdf(db: Session, invoice_id: UUID) -> bytes:
         "grand_total_rupee": _format_total_with_currency(rounded_total_rupees, cs),
         "balance_due_rupee": _format_total_with_currency(int(invoice.amount_due or invoice.total_amount or 0) / 100, cs),
         "total_in_words": _amount_in_words(int(rounded_total_rupees * 100), currency, numbering_system=amount_words_numbering),
+        # Foreign-currency invoices show the captured exchange rate and the INR
+        # (base-currency) equivalent of the grand total; INR invoices show neither.
+        "exchange_rate_display": (
+            f"1 {currency} = Rs. {exchange_rate:,.4f}".rstrip("0").rstrip(".")
+            if is_foreign_currency else ""
+        ),
+        "base_currency_total": (
+            f"Rs. {rounded_total_rupees * exchange_rate:,.2f}" if is_foreign_currency else ""
+        ),
         "notes": notes_text,
         "watermark_text": watermark_text,
     }
