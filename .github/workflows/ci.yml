@@ -57,7 +57,7 @@ jobs:
           DATABASE_URL: sqlite:///./test.db
           SECRET_KEY: test-secret-key-for-ci
           ENVIRONMENT: test
-          run: python -m pytest tests/ -v --tb=short
+        run: python -m pytest tests/ -v --tb=short
 
       # ── Step 5: Backend security scan ─────────────
       - name: Scan Python dependencies (Safety)
