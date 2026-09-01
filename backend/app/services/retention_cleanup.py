@@ -26,73 +26,16 @@ def cleanup_old_audit_logs(db: Session) -> dict[str, int]:
         - gst_audit_logs_deleted: Number of GST audit logs deleted
         - cutoff_date: The cutoff date used for deletion
     """
-    cutoff_date = datetime.utcnow() - timedelta(days=RETENTION_DAYS)
-    
-    stats = {
+    # Retention cleanup is DISABLED. Audit logs and the GST audit trail are historical
+    # records that must remain available for reports, accounting, audit and references,
+    # so the ERP never hard-deletes them. This is now a safe no-op (nothing is deleted).
+    logger.info("Audit-log retention cleanup is disabled — logs are retained indefinitely (no hard delete).")
+    return {
         "action_logs_deleted": 0,
         "gst_audit_logs_deleted": 0,
-        "cutoff_date": cutoff_date.isoformat(),
+        "cutoff_date": None,
+        "retention_disabled": True,
     }
-    
-    logger.info(f"Starting cleanup with cutoff date: {cutoff_date.isoformat()}")
-    
-    try:
-        # Clean up action logs (audit_logs table)
-        logger.info("Checking audit_logs table for old records...")
-        result = db.execute(
-            text(
-                """
-                DELETE FROM audit_logs
-                WHERE created_at < :cutoff_date
-                """
-            ),
-            {"cutoff_date": cutoff_date}
-        )
-        stats["action_logs_deleted"] = result.rowcount
-        
-        logger.info(
-            f"Deleted {stats['action_logs_deleted']} action log records older than {cutoff_date.date()}"
-        )
-        
-    except Exception as e:
-        logger.error(f"Error cleaning up action logs: {e}")
-        # Continue to GST audit logs even if action logs cleanup fails
-    
-    try:
-        # Clean up GST audit trail (gst_report_audit_logs table)
-        # Note: This table uses "timestamp" column instead of created_at
-        logger.info("Checking gst_report_audit_logs table for old records...")
-        result = db.execute(
-            text(
-                """
-                DELETE FROM gst_report_audit_logs
-                WHERE "timestamp" < :cutoff_date
-                """
-            ),
-            {"cutoff_date": cutoff_date}
-        )
-        stats["gst_audit_logs_deleted"] = result.rowcount
-        
-        logger.info(
-            f"Deleted {stats['gst_audit_logs_deleted']} GST audit log records older than {cutoff_date.date()}"
-        )
-        
-    except Exception as e:
-        logger.error(f"Error cleaning up GST audit logs: {e}")
-    
-    # Commit the deletions
-    try:
-        db.commit()
-        logger.info(
-            f"Retention cleanup completed: {stats['action_logs_deleted']} action logs, "
-            f"{stats['gst_audit_logs_deleted']} GST audit logs deleted"
-        )
-    except Exception as e:
-        logger.error(f"Error committing retention cleanup: {e}")
-        db.rollback()
-        raise
-    
-    return stats
 
 
 def run_retention_cleanup(db: Session) -> dict[str, int]:

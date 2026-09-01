@@ -4,6 +4,7 @@ import re
 from datetime import datetime
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, or_, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -20,6 +21,7 @@ from app.utils.input_validation import normalize_search_query
 from app.utils.state_mappings import validate_and_autofill_state_fields
 from app.utils.countries import COUNTRY_MASTER
 from app.utils.location_validation import validate_country, validate_state
+from app.utils.xlsx_export import build_xlsx
 from app.schemas.customer import (
     CustomerCreateRequest,
     CustomerUpdateRequest,
@@ -496,6 +498,73 @@ async def get_customer_customization_options(
         states = DEFAULT_CUSTOMER_STATES.copy()
 
     return CustomerCustomizationOptionsResponse(countries=countries, currencies=currencies, states=states)
+
+
+@router.get("/export")
+async def export_customers(
+    search: str | None = Query(default=None, max_length=100),
+    is_active: bool | None = Query(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("customers_read", "sales_invoices_read", "quotations_read", "receipts_read")),
+):
+    """Export the current tenant's customers to an .xlsx file.
+
+    Applies the SAME tenant scoping, ownership scoping, search and active filter as
+    the list view, with NO pagination limit (exports the full matching set). Sensitive
+    fields are masked for the same roles as the list. Tenant isolation is enforced by
+    `_scope_to_owner` (company_id), so only the caller's tenant's rows are exported.
+    """
+    search = normalize_search_query(search)
+    query = db.query(Customer).filter(Customer.is_deleted == False)
+    query = _scope_to_owner(query, Customer, current_user)
+    if search:
+        like_text = f"%{search}%"
+        query = query.filter(
+            or_(
+                Customer.customer_code.ilike(like_text),
+                Customer.company_name.ilike(like_text),
+                Customer.phone.ilike(like_text),
+            )
+        )
+    if is_active is not None:
+        query = query.filter(Customer.is_active == is_active)
+    records = query.order_by(Customer.created_at.desc()).all()
+
+    headers = [
+        "Customer Code", "Company Name", "Contact Person", "Customer Type",
+        "Phone", "Alternate Phone", "Email", "GSTIN Status", "GSTIN", "PAN",
+        "Company Director Name", "Company Director Contact", "Business Type",
+        "Billing Address Line 1", "Billing Address Line 2", "Billing City",
+        "Billing State", "Billing State Code", "Billing Country", "Billing Pincode",
+        "Same As Billing", "Shipping Address Line 1", "Shipping Address Line 2",
+        "Shipping City", "Shipping State", "Shipping State Code", "Shipping Country",
+        "Shipping Pincode", "Credit Limit", "Payment Terms (Days)",
+        "Opening Balance Type", "Currency", "Status", "Created At", "Updated At",
+    ]
+    rows = []
+    for record in records:
+        c = _to_customer_response(record, current_user)  # role-based masking, same as list
+        rows.append([
+            c.customer_code, c.company_name, c.contact_person, c.customer_type,
+            c.phone, c.alternate_phone, c.email, c.gstin_status, c.gstin, c.pan,
+            c.company_director_name, c.company_director_contact, c.business_type,
+            c.billing_address_line1, c.billing_address_line2, c.billing_city,
+            c.billing_state, c.billing_state_code, c.billing_country, c.billing_pincode,
+            "Yes" if c.same_as_billing else "No",
+            c.shipping_address_line1, c.shipping_address_line2, c.shipping_city,
+            c.shipping_state, c.shipping_state_code, c.shipping_country, c.shipping_pincode,
+            c.credit_limit, c.payment_terms_days, c.opening_balance_type, c.currency_code,
+            "Active" if c.is_active else "Inactive",
+            record.created_at.strftime("%Y-%m-%d %H:%M") if record.created_at else "",
+            record.updated_at.strftime("%Y-%m-%d %H:%M") if record.updated_at else "",
+        ])
+
+    stream = build_xlsx("Customers", headers, rows)
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=customers.xlsx"},
+    )
 
 
 @router.post("", response_model=CustomerResponse, status_code=201)

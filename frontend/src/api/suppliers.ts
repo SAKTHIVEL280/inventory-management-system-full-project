@@ -45,6 +45,10 @@ export const suppliersApi = {
     return response.data;
   },
 
+  // Download the tenant's suppliers as an .xlsx (respects search / active filter).
+  exportXlsx: (params: { search?: string; is_active?: boolean } = {}) =>
+    apiClient.get('/api/v2/suppliers/export', { params, responseType: 'blob' }),
+
   get: async (id: string): Promise<Supplier> => {
     const response = await apiClient.get<Supplier>(`/api/v2/suppliers/${id}`);
     return response.data;

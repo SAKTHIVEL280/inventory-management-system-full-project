@@ -938,28 +938,14 @@ def _derive_record_reference(resource_id: UUID | str | None, details: dict[str, 
 
 
 def _maybe_cleanup_old_audit_logs(db: Session) -> None:
-    global _last_retention_check_at
-    now = time.monotonic()
-    if now - _last_retention_check_at < _RETENTION_CHECK_INTERVAL_SECONDS:
-        return
-    _last_retention_check_at = now
+    """No-op: audit logs are retained indefinitely.
 
-    retention_days = int(os.getenv("AUDIT_LOG_RETENTION_DAYS", "365") or "365")
-    if retention_days <= 0:
-        return
-
-    # Use interval multiplication (:n * INTERVAL '1 day') instead of building a
-    # string like ":n::text || ' days'" — the latter collides the bind param with
-    # PostgreSQL's "::" cast and raises a syntax error on every run.
-    db.execute(
-        text(
-            """
-            DELETE FROM audit_logs
-            WHERE created_at < NOW() - (:retention_days * INTERVAL '1 day')
-            """
-        ),
-        {"retention_days": retention_days},
-    )
+    Audit / action logs are historical records that must stay available for reports,
+    accounting and references, so the ERP never hard-deletes them. (Previously this
+    deleted rows older than a retention window — that hard-delete of history has been
+    removed.)
+    """
+    return
 
 
 def ensure_audit_logs_storage(db: Session) -> None:

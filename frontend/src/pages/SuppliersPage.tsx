@@ -12,6 +12,7 @@ import { fetchAllPages } from '../utils/fetchAllPages';
 import { PageEmpty, PageError, PageLoading } from '../components/PageState';
 import { getApiDetail, getApiDetailMessage } from '../utils/apiError';
 import { showError, showSuccess } from '../utils/toastHelper';
+import { downloadBlob, fileDateStamp } from '../utils/fileDownload';
 import { COUNTRY_MASTER } from '../constants/countries';
 import { validateCountryValue, validateStateValue } from '../utils/locationValidation';
 
@@ -400,6 +401,24 @@ const SuppliersPage = () => {
     setIsFormOpen(false);
     setPhoneCountryCode('+91');
     reset(buildDefaultValues());
+  };
+
+  const [isExporting, setIsExporting] = useState(false);
+  const handleExportExcel = async () => {
+    setIsExporting(true);
+    try {
+      const res = await suppliersApi.exportXlsx({
+        search: searchTerm.trim() || undefined,
+        is_active: statusFilter === 'active' ? true : statusFilter === 'inactive' ? false : undefined,
+      });
+      downloadBlob(res.data as BlobPart, `suppliers_${fileDateStamp()}.xlsx`,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      showSuccess('Suppliers exported to Excel');
+    } catch {
+      showError('Failed to export suppliers');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const startEdit = (item: Supplier) => {
@@ -952,8 +971,17 @@ const SuppliersPage = () => {
         </div>
 
         <div className="hms-card overflow-hidden">
-          <div className="border-b border-neutral-200 px-5 py-4">
+          <div className="flex flex-col gap-3 border-b border-neutral-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="font-display text-lg font-bold text-neutral-900">Suppliers</h2>
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              disabled={isExporting}
+              className="inline-flex items-center justify-center gap-1 rounded-lg border border-neutral-200 bg-white px-4 py-2 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+            >
+              <span className="material-icons text-base" aria-hidden="true">download</span>
+              {isExporting ? 'Exporting…' : 'Export to Excel'}
+            </button>
           </div>
           <div className="p-5">
           {!isLoading && !isError && (

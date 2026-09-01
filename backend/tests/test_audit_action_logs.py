@@ -77,9 +77,8 @@ def test_supplier_description_uses_supplier_label():
     assert desc == "Supplier SUPP-MH-00003 created."
 
 
-# ── BE-270 regression guard: retention cleanup SQL must not reintroduce the
-#    bind/`::`-cast collision that silently discarded audit rows. ─────────────
-def test_retention_cleanup_uses_safe_interval_sql():
+# ── Audit logs are historical records: never hard-deleted (no-hard-delete policy).
+#    _maybe_cleanup_old_audit_logs is now a no-op — it must contain no DELETE. ────
+def test_audit_retention_cleanup_never_hard_deletes():
     src = inspect.getsource(audit_service._maybe_cleanup_old_audit_logs)
-    assert "* INTERVAL '1 day'" in src            # the corrected construction
-    assert "days')::interval" not in src          # the old buggy string-concat cast
+    assert "DELETE FROM" not in src.upper()   # audit logs are retained indefinitely (no SQL delete)

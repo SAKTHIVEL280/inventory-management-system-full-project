@@ -6,12 +6,11 @@ records. It only surfaces reminders and performs purge when an admin confirms.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -37,15 +36,19 @@ class ArchivePolicy:
     purge_allowed: bool
 
 
+# Soft-delete is permanent across the ERP: an archived (is_deleted=True) record is
+# retained indefinitely so it stays available for reports, audit logs, accounting and
+# references (e.g. a soft-deleted customer must keep resolving on its historical
+# invoices). NO module is ever hard-deleted, so purge_allowed is False everywhere.
+# retention_days is kept only as informational metadata for the archive summary.
 ARCHIVE_POLICIES: list[ArchivePolicy] = [
-    ArchivePolicy("customers", "Customers", Customer, 90, True),
-    ArchivePolicy("suppliers", "Suppliers", Supplier, 90, True),
-    ArchivePolicy("products", "Products", Product, 120, True),
-    ArchivePolicy("categories", "Categories", ProductCategory, 120, True),
-    ArchivePolicy("quotations", "Quotations", Quotation, 120, True),
-    ArchivePolicy("purchase_orders", "Purchase Orders", PurchaseOrder, 180, True),
-    ArchivePolicy("grn", "Goods Receipt Notes", GoodsReceiptNote, 180, True),
-    # Protected modules: no automatic hard delete. Explicit decision required.
+    ArchivePolicy("customers", "Customers", Customer, 90, False),
+    ArchivePolicy("suppliers", "Suppliers", Supplier, 90, False),
+    ArchivePolicy("products", "Products", Product, 120, False),
+    ArchivePolicy("categories", "Categories", ProductCategory, 120, False),
+    ArchivePolicy("quotations", "Quotations", Quotation, 120, False),
+    ArchivePolicy("purchase_orders", "Purchase Orders", PurchaseOrder, 180, False),
+    ArchivePolicy("grn", "Goods Receipt Notes", GoodsReceiptNote, 180, False),
     ArchivePolicy("sales_invoices", "Sales Invoices", SalesInvoice, 365, False),
     ArchivePolicy("payments", "Payments", Payment, 365, False),
     ArchivePolicy("stock_ledger", "Stock Ledger", StockLedger, 365, False),
@@ -76,23 +79,10 @@ def _compute_stats(db: Session, policy: ArchivePolicy, today: date, company_id=N
         q = q.filter(company_col == company_id)
     rows = q.all()
 
-    total_archived = 0
-    due_soon = 0
-    overdue = 0
-
-    for _record_id, deleted_at in rows:
-        deleted_on = _to_date(deleted_at)
-        if not deleted_on:
-            continue
-
-        total_archived += 1
-        purge_on = deleted_on + timedelta(days=policy.retention_days)
-        days_left = (purge_on - today).days
-
-        if days_left < 0:
-            overdue += 1
-        elif 0 <= days_left <= 7:
-            due_soon += 1
+    # Count archived (soft-deleted) records only. There is NO purge deadline anymore:
+    # archived records are retained indefinitely, so nothing is ever "due soon" or
+    # "overdue" for deletion.
+    total_archived = sum(1 for _record_id, deleted_at in rows if _to_date(deleted_at) is not None)
 
     return {
         "key": policy.key,
@@ -100,8 +90,8 @@ def _compute_stats(db: Session, policy: ArchivePolicy, today: date, company_id=N
         "retention_days": policy.retention_days,
         "purge_allowed": policy.purge_allowed,
         "total_archived": total_archived,
-        "due_soon": due_soon,
-        "overdue": overdue,
+        "due_soon": 0,
+        "overdue": 0,
     }
 
 
@@ -117,20 +107,18 @@ async def login_alerts(
 ):
     stats = _all_stats(db, company_id=current_user.company_id)
 
-    remind_modules = [s for s in stats if s["due_soon"] > 0 or s["overdue"] > 0]
-    protected = [s for s in remind_modules if not s["purge_allowed"]]
-    actionable = [s for s in remind_modules if s["purge_allowed"]]
-
+    # Archived records are retained indefinitely (soft-archive only) — nothing is ever
+    # hard-deleted, so there is no retention deadline and no review is required.
     return {
-        "requires_attention": len(remind_modules) > 0,
-        "modules": remind_modules,
-        "actionable_modules": actionable,
-        "protected_modules": protected,
-        "message": "Archived records nearing retention deadline require review.",
-        "default_action": "extend_retention",
+        "requires_attention": False,
+        "modules": [],
+        "actionable_modules": [],
+        "protected_modules": stats,
+        "message": "Archived records are retained indefinitely. No records are ever hard-deleted.",
+        "default_action": "none",
         "policy": {
-            "no_auto_hard_delete_for": ["sales_invoices", "payments", "stock_ledger"],
-            "review_window_days": 7,
+            "no_auto_hard_delete_for": [p.key for p in ARCHIVE_POLICIES],
+            "review_window_days": 0,
         },
     }
 
@@ -143,14 +131,12 @@ async def purge_preview(
     _require_admin(current_user)
 
     stats = _all_stats(db, company_id=current_user.company_id)
-    purge_candidates = sum(s["overdue"] for s in stats if s["purge_allowed"])
-    expected_text = f"DELETE {purge_candidates} RECORDS"
-
+    # Hard delete has been removed ERP-wide: there are never any purge candidates.
     return {
         "modules": stats,
-        "purge_candidates": purge_candidates,
-        "expected_confirmation_text": expected_text,
-        "warning": "Protected modules are excluded from hard delete and remain archived until explicitly handled.",
+        "purge_candidates": 0,
+        "expected_confirmation_text": "",
+        "warning": "Archived records are retained indefinitely as soft-archive. No records are ever hard-deleted.",
     }
 
 
@@ -160,48 +146,18 @@ async def purge_confirm(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    """Hard delete has been permanently removed from the ERP.
+
+    Business records are only ever soft-archived (is_deleted=True) and are retained
+    indefinitely so they remain available for reports, audit logs, accounting and
+    historical references. This endpoint is kept for backward compatibility but NEVER
+    physically deletes any record — there is no hard-delete path.
+    """
     _require_admin(current_user)
 
-    stats = _all_stats(db, company_id=current_user.company_id)
-    purge_candidates = sum(s["overdue"] for s in stats if s["purge_allowed"])
-    expected_text = f"DELETE {purge_candidates} RECORDS"
-
-    if payload.confirmation_text != expected_text:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Confirmation text mismatch. Expected: {expected_text}",
-        )
-
-    today = date.today()
-    deleted = 0
-    skipped = 0
-
-    for policy in ARCHIVE_POLICIES:
-        if not policy.purge_allowed:
-            continue
-
-        records = db.query(policy.model).filter(policy.model.is_deleted == True).all()
-        for record in records:
-            deleted_on = _to_date(getattr(record, "deleted_at", None))
-            if not deleted_on:
-                continue
-            purge_on = deleted_on + timedelta(days=policy.retention_days)
-            if purge_on > today:
-                continue
-
-            try:
-                with db.begin_nested():
-                    db.delete(record)
-                    db.flush()
-                deleted += 1
-            except IntegrityError:
-                skipped += 1
-
-    db.commit()
-
     return {
-        "deleted": deleted,
-        "skipped": skipped,
-        "protected_modules_kept_archived": [p.key for p in ARCHIVE_POLICIES if not p.purge_allowed],
-        "message": "Manual purge completed.",
+        "deleted": 0,
+        "skipped": 0,
+        "protected_modules_kept_archived": [p.key for p in ARCHIVE_POLICIES],
+        "message": "No records were deleted. Archived records are retained as soft-archive; hard delete is disabled.",
     }

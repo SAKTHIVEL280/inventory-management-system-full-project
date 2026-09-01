@@ -119,6 +119,13 @@ jobs:
             export PATH="$HOME/.local/bin:$PATH"
             uv pip install -r backend/requirements.txt
 
+            echo "── Applying database migrations ──"
+            # MUST run before restarting the backend: the new code's ORM models may
+            # reference columns/tables this release adds. Skipping this leaves the DB
+            # behind the code and every query on the changed table 500s ("UndefinedColumn").
+            # run_migration.py is idempotent (ADD COLUMN/TABLE IF NOT EXISTS + guarded backfills).
+            (cd backend && python run_migration.py)
+
             echo "── Fixing permissions ──"
             chmod -R 755 ~/projects/Billing_Software/frontend/dist
 

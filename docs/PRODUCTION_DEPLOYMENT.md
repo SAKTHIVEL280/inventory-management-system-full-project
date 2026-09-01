@@ -99,47 +99,63 @@ columns (migration 0029).
 
 ```bash
 cd ~/projects/Billing_Software/backend
+# The three Python scripts (run_migration / verify / create_super_admin) read
+# DATABASE_URL straight from backend/.env, so no export is needed for them.
+# For the psql commands used below, load it into the shell once (re-run if you
+# open a new terminal):
+export $(grep -E '^DATABASE_URL=' .env | xargs)
+
 python run_migration.py            # reads DATABASE_URL from backend/.env
 ```
-Expected: it prints the statements it runs and ends without a traceback. Re‑running
-it is safe if anything is interrupted.
+Expected final line: **`Compatibility migration successful.`** (it prints each
+statement as it runs). Re‑running is safe if anything is interrupted.
 
-### Step 5 — Multi‑tenant backfill verification  ⭐
-The migration assigns all pre‑existing rows to the **earliest `company` row**. Confirm
-a tenant company exists and nothing is left unassigned:
+> Prefer raw SQL? The same changes are the ordered files in `database/migrations/`
+> (`0012_*.sql` … `0029_*.sql`), each with a matching `*_rollback.sql`.
 
-```bash
-psql "$DATABASE_URL" -c "SELECT count(*) AS companies FROM company;"
-psql "$DATABASE_URL" -c "SELECT count(*) AS users_without_company FROM users WHERE company_id IS NULL;"
-psql "$DATABASE_URL" -c "SELECT count(*) AS invoices_without_company FROM sales_invoices WHERE company_id IS NULL;"
-```
-
-- `companies` must be **≥ 1**.
-- The two `*_without_company` counts must be **0**.
-
-**If `companies = 0`** (a truly bare single‑tenant DB with no company row), create one
-tenant and re‑run the migration so the backfill can attach existing data:
+### Step 5 — Verify tenant isolation  ⭐
+The migration turns your existing data into **Tenant #1** and assigns every row a
+`company_id`. Verify with the bundled checker (do not hand‑write SQL):
 
 ```bash
-# Create a tenant company (adjust name/GSTIN), then backfill by re-running the migration.
-psql "$DATABASE_URL" -c "INSERT INTO company (id, name) VALUES (gen_random_uuid(), 'Your Company Pvt Ltd') ON CONFLICT DO NOTHING;"
-python run_migration.py
-# re-run the verification queries above — the *_without_company counts must now be 0
+cd ~/projects/Billing_Software/backend   # venv active
+python verify_tenant_isolation.py
 ```
+Expect:
+- a **tenant registry** line for your company (plan / status / dates),
+- every business table showing **0 NULL company_id**,
+- `audit_logs` / `gst_report_audit_logs` may show a few NULLs marked
+  **`(system rows; allowed)`** — that is expected (system/failed‑login events),
+- final line **`RESULT: OK`** (exit code 0).
 
-**If any `*_without_company > 0`** after that, attach them to the first company:
+If any other table shows `<-- FIX`, re‑run `python run_migration.py` (idempotent) and
+re‑run this checker.
+
+> **Edge case — a bare DB with no `company` row** (verify shows no tenant / everything
+> `<-- FIX`): create one tenant, then re‑run the migration to backfill:
+> ```bash
+> psql "$DATABASE_URL" -c "INSERT INTO company (id, name) VALUES (gen_random_uuid(), 'Your Company Pvt Ltd') ON CONFLICT DO NOTHING;"
+> python run_migration.py && python verify_tenant_isolation.py   # must end RESULT: OK
+> ```
+
+### Step 5b — Create the platform Super Admin  ⭐ (do NOT skip)
+The Super Admin is the **Mecandria platform** account that manages all tenants (add
+tenants, set plan/status, reset a tenant admin's password, export). It is **separate
+from any tenant's admin** and is not created by the migration — you must create it
+once. It writes directly to the DB (reads `DATABASE_URL` the same way), so the backend
+does not need to be running yet.
+
 ```bash
-psql "$DATABASE_URL" <<'SQL'
-DO $$
-DECLARE cid uuid;
-BEGIN
-  SELECT id INTO cid FROM company ORDER BY created_at ASC LIMIT 1;
-  UPDATE users            SET company_id = cid WHERE company_id IS NULL;
-  UPDATE sales_invoices   SET company_id = cid WHERE company_id IS NULL;
-  -- (run_migration.py already covers the full table list; this is a safety net)
-END $$;
-SQL
+cd ~/projects/Billing_Software/backend   # venv active
+# Auto-generate a strong password (printed ONCE — copy it somewhere safe):
+python create_super_admin.py admin@mecandria.com
+# …or set the password + name explicitly:
+python create_super_admin.py admin@mecandria.com "StrongPass#123" "Platform Admin"
 ```
+- Use your real platform admin email.
+- Re‑running with an existing email **promotes** that user to Super Admin (password
+  changes only if you pass one).
+- **Store the printed password** in your password manager — it is shown only once.
 
 ### Step 6 — Build & deploy the frontend (manual)
 The frontend must be built with the production API base URL and placed in
@@ -190,6 +206,13 @@ Then in the browser (`http://139.59.62.156:8080`):
 - [ ] Create a **foreign‑currency invoice** (customer currency ≠ INR) → Exchange Rate field appears, line price converts from the product's INR price, total is exact, PDF shows the rate + INR equivalent.
 - [ ] **Receivables/Payables**: record a receipt, allocate to an invoice; historical rows show the party name.
 - [ ] Subscription/plan gating works for a non‑admin role.
+
+Then log in as the **Super Admin** (the account from Step 5b):
+
+- [ ] A **Super Admin** group appears in the sidebar → **ERP Customers**.
+- [ ] The platform dashboard shows metrics.
+- [ ] You can **add a tenant**, change its **plan/status**, **reset its admin password**, and **export CSV**.
+- [ ] The Super Admin cannot see any single tenant's operational data as its own (isolation holds).
 
 If anything is broken, go to §4 (Rollback).
 
@@ -273,22 +296,38 @@ manual‑approval gate.
 
 ---
 
+## 8. Onboarding more tenants (after go‑live)
+
+You do **not** create additional tenants by hand. Log in as the Super Admin and use
+**ERP Customers → Add ERP Customer** (or `POST /api/v1/admin/tenants`). Each new tenant
+automatically gets isolated data, its own document‑number sequences, its own admin
+user, and plan‑based module/user limits.
+
+> This production runbook is the deploy‑oriented companion to
+> **`docs/MULTI_TENANT_SETUP.md`** (which explains the multi‑tenant model, the
+> migration modules M0–M7, and the same Super‑Admin / verification scripts in more
+> detail). Read that once for context.
+
+---
+
 ## Quick reference — the whole thing in order
 
 ```bash
-# ON THE SERVER (hmsadmin)
+# ON THE PRODUCTION SERVER (substitute your user / paths / service name)
 cd ~/projects/Billing_Software/backend
 export $(grep -E '^DATABASE_URL=' .env | xargs)
-pg_dump "$DATABASE_URL" -Fc -f ~/backup_ims_$(date +%Y%m%d_%H%M%S).dump   # 1. BACKUP
+pg_dump "$DATABASE_URL" -Fc -f ~/backup_ims_$(date +%Y%m%d_%H%M%S).dump   # 1. BACKUP (don't skip)
 
 sudo systemctl stop billing-backend                                       # 2. maintenance
 cd ~/projects/Billing_Software && git pull origin version-1               # 3. code
 source backend/venv/bin/activate && export PATH="$HOME/.local/bin:$PATH"
 uv pip install -r backend/requirements.txt                                # 4. deps
-cd backend && python run_migration.py                                     # 5. MIGRATE
-psql "$DATABASE_URL" -c "SELECT count(*) FROM company;"                    # 6. verify (>=1)
-psql "$DATABASE_URL" -c "SELECT count(*) FROM users WHERE company_id IS NULL;"   # must be 0
-cd ../frontend && npm ci && VITE_API_BASE_URL="<prod>" npm run build && chmod -R 755 dist  # 7. FE
-sudo systemctl start billing-backend && sleep 3 && sudo systemctl reload nginx             # 8. restart
-sudo systemctl status billing-backend --no-pager | head -8                                 # 9. verify
+cd backend
+python run_migration.py                                                   # 5. MIGRATE (-> "Compatibility migration successful.")
+python verify_tenant_isolation.py                                         # 6. VERIFY  (-> "RESULT: OK")
+python create_super_admin.py admin@mecandria.com                          # 7. SUPER ADMIN (first deploy only; copy printed password)
+cd ../frontend && npm ci && VITE_API_BASE_URL="<prod>" npm run build && chmod -R 755 dist  # 8. FRONTEND
+sudo systemctl start billing-backend && sleep 3 && sudo systemctl reload nginx             # 9. restart
+sudo systemctl status billing-backend --no-pager | head -8                                 # 10. verify running
 ```
+

@@ -3,6 +3,7 @@ import re
 from datetime import datetime
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, or_, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -16,6 +17,7 @@ from app.services.auth_service import normalize_role, PRIVILEGED_ROLES
 from app.services.data_masking import DataMasker, should_mask_sensitive_fields
 from app.services.audit_service import build_audit_changes
 from app.utils.input_validation import normalize_search_query
+from app.utils.xlsx_export import build_xlsx
 from app.utils.countries import COUNTRY_MASTER
 from app.utils.state_mappings import (
     canonical_state_code,
@@ -449,6 +451,64 @@ async def get_supplier_customization_options(
         states = DEFAULT_SUPPLIER_STATES.copy()
 
     return SupplierCustomizationOptionsResponse(countries=countries, currencies=currencies, states=states)
+
+
+@router.get("/export")
+async def export_suppliers(
+    search: str | None = Query(default=None),
+    is_active: bool | None = Query(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permissions("suppliers_read", "payments_read")),
+):
+    """Export the current tenant's suppliers to an .xlsx file.
+
+    Same tenant/ownership scoping, search and active filter as the list, NO pagination
+    limit, and the same role-based masking of sensitive fields. Tenant isolation is
+    enforced by `_scope_to_owner` (company_id)."""
+    search = normalize_search_query(search)
+    query = db.query(Supplier).filter(Supplier.is_deleted == False)
+    query = _scope_to_owner(query, Supplier, current_user)
+    if search:
+        like_text = f"%{search}%"
+        query = query.filter(
+            or_(
+                Supplier.supplier_code.ilike(like_text),
+                Supplier.company_name.ilike(like_text),
+                Supplier.phone.ilike(like_text),
+            )
+        )
+    if is_active is not None:
+        query = query.filter(Supplier.is_active == is_active)
+    records = query.order_by(Supplier.created_at.desc()).all()
+
+    headers = [
+        "Supplier Code", "Company Name", "Contact Person", "Phone", "Alternate Phone",
+        "Email", "GSTIN Status", "GSTIN", "PAN", "Company Director Name",
+        "Company Director Contact", "Business Type", "Address Line 1", "Address Line 2",
+        "City", "State", "State Code", "Country", "Pincode", "Place of Supply",
+        "Bank Name", "Bank Account No", "Bank IFSC", "Payment Terms (Days)", "Currency",
+        "Opening Balance", "Opening Balance Type", "Status", "Created At", "Updated At",
+    ]
+    rows = []
+    for record in records:
+        s = _to_supplier_response(record, current_user)  # role-based masking, same as list
+        rows.append([
+            s.supplier_code, s.company_name, s.contact_person, s.phone, s.alternate_phone,
+            s.email, s.gstin_status, s.gstin, s.pan, s.company_director_name,
+            s.company_director_contact, s.business_type, s.address_line1, s.address_line2,
+            s.city, s.state, s.state_code, s.billing_country, s.pincode, s.place_of_supply,
+            s.bank_name, s.bank_account_no, s.bank_ifsc, s.payment_terms_days, s.currency_code,
+            s.opening_balance, s.opening_balance_type, "Active" if s.is_active else "Inactive",
+            record.created_at.strftime("%Y-%m-%d %H:%M") if record.created_at else "",
+            record.updated_at.strftime("%Y-%m-%d %H:%M") if record.updated_at else "",
+        ])
+
+    stream = build_xlsx("Suppliers", headers, rows)
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=suppliers.xlsx"},
+    )
 
 
 @router.post("", response_model=SupplierResponse, status_code=201)

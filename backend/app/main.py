@@ -305,6 +305,26 @@ async def integrity_error_handler(request: Request, exc: IntegrityError):
     )
 
 
+def _error_cors_headers(request: Request) -> dict[str, str]:
+    """CORS headers for a 500 response.
+
+    A 500 is emitted by Starlette's ServerErrorMiddleware, which sits ABOVE
+    CORSMiddleware, so its response never passes back through CORS and would lack
+    `Access-Control-Allow-Origin`. The browser then reports a genuine backend error
+    as an opaque "CORS / cannot reach server" failure, hiding the real cause. Attach
+    the CORS headers here (only for allowed origins) so the frontend can read the
+    error body and show the actual message.
+    """
+    origin = request.headers.get("origin")
+    if origin and origin in allowed_origins:
+        return {
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Credentials": "true",
+            "Vary": "Origin",
+        }
+    return {}
+
+
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
     logger.error(
@@ -316,7 +336,8 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     )
     return JSONResponse(
         status_code=500,
-        content={"error": "Internal server error"},
+        content={"error": "Internal server error", "detail": "Internal server error"},
+        headers=_error_cors_headers(request),
     )
 
 
