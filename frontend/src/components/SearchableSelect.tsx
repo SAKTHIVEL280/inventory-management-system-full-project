@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 /**
  * Reusable "type / search -> view matching results -> choose" selector for
@@ -53,6 +54,45 @@ export const SearchableSelect = ({
   const [highlight, setHighlight] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // The dropdown is rendered in a portal with fixed positioning so it is never
+  // clipped by an ancestor with `overflow` (e.g. a horizontally scrollable line-item
+  // grid). We track the input's viewport rect and flip the list above when there is
+  // not enough room below.
+  const [menuPos, setMenuPos] = useState<{ left: number; top: number; width: number; maxHeight: number; placement: 'below' | 'above' }>();
+
+  const recomputePosition = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const GAP = 4;
+    const DESIRED = 256; // max-h-64
+    const spaceBelow = window.innerHeight - r.bottom - GAP;
+    const spaceAbove = r.top - GAP;
+    const placeAbove = spaceBelow < Math.min(DESIRED, 160) && spaceAbove > spaceBelow;
+    const maxHeight = Math.max(120, Math.min(DESIRED, placeAbove ? spaceAbove : spaceBelow));
+    setMenuPos({
+      left: r.left,
+      top: placeAbove ? r.top - GAP : r.bottom + GAP,
+      width: r.width,
+      maxHeight,
+      placement: placeAbove ? 'above' : 'below',
+    });
+  };
+
+  // Keep the menu aligned to the input while open (on scroll/resize of any ancestor).
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    recomputePosition();
+    const onChange = () => recomputePosition();
+    window.addEventListener('scroll', onChange, true); // capture: catches ancestor scrolls
+    window.addEventListener('resize', onChange);
+    return () => {
+      window.removeEventListener('scroll', onChange, true);
+      window.removeEventListener('resize', onChange);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
 
   const selected = useMemo(() => options.find((o) => o.value === value) ?? null, [options, value]);
 
@@ -119,6 +159,7 @@ export const SearchableSelect = ({
     <div className="relative" ref={wrapRef}>
       <input
         id={id}
+        ref={inputRef}
         className={className}
         value={displayValue}
         placeholder={selected ? selected.label : placeholder}
@@ -132,8 +173,12 @@ export const SearchableSelect = ({
         onKeyDown={handleKeyDown}
         onChange={(e) => { setEditing(true); setQuery(e.target.value); setHighlight(0); setIsOpen(true); }}
       />
-      {isOpen && !disabled && (
-        <div ref={listRef} className="absolute z-40 mt-1 max-h-64 w-full overflow-auto rounded-lg border border-neutral-200 bg-white shadow-lg">
+      {isOpen && !disabled && menuPos && createPortal(
+        <div
+          ref={listRef}
+          className="fixed z-[1000] overflow-auto rounded-lg border border-neutral-200 bg-white shadow-lg"
+          style={{ left: menuPos.left, top: menuPos.placement === 'above' ? undefined : menuPos.top, bottom: menuPos.placement === 'above' ? window.innerHeight - menuPos.top : undefined, width: menuPos.width, maxHeight: menuPos.maxHeight }}
+        >
           {allowClear && (
             <button
               type="button"
@@ -159,7 +204,8 @@ export const SearchableSelect = ({
               </button>
             ))
           )}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

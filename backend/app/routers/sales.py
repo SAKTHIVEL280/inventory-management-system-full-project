@@ -21,7 +21,7 @@ from uuid import UUID
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, and_
 
 from app.database import get_db
 from app.dependencies import enforce_resource_ownership, require_permissions, require_role, scope_query_to_company
@@ -102,6 +102,42 @@ def _derive_invoice_status(raw_status: str | None, amount_paid: int, total_amoun
     if token in {"draft", "cancelled", "returned"}:
         return token
     return _compute_invoice_status(int(amount_paid or 0), int(total_amount or 0))
+
+
+def _invoice_status_search_condition(term: str):
+    """Map a human status word to a SQL condition on the invoice's DISPLAY status.
+
+    The stored status is raw (draft/issued/partial_paid/paid/returned/cancelled), but
+    the UI shows DERIVED statuses (Unpaid / Partially Paid / Paid — computed from
+    amount_paid vs total_amount). So searching "unpaid" or "partially paid" matched
+    nothing. This resolves those terms (and common variants/typos) to the same
+    amount-based conditions the status filter uses. Returns None when the term is not
+    a status word (so normal invoice-number/customer search is unaffected).
+    """
+    t = " ".join((term or "").strip().lower().split())
+    if not t:
+        return None
+    paid_like = SalesInvoice.status.in_(["issued", "partial_paid", "paid"])
+    UNPAID = and_(paid_like, SalesInvoice.amount_paid <= 0)
+    PARTIAL = and_(paid_like, SalesInvoice.amount_paid > 0, SalesInvoice.amount_paid < SalesInvoice.total_amount)
+    PAID = and_(paid_like, SalesInvoice.total_amount > 0, SalesInvoice.amount_paid >= SalesInvoice.total_amount)
+    # Ordered checks: more specific terms first so "unpaid"/"partially paid" are not
+    # swallowed by the generic "paid" substring. Common typos are handled explicitly.
+    if any(k in t for k in ("unpaid", "un paid", "not paid", "upaid", "unpiad", "unpad")):
+        return UNPAID
+    if "partial" in t or "partly" in t or "partially" in t:
+        return PARTIAL
+    if "draft" in t:
+        return SalesInvoice.status == "draft"
+    if "cancel" in t:
+        return SalesInvoice.status == "cancelled"
+    if "return" in t:
+        return SalesInvoice.status == "returned"
+    if "issued" in t or "pending" in t:
+        return UNPAID
+    if "paid" in t or "received" in t:
+        return PAID
+    return None
 
 
 def _auto_expire_quotation(q: Quotation) -> None:
@@ -1508,7 +1544,12 @@ async def list_invoices(
             elif normalized_status == "paid":
                 query = query.filter(SalesInvoice.total_amount > 0, SalesInvoice.amount_paid >= SalesInvoice.total_amount)
         else:
-            query = query.filter(SalesInvoice.status == normalized_status)
+            # Accept human display statuses too (unpaid / partially paid / return / …).
+            derived = _invoice_status_search_condition(normalized_status)
+            if derived is not None:
+                query = query.filter(derived)
+            else:
+                query = query.filter(SalesInvoice.status == normalized_status)
 
     # MCN-BUG-001: server-side date-range filter (keeps pagination counts correct)
     if date_from:
@@ -1520,13 +1561,17 @@ async def list_invoices(
     search_term = (search or "").strip()
     if search_term:
         like = f"%{search_term}%"
-        query = query.outerjoin(Customer, SalesInvoice.customer_id == Customer.id).filter(
-            or_(
-                SalesInvoice.invoice_number.ilike(like),
-                SalesInvoice.status.ilike(like),
-                Customer.company_name.ilike(like),
-            )
-        )
+        conditions = [
+            SalesInvoice.invoice_number.ilike(like),
+            SalesInvoice.status.ilike(like),
+            Customer.company_name.ilike(like),
+        ]
+        # Also match the human/display status (Unpaid, Partially Paid, Return, …),
+        # which is derived from amount_paid vs total and isn't the raw stored token.
+        status_cond = _invoice_status_search_condition(search_term)
+        if status_cond is not None:
+            conditions.append(status_cond)
+        query = query.outerjoin(Customer, SalesInvoice.customer_id == Customer.id).filter(or_(*conditions))
 
     total = query.count()
     rows = query.order_by(SalesInvoice.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()

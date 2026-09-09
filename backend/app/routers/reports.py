@@ -1362,7 +1362,13 @@ async def stock_report(
         .join(SalesInvoice, SalesInvoiceItem.invoice_id == SalesInvoice.id)
         .filter(
             SalesInvoice.company_id == current_user.company_id,
-            SalesInvoice.status.in_(["issued", "partial_paid", "paid"]),
+            # Include "returned": a returned invoice DID deduct stock when issued
+            # (the stock ledger and the batch snapshot both count it), and its return
+            # is added back separately below. Excluding it here dropped the original
+            # deduction while still adding the return — double-counting the returned
+            # quantity and making batch balances diverge from the ledger (which
+            # showed as inflated positives and, elsewhere, negative batch rows).
+            func.lower(func.trim(SalesInvoice.status)).in_(["issued", "partial_paid", "paid", "returned"]),
             SalesInvoice.is_deleted == False,
             SalesInvoiceItem.is_deleted == False,
         )
@@ -1506,15 +1512,28 @@ async def stock_report(
         if low_stock_only and status != "Low Stock":
             continue
 
-        product_batches = list(balances_by_product.get(product_id, []))
-        allocated_qty = sum(float(entry[3]) for entry in product_batches)
-        unassigned_qty = product_qty - allocated_qty
+        # Batch decomposition is reconstructed from documents (GRN/sales/returns),
+        # while product_qty is the stock-ledger truth (also counts opening stock and
+        # manual adjustments, which are NOT batch-tagged). A batch can therefore go
+        # negative when a sale cites a batch whose physical units actually came from
+        # the opening/adjustment (untagged) pool. A negative batch is physically
+        # impossible, so instead of displaying it we reconcile it into the untagged
+        # ("Unassigned") pool: keep only positive per-batch balances, and let the
+        # Unassigned row carry the remainder so the rows still sum EXACTLY to the
+        # ledger product_qty (nothing is hidden or clamped away — the total is exact).
+        all_batches = list(balances_by_product.get(product_id, []))
+        positive_batches = [entry for entry in all_batches if float(entry[3]) > 1e-6]
+        assigned_positive = sum(float(entry[3]) for entry in positive_batches)
+        unassigned_qty = product_qty - assigned_positive
 
-        # Add reconciliation row only for positive residual quantity.
-        # Negative residuals are data mismatches and should not create confusing
-        # negative rows in Stock Master.
+        product_batches = positive_batches
+        # Surface the untagged remainder (opening stock / adjustments / batch
+        # reconciliation) as a single Unassigned row when it is positive, or when the
+        # product has no positive batch rows at all (so the ledger qty is still shown).
         if unassigned_qty > 1e-6 or not product_batches:
-            product_batches.append((NO_BATCH_TOKEN, None, None, unassigned_qty if product_batches else product_qty))
+            product_batches = product_batches + [
+                (NO_BATCH_TOKEN, None, None, unassigned_qty if positive_batches else product_qty)
+            ]
 
         product_batches.sort(key=lambda entry: (entry[0] == NO_BATCH_TOKEN, entry[0]))
 

@@ -95,3 +95,5 @@
 - **DB-229 / BE-277,278**: **No new schema change.** The prod outage was caused by migration **0029** (`sales_invoices.currency_code` / `exchange_rate`) not being applied on the deployed DB while the code expected it — remediation is to run the existing `run_migration.py` (now also run automatically by `deploy.yml`). The Excel export is read-only. All export queries are `company_id`-scoped.
 
 - **DB-230 / BE-279,280**: **No schema change.** Removing the hard-delete/purge paths and expanding the Customer/Supplier exports are code-only. No data is deleted; archived records stay `is_deleted=True` (retained indefinitely). All export/archive queries remain `company_id`-scoped.
+
+- **DB-231 / BE-281..283**: **No schema change and no data migration.** PO tenant-scoping, the stock-report reconciliation, and the invoice status-search fixes are all query/logic-layer. No stored stock, PO, or invoice records were modified (the stock report is read-only; the batch reconciliation is display-time only). All fixes remain strictly `company_id`-scoped.

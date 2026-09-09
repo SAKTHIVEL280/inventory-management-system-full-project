@@ -104,6 +104,29 @@ def _enforce_owner(record, current_user: User) -> None:
     enforce_resource_ownership(getattr(record, "created_by", None), current_user)
 
 
+def _get_company_po(db: Session, po_id: UUID, current_user: User, *, deleted: bool = False):
+    """Fetch a Purchase Order by id within the caller's company (tenant isolation).
+
+    A PO is a SHARED company document: any authorized user in the owning tenant may
+    open/approve it, not only the creator (e.g. a manager approving a draft raised by
+    a buyer). So access is gated on `company_id` (strict tenant isolation) rather than
+    `created_by` ownership — which fixes both the cross-tenant leak (previously the
+    by-id query had no company filter) and the "Purchase order not found" seen by a
+    non-creator higher-level user. Returns None when the PO is not in the caller's tenant.
+    """
+    if current_user.company_id is None:
+        return None
+    return (
+        db.query(PurchaseOrder)
+        .filter(
+            PurchaseOrder.id == po_id,
+            PurchaseOrder.is_deleted == deleted,
+            PurchaseOrder.company_id == current_user.company_id,
+        )
+        .first()
+    )
+
+
 def _derive_grn_status_display(raw_status: str | None, is_partial_qty: bool) -> str:
     status = (raw_status or "").strip().lower()
     if status == "draft":
@@ -172,7 +195,10 @@ async def list_purchase_orders(
     )
 
     query = db.query(PurchaseOrder)
-    query = _scope_to_owner(query, PurchaseOrder, current_user)
+    # POs are shared company documents: list every PO in the caller's tenant (so an
+    # approver sees drafts raised by other users), scoped strictly by company_id.
+    if current_user.company_id is not None:
+        query = scope_query_to_company(query, PurchaseOrder, current_user.company_id)
     if archived_only:
         query = query.filter(PurchaseOrder.is_deleted == True)
     elif not include_archived:
@@ -309,11 +335,13 @@ async def get_purchase_order(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("purchase_orders_read", "payments_read")),
 ):
-    po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id, PurchaseOrder.is_deleted == False).first()
+    po = _get_company_po(db, po_id, current_user)
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
-    _enforce_owner(po, current_user)
-    items = db.query(PurchaseOrderItem).filter(PurchaseOrderItem.purchase_order_id == po_id).all()
+    items = db.query(PurchaseOrderItem).filter(
+        PurchaseOrderItem.purchase_order_id == po_id,
+        PurchaseOrderItem.is_deleted == False,
+    ).all()
     return {"purchase_order": po, "items": items}
 
 
@@ -325,10 +353,9 @@ async def update_purchase_order(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("purchase_orders_write")),
 ):
-    po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id, PurchaseOrder.is_deleted == False).first()
+    po = _get_company_po(db, po_id, current_user)
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
-    _enforce_owner(po, current_user)
     if po.status != "draft":
         raise HTTPException(status_code=400, detail="Only draft purchase orders can be edited")
 
@@ -444,10 +471,9 @@ async def update_purchase_order_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("admin")),
 ):
-    po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id, PurchaseOrder.is_deleted == False).first()
+    po = _get_company_po(db, po_id, current_user)
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
-    _enforce_owner(po, current_user)
 
     requested_status = (payload.status or "").strip().lower()
     if requested_status == "received":
@@ -484,10 +510,9 @@ async def archive_purchase_order(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("purchase_orders_write")),
 ):
-    po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id, PurchaseOrder.is_deleted == False).first()
+    po = _get_company_po(db, po_id, current_user)
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
-    _enforce_owner(po, current_user)
 
     po.is_deleted = True
     po.deleted_at = datetime.utcnow()
@@ -502,10 +527,9 @@ async def restore_purchase_order(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permissions("purchase_orders_write")),
 ):
-    po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id, PurchaseOrder.is_deleted == True).first()
+    po = _get_company_po(db, po_id, current_user, deleted=True)
     if not po:
         raise HTTPException(status_code=404, detail="Archived purchase order not found")
-    _enforce_owner(po, current_user)
 
     po.is_deleted = False
     po.deleted_at = None
@@ -1856,10 +1880,9 @@ async def download_po_pdf(
     from fastapi.responses import Response
     from app.services.pdf_service import generate_po_pdf
 
-    po = db.query(PurchaseOrder).filter(PurchaseOrder.id == po_id, PurchaseOrder.is_deleted == False).first()
+    po = _get_company_po(db, po_id, current_user)
     if not po:
         raise HTTPException(status_code=404, detail="Purchase order not found")
-    _enforce_owner(po, current_user)
 
     pdf_bytes = generate_po_pdf(db, po_id)
     return Response(
